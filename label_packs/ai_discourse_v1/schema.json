@@ -1,0 +1,68 @@
+{
+  "$id": "ai_discourse_v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "segment_id", "episode_id", "summary", "topics", "terminology_shifts", "claims", "entities", "overall_confidence", "needs_review", "review_reason"],
+  "properties": {
+    "schema_version": {"type": "string", "enum": ["ai_discourse_v1"]},
+    "segment_id": {"type": "string", "minLength": 1, "maxLength": 80},
+    "episode_id": {"type": "string", "minLength": 1, "maxLength": 80},
+    "summary": {"type": "string", "minLength": 1, "maxLength": 420},
+    "topics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["topic", "stance", "intensity", "evidence"],
+        "properties": {
+          "topic": {"type": "string", "enum": ["agi", "singularity", "agents", "test_time_compute", "inference_scaling", "ai_coding", "open_weights", "safety_alignment", "enterprise_ai", "other"]},
+          "stance": {"type": "string", "enum": ["bullish", "skeptical", "mixed_or_descriptive", "warning", "unknown"]},
+          "intensity": {"type": "number", "minimum": 0, "maximum": 1},
+          "evidence": {"type": "string", "minLength": 1, "maxLength": 260}
+        }
+      }
+    },
+    "terminology_shifts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from_term", "to_term", "speaker_or_org", "evidence", "confidence"],
+        "properties": {
+          "from_term": {"type": "string", "minLength": 1, "maxLength": 80},
+          "to_term": {"type": "string", "minLength": 1, "maxLength": 80},
+          "speaker_or_org": {"type": "string", "minLength": 1, "maxLength": 120},
+          "evidence": {"type": "string", "minLength": 1, "maxLength": 260},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim_text", "claim_type", "confidence", "evidence"],
+        "properties": {
+          "claim_text": {"type": "string", "minLength": 1, "maxLength": 360},
+          "claim_type": {"type": "string", "enum": ["prediction", "inside_baseball_signal", "product_observation", "technical_claim", "market_claim", "descriptive"]},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+          "evidence": {"type": "string", "minLength": 1, "maxLength": 260}
+        }
+      }
+    },
+    "entities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["people", "organizations", "products"],
+      "properties": {
+        "people": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 120}},
+        "organizations": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 120}},
+        "products": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 120}}
+      }
+    },
+    "overall_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "needs_review": {"type": "boolean"},
+    "review_reason": {"type": ["string", "null"], "maxLength": 240}
+  }
+}

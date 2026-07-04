@@ -1,0 +1,7 @@
+[
+  {"question": "Does each discourse event capture one atomic signal rather than a broad summary?"},
+  {"question": "Are surface terms, model names, product names, and frames open vocabulary while event_type remains stable?"},
+  {"question": "Can terminology drift and actor stance changes be reconstructed from the output?"},
+  {"question": "Does every evidence span exactly match the segment text and offsets?"},
+  {"question": "Does the output avoid inferring private company intent from public podcast language?"}
+]

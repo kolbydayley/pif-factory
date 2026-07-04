@@ -1,0 +1,30 @@
+[
+  {
+    "input_hint": "A founder says their next coding model will focus on tool reliability.",
+    "output": {
+      "schema_version": "product_release_v1",
+      "segment_id": "seg_example",
+      "episode_id": "ep_example",
+      "products": [
+        {
+          "name": "next coding model",
+          "organization": "unknown",
+          "evidence": "next coding model will focus on tool reliability",
+          "confidence": 0.65
+        }
+      ],
+      "release_signals": [
+        {
+          "signal": "The next coding model roadmap emphasizes tool reliability.",
+          "signal_type": "roadmap_shift",
+          "evidence": "focus on tool reliability",
+          "confidence": 0.7
+        }
+      ],
+      "correlation_hypotheses": [],
+      "overall_confidence": 0.65,
+      "needs_review": true,
+      "review_reason": "Example has no named organization."
+    }
+  }
+]

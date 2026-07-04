@@ -1,0 +1,345 @@
+# Expanded source list for private podcast analysis.
+# Feeds were verified on 2026-07-01 before enqueueing.
+sources:
+  - name: Dwarkesh Podcast
+    rss_url: https://www.dwarkesh.com/feed
+    category: frontier_ai
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Latent Space
+    rss_url: https://api.substack.com/feed/podcast/1084089.rss
+    category: ai_engineering
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: No Priors
+    rss_url: https://feeds.megaphone.fm/nopriors
+    category: ai_startups
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Hard Fork
+    rss_url: https://feeds.simplecast.com/6HKOhNgS
+    category: tech_news
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Big Technology Podcast
+    rss_url: https://feeds.megaphone.fm/LI3617121267
+    category: tech_strategy
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Acquired
+    rss_url: https://feeds.transistor.fm/acquired
+    category: company_strategy
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Decoder with Nilay Patel
+    rss_url: https://feeds.megaphone.fm/recodedecode
+    category: tech_business
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: The Vergecast
+    rss_url: https://feeds.megaphone.fm/vergecast
+    category: consumer_tech
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Lex Fridman Podcast
+    rss_url: https://lexfridman.com/feed/podcast/
+    category: longform_ai
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: The Twenty Minute VC
+    rss_url: https://rss.libsyn.com/shows/61840/destinations/240976.xml
+    category: venture
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: The Cognitive Revolution
+    rss_url: https://feeds.megaphone.fm/RINTP3108857801
+    category: frontier_ai
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Practical AI
+    rss_url: https://feeds.transistor.fm/practical-ai-machine-learning-data-science-llm
+    category: ai_engineering
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: The TWIML AI Podcast
+    rss_url: https://feeds.megaphone.fm/MLN2155636147
+    category: ai_research
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Eye On AI
+    rss_url: https://rss.libsyn.com/shows/123267/destinations/727317.xml
+    category: ai_research
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Last Week in AI
+    rss_url: https://rss.art19.com/last-week-in-ai
+    category: ai_news
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: The Gradient
+    rss_url: https://api.substack.com/feed/podcast/265424/s/1354.rss
+    category: ai_research
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Machine Learning Street Talk
+    rss_url: https://anchor.fm/s/1e4a0eac/podcast/rss
+    category: ai_research
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Data Skeptic
+    rss_url: https://rss.libsyn.com/shows/54799/destinations/201630.xml
+    category: data_science
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Me Myself and AI
+    rss_url: https://feeds.megaphone.fm/TPG7603691495
+    category: enterprise_ai
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: AI and the Future of Work
+    rss_url: https://rss.buzzsprout.com/520474.rss
+    category: enterprise_ai
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: NVIDIA AI Podcast
+    rss_url: https://feeds.megaphone.fm/nvidiaaipodcast
+    category: ai_infrastructure
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Microsoft Research Podcast
+    rss_url: https://feeds.blubrry.com/feeds/microsoftresearch.xml
+    category: research_labs
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Google Cloud Platform Podcast
+    rss_url: https://rss.libsyn.com/shows/385982/destinations/3174422.xml
+    category: cloud_infrastructure
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Kubernetes Podcast from Google
+    rss_url: https://rss.libsyn.com/shows/419861/destinations/3486674.xml
+    category: cloud_infrastructure
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: The Enterprise AI Show
+    rss_url: https://rss.buzzsprout.com/3195.rss
+    category: enterprise_ai
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Software Engineering Daily
+    rss_url: https://softwareengineeringdaily.com/feed/podcast/
+    category: software_engineering
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: The Changelog
+    rss_url: https://changelog.com/podcast/feed
+    category: software_engineering
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: JS Party
+    rss_url: https://changelog.com/jsparty/feed
+    category: software_engineering
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Syntax
+    rss_url: https://feeds.megaphone.fm/FSI1483080183
+    category: software_engineering
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: CoRecursive
+    rss_url: https://rss.libsyn.com/shows/112428/destinations/628353.xml
+    category: software_engineering
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Developer Tea
+    rss_url: https://feeds.simplecast.com/dLRotFGk
+    category: software_engineering
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Talk Python To Me
+    rss_url: https://talkpython.fm/episodes/rss
+    category: software_engineering
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Python Bytes
+    rss_url: https://pythonbytes.fm/episodes/rss
+    category: software_engineering
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: The Real Python Podcast
+    rss_url: https://realpython.com/podcasts/rpp/feed
+    category: software_engineering
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: The Stack Overflow Podcast
+    rss_url: https://rss.art19.com/the-stack-overflow-podcast
+    category: software_engineering
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: The Pragmatic Engineer
+    rss_url: https://api.substack.com/feed/podcast/458709.rss
+    category: software_engineering
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Invest Like the Best
+    rss_url: https://feeds.megaphone.fm/CLS2859450455
+    category: investment_strategy
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: The Knowledge Project
+    rss_url: https://feeds.megaphone.fm/FSMI7575968096
+    category: longform_strategy
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: All-In
+    rss_url: https://rss.libsyn.com/shows/254861/destinations/1928300.xml
+    category: tech_investing
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: BG2Pod
+    rss_url: https://anchor.fm/s/f06c2370/podcast/rss
+    category: tech_investing
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: The Ben and Marc Show
+    rss_url: https://feeds.simplecast.com/mAT9rqvu
+    category: venture_strategy
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Equity
+    rss_url: https://feeds.megaphone.fm/YFL6537156961
+    category: venture_news
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Waveform
+    rss_url: https://feeds.megaphone.fm/STU4418364045
+    category: consumer_tech
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Tech Brew Ride Home
+    rss_url: https://feeds.megaphone.fm/ridehome
+    category: tech_news
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Marketplace Tech
+    rss_url: https://feeds.publicradio.org/public_feeds/marketplace-tech
+    category: tech_policy
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Risky Business
+    rss_url: https://risky.biz/feeds/risky-business/
+    category: security
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Security Now
+    rss_url: https://rss.pdrl.fm/f84ea4/feeds.twit.tv/sn.xml
+    category: security
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Founders
+    rss_url: https://feeds.megaphone.fm/DSLLC6297708582
+    category: company_history
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Business Breakdowns
+    rss_url: https://feeds.megaphone.fm/breakdowns
+    category: company_strategy
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Odd Lots
+    rss_url: https://www.omnycontent.com/d/playlist/e73c998e-6e60-432f-8610-ae210140c5b1/8a94442e-5a74-4fa2-8b8d-ae27003a8d6b/982f5071-765c-403d-969d-ae27003a8d83/podcast.rss
+    category: markets
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Animal Spirits
+    rss_url: https://feeds.megaphone.fm/TCP6464651487
+    category: markets
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: The AI Daily Brief
+    rss_url: https://anchor.fm/s/f7cac464/podcast/rss
+    category: ai_news
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Training Data
+    rss_url: https://feeds.megaphone.fm/trainingdata
+    category: ai_startups
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: Search Engine
+    rss_url: https://rss.amperwave.net/v2/feed/audacynetwork/search-engine
+    category: technology_culture
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: How I Built This
+    rss_url: https://rss.art19.com/how-i-built-this
+    category: company_history
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: The Ezra Klein Show
+    rss_url: https://feeds.simplecast.com/kEKXbjuJ
+    category: policy_strategy
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true
+  - name: EconTalk
+    rss_url: https://feeds.simplecast.com/wgl4xEgL
+    category: economics
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: true

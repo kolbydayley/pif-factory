@@ -1,0 +1,12 @@
+[project]
+name = "podcast-intelligence-factory"
+version = "0.1.0"
+description = "Local-first podcast intelligence corpus factory with deterministic queues and Codex handoffs."
+requires-python = ">=3.11"
+dependencies = ["youtube-transcript-api>=1.2.4,<2"]
+
+[project.scripts]
+research-factory = "research_factory.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

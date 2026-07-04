@@ -1,0 +1,36 @@
+[
+  {
+    "input_hint": "A guest says coding agents will replace routine software tasks in enterprises.",
+    "output": {
+      "schema_version": "ai_discourse_v1",
+      "segment_id": "seg_example",
+      "episode_id": "ep_example",
+      "summary": "The speaker predicts enterprise coding agents will automate routine software work.",
+      "topics": [
+        {
+          "topic": "agents",
+          "stance": "bullish",
+          "intensity": 0.8,
+          "evidence": "coding agents will replace routine software tasks"
+        }
+      ],
+      "terminology_shifts": [],
+      "claims": [
+        {
+          "claim_text": "Coding agents will automate routine enterprise software work.",
+          "claim_type": "prediction",
+          "confidence": 0.75,
+          "evidence": "replace routine software tasks in enterprises"
+        }
+      ],
+      "entities": {
+        "people": [],
+        "organizations": [],
+        "products": []
+      },
+      "overall_confidence": 0.75,
+      "needs_review": false,
+      "review_reason": null
+    }
+  }
+]

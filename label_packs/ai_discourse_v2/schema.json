@@ -1,0 +1,91 @@
+{
+  "$id": "ai_discourse_v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "segment_id",
+    "episode_id",
+    "extraction_status",
+    "segment_quality",
+    "observations",
+    "quality_flags",
+    "not_present_reason",
+    "overall_confidence",
+    "needs_review",
+    "review_reason"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "enum": ["ai_discourse_v2"]},
+    "segment_id": {"type": "string", "minLength": 1, "maxLength": 80},
+    "episode_id": {"type": "string", "minLength": 1, "maxLength": 80},
+    "extraction_status": {"type": "string", "enum": ["coded", "not_present", "insufficient_evidence", "low_signal"]},
+    "segment_quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_type", "boilerplate_risk", "substantive_word_count", "transcript_preparation_id"],
+      "properties": {
+        "artifact_type": {"type": "string", "enum": ["dialogue_transcript", "caption_transcript", "article_show_notes", "mixed_page", "boilerplate", "unknown"]},
+        "boilerplate_risk": {"type": "string", "enum": ["low", "medium", "high"]},
+        "substantive_word_count": {"type": "integer", "minimum": 0},
+        "transcript_preparation_id": {"type": ["string", "null"], "maxLength": 80}
+      }
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code_family",
+          "code_id",
+          "construct_type",
+          "speaker",
+          "speaker_role",
+          "entities",
+          "stance",
+          "temporal_horizon",
+          "claim_strength",
+          "confidence",
+          "evidence",
+          "evidence_start",
+          "evidence_end",
+          "notes"
+        ],
+        "properties": {
+          "code_family": {"type": "string", "enum": ["topic", "technical_mechanism", "product_release_signal", "market_investment_narrative", "safety_risk", "adoption_pattern", "terminology_drift", "actor_org_position", "relationship_edge", "forecast", "causal_claim", "uncertainty_marker", "counterclaim"]},
+          "code_id": {"type": "string", "enum": ["agi", "singularity", "agents", "ai_coding", "test_time_compute", "inference_scaling", "open_weights", "safety_alignment", "evals", "enterprise_ai", "frontier_labs", "model_capability", "scaling_law", "data_bottleneck", "compute_bottleneck", "product_launch", "roadmap", "platform_shift", "market_demand", "competitive_positioning", "capex_infrastructure", "regulation_policy", "adoption_barrier", "deployment_pattern", "terminology_shift", "person_org_position", "collaboration_relationship", "acquisition_investment", "forecast_capability", "forecast_market", "causal_mechanism", "uncertainty_caveat", "counterclaim_rebuttal", "other"]},
+          "construct_type": {"type": "string", "enum": ["descriptive_code", "analytic_code", "extracted_claim", "entity_relation", "signal"]},
+          "speaker": {"type": ["string", "null"], "maxLength": 120},
+          "speaker_role": {"type": "string", "enum": ["host", "guest", "quoted_person", "org_representative", "unknown"]},
+          "entities": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["people", "organizations", "products"],
+            "properties": {
+              "people": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 120}},
+              "organizations": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 120}},
+              "products": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 120}}
+            }
+          },
+          "stance": {"type": "string", "enum": ["supportive", "skeptical", "mixed", "warning", "neutral", "unclear"]},
+          "temporal_horizon": {"type": "string", "enum": ["past", "present", "near_future", "long_future", "unspecified"]},
+          "claim_strength": {"type": "string", "enum": ["explicit", "implied", "speculative"]},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+          "evidence": {"type": "string", "minLength": 1, "maxLength": 320},
+          "evidence_start": {"type": "integer", "minimum": 0},
+          "evidence_end": {"type": "integer", "minimum": 1},
+          "notes": {"type": ["string", "null"], "maxLength": 240}
+        }
+      }
+    },
+    "quality_flags": {
+      "type": "array",
+      "items": {"type": "string", "enum": ["speaker_unclear", "entity_unclear", "mixed_page", "boilerplate_risk", "low_signal", "requires_adjudication", "llm_adjudicated_not_human_validated"]}
+    },
+    "not_present_reason": {"type": ["string", "null"], "maxLength": 240},
+    "overall_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "needs_review": {"type": "boolean"},
+    "review_reason": {"type": ["string", "null"], "maxLength": 240}
+  }
+}

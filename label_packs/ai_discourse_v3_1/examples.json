@@ -1,0 +1,113 @@
+[
+  {
+    "input": {
+      "segment_id": "seg_v31_example",
+      "episode_id": "ep_v31_example",
+      "text": "HOST: Google researchers used to say AGI, but now they are talking more about the singularity. GUEST: Gemini is becoming a workflow platform, not just a chatbot. Show notes [4]."
+    },
+    "output": {
+      "schema_version": "ai_discourse_v3_1",
+      "segment_id": "seg_v31_example",
+      "episode_id": "ep_v31_example",
+      "extraction_status": "coded",
+      "segment_quality": {
+        "artifact_type": "dialogue_transcript",
+        "boilerplate_risk": "low",
+        "substantive_word_count": 24,
+        "transcript_preparation_id": null
+      },
+      "segment_source_context": {
+        "kind": "substantive_dialogue",
+        "confidence": 0.92,
+        "rationale": "The segment contains host and guest discussion rather than ads or show chrome."
+      },
+      "discourse_events": [
+        {
+          "event_type": "term_usage",
+          "event_subtype": "terminology_substitution",
+          "actor": {"name": "Google researchers", "actor_type": "organization", "affiliation": "Google", "role": "reported_actor"},
+          "speaker_context": {"name": "HOST", "role": "host", "affiliation": null, "confidence": 0.75},
+          "reported_actor": {"name": "Google researchers", "actor_type": "organization", "affiliation": "Google", "confidence": 0.82},
+          "source_context": {"kind": "substantive_dialogue", "confidence": 0.92, "rationale": "The host states a terminology shift."},
+          "target": {"raw_target": "AGI to singularity language", "candidate_concept": "frontier_ai_end_state_language", "canonical_concept": null, "concept_confidence": 0.82},
+          "surface_terms": ["AGI", "singularity"],
+          "frames": ["terminology_shift", "frontier_ai_language"],
+          "model_names": [],
+          "product_names": [],
+          "organizations": ["Google"],
+          "people": [],
+          "stance": "neutral",
+          "claim_text": "The host reports a shift in Google researcher language from AGI toward singularity.",
+          "claim_type": "terminology",
+          "certainty": "medium",
+          "temporal_horizon": "present",
+          "causal_mechanism": "",
+          "counterclaim": "",
+          "metric": {"value": null, "unit": null, "comparator": null, "direction": "not_applicable", "raw_text": null},
+          "signal_reason": "This directly supports actor-specific terminology drift analysis for Google-affiliated discourse.",
+          "exclusion_flags": [],
+          "quality_flags": ["reported_actor_not_direct_speaker"],
+          "evidence": "Google researchers used to say AGI, but now they are talking more about the singularity",
+          "evidence_start": 6,
+          "evidence_end": 93,
+          "confidence": 0.82,
+          "audit_notes": "Public discourse only; do not infer internal Google intent."
+        },
+        {
+          "event_type": "product_signal",
+          "event_subtype": "product_platformization",
+          "actor": {"name": "GUEST", "actor_type": "guest", "affiliation": null, "role": "speaker"},
+          "speaker_context": {"name": "GUEST", "role": "guest", "affiliation": null, "confidence": 0.8},
+          "reported_actor": {"name": "Gemini", "actor_type": "product", "affiliation": "Google", "confidence": 0.76},
+          "source_context": {"kind": "substantive_dialogue", "confidence": 0.92, "rationale": "The guest makes a direct product-framing claim."},
+          "target": {"raw_target": "Gemini workflow platform", "candidate_concept": "ai_product_platformization", "canonical_concept": null, "concept_confidence": 0.78},
+          "surface_terms": ["Gemini", "workflow platform", "chatbot"],
+          "frames": ["platform_shift", "product_narrative"],
+          "model_names": ["Gemini"],
+          "product_names": ["Gemini"],
+          "organizations": [],
+          "people": [],
+          "stance": "supportive",
+          "claim_text": "The guest frames Gemini as shifting from chatbot toward workflow platform.",
+          "claim_type": "product_market",
+          "certainty": "medium",
+          "temporal_horizon": "present",
+          "causal_mechanism": "",
+          "counterclaim": "",
+          "metric": {"value": null, "unit": null, "comparator": null, "direction": "not_applicable", "raw_text": null},
+          "signal_reason": "This is a product narrative movement signal that can be tracked over time.",
+          "exclusion_flags": [],
+          "quality_flags": [],
+          "evidence": "Gemini is becoming a workflow platform, not just a chatbot",
+          "evidence_start": 102,
+          "evidence_end": 160,
+          "confidence": 0.78,
+          "audit_notes": "Product narrative movement."
+        }
+      ],
+      "concept_candidates": [
+        {
+          "candidate": "frontier_ai_end_state_language",
+          "surface_terms": ["AGI", "singularity"],
+          "rationale": "Tracks substitutions and framing around long-run frontier AI outcomes.",
+          "usefulness_score": 0.86,
+          "evidence": "Google researchers used to say AGI, but now they are talking more about the singularity",
+          "evidence_start": 6,
+          "evidence_end": 93,
+          "confidence": 0.82
+        }
+      ],
+      "rejected_candidates": [
+        {
+          "text": "[4]",
+          "reason": "insufficient_evidence",
+          "source_context_kind": "page_chrome"
+        }
+      ],
+      "no_signal_reason": null,
+      "overall_confidence": 0.8,
+      "needs_review": true,
+      "review_reason": "High-impact terminology movement should be adjudicated before promotion."
+    }
+  }
+]

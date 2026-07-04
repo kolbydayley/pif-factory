@@ -1,0 +1,7 @@
+[
+  {"question": "Does every substantive observation include exact evidence and matching character offsets?"},
+  {"question": "Does the output distinguish descriptive topic codes from claims, forecasts, product signals, and causal claims?"},
+  {"question": "Are low-signal or boilerplate segments explicitly marked instead of receiving invented observations?"},
+  {"question": "Are speaker and entity fields omitted or marked unknown when not grounded in the segment/context?"},
+  {"question": "Does any synthesis based on this output remain LLM-adjudicated unless human validation exists?"}
+]

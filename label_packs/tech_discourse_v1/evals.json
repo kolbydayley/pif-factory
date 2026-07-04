@@ -1,0 +1,14 @@
+[
+  {
+    "name": "reject_boilerplate",
+    "question": "Does the extractor reject page chrome, sponsor text, timestamps, footnotes, and unsupported metrics?"
+  },
+  {
+    "name": "open_vocabulary_shift_detection",
+    "question": "Does the extractor preserve surface terms and candidate concepts needed for terminology and framing drift?"
+  },
+  {
+    "name": "exact_grounding",
+    "question": "Do all events and concept candidates include exact evidence with valid offsets?"
+  }
+]

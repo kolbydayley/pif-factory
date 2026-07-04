@@ -1,0 +1,7 @@
+[
+  {"question": "Does every discourse event encode a concrete proposition rather than a keyword or topic hit?"},
+  {"question": "Are speaker, actor, reported actor, and source context separated correctly?"},
+  {"question": "Are generic sponsor copy, show setup, page chrome, and agenda language rejected, while concrete AI commercial signals are coded only as sponsor_ad_read?"},
+  {"question": "Does every event include a signal_reason explaining why it helps later discourse analysis?"},
+  {"question": "Can terminology drift, actor stance changes, product narrative movement, and market frames be reconstructed from the output?"}
+]

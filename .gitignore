@@ -1,0 +1,29 @@
+.DS_Store
+.env
+.railway-ingest-token.local
+.venv/
+__pycache__/
+.pytest_cache/
+.codex-controller/
+.codex-controller-logs/
+
+# Local private corpus and generated state.
+corpus/
+data/
+runs/
+exports/
+ui_state/
+work/
+tmp/
+
+# SQLite sidecars.
+factory.db
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.init.lock
+
+# Python build artifacts.
+*.egg-info/
+dist/
+build/

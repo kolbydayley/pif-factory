@@ -1,0 +1,130 @@
+{
+  "$id": "ai_discourse_v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "segment_id",
+    "episode_id",
+    "extraction_status",
+    "segment_quality",
+    "discourse_events",
+    "concept_candidates",
+    "no_signal_reason",
+    "overall_confidence",
+    "needs_review",
+    "review_reason"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "enum": ["ai_discourse_v3"]},
+    "segment_id": {"type": "string", "minLength": 1},
+    "episode_id": {"type": "string", "minLength": 1},
+    "extraction_status": {"type": "string", "enum": ["coded", "no_signal", "insufficient_evidence", "low_signal"]},
+    "segment_quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_type", "boilerplate_risk", "substantive_word_count", "transcript_preparation_id"],
+      "properties": {
+        "artifact_type": {"type": "string", "enum": ["dialogue_transcript", "caption_transcript", "article_show_notes", "mixed_page", "boilerplate", "unknown"]},
+        "boilerplate_risk": {"type": "string", "enum": ["low", "medium", "high"]},
+        "substantive_word_count": {"type": "integer", "minimum": 0},
+        "transcript_preparation_id": {"type": ["string", "null"]}
+      }
+    },
+    "discourse_events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_type",
+          "actor",
+          "target",
+          "surface_terms",
+          "frames",
+          "model_names",
+          "product_names",
+          "organizations",
+          "people",
+          "stance",
+          "claim_text",
+          "claim_type",
+          "certainty",
+          "temporal_horizon",
+          "causal_mechanism",
+          "counterclaim",
+          "evidence",
+          "evidence_start",
+          "evidence_end",
+          "confidence",
+          "audit_notes"
+        ],
+        "properties": {
+          "event_type": {"type": "string", "enum": ["term_usage", "frame_usage", "stance_position", "forecast", "causal_mechanism", "capability_claim", "product_signal", "market_signal", "risk_signal", "counterclaim", "uncertainty", "adoption_signal"]},
+          "actor": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "actor_type", "affiliation", "role"],
+            "properties": {
+              "name": {"type": "string"},
+              "actor_type": {"type": "string", "enum": ["person", "organization", "host", "guest", "unknown"]},
+              "affiliation": {"type": ["string", "null"]},
+              "role": {"type": ["string", "null"]}
+            }
+          },
+          "target": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["raw_target", "candidate_concept", "canonical_concept", "concept_confidence"],
+            "properties": {
+              "raw_target": {"type": "string"},
+              "candidate_concept": {"type": "string"},
+              "canonical_concept": {"type": ["string", "null"]},
+              "concept_confidence": {"type": "number", "minimum": 0, "maximum": 1}
+            }
+          },
+          "surface_terms": {"type": "array", "items": {"type": "string"}},
+          "frames": {"type": "array", "items": {"type": "string"}},
+          "model_names": {"type": "array", "items": {"type": "string"}},
+          "product_names": {"type": "array", "items": {"type": "string"}},
+          "organizations": {"type": "array", "items": {"type": "string"}},
+          "people": {"type": "array", "items": {"type": "string"}},
+          "stance": {"type": "string", "enum": ["supportive", "skeptical", "neutral", "mixed", "warning", "competitive", "promotional", "uncertain", "not_applicable"]},
+          "claim_text": {"type": "string", "maxLength": 700},
+          "claim_type": {"type": "string", "enum": ["descriptive", "prediction", "causal", "comparative", "product_market", "terminology", "uncertainty", "counterclaim", "not_applicable"]},
+          "certainty": {"type": "string", "enum": ["low", "medium", "high", "hedged"]},
+          "temporal_horizon": {"type": "string", "enum": ["past", "present", "near_future", "long_future", "timeless", "unspecified"]},
+          "causal_mechanism": {"type": "string", "maxLength": 500},
+          "counterclaim": {"type": "string", "maxLength": 500},
+          "evidence": {"type": "string", "minLength": 1, "maxLength": 1000},
+          "evidence_start": {"type": "integer", "minimum": 0},
+          "evidence_end": {"type": "integer", "minimum": 1},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+          "audit_notes": {"type": "string", "maxLength": 500}
+        }
+      }
+    },
+    "concept_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate", "surface_terms", "rationale", "usefulness_score", "evidence", "evidence_start", "evidence_end", "confidence"],
+        "properties": {
+          "candidate": {"type": "string", "minLength": 1},
+          "surface_terms": {"type": "array", "items": {"type": "string"}},
+          "rationale": {"type": "string", "maxLength": 500},
+          "usefulness_score": {"type": "number", "minimum": 0, "maximum": 1},
+          "evidence": {"type": "string", "minLength": 1, "maxLength": 1000},
+          "evidence_start": {"type": "integer", "minimum": 0},
+          "evidence_end": {"type": "integer", "minimum": 1},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    },
+    "no_signal_reason": {"type": ["string", "null"]},
+    "overall_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "needs_review": {"type": "boolean"},
+    "review_reason": {"type": ["string", "null"]}
+  }
+}

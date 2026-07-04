@@ -1,0 +1,61 @@
+[
+  {
+    "input": {
+      "content_item_id": "ci_fixture",
+      "content_span_id": "cspan_fixture",
+      "source_content_type": "podcast_episode",
+      "text": "The guest says coding agents are moving from demos into production workflows because evals and deployment tooling are improving."
+    },
+    "output": {
+      "schema_version": "tech_discourse_v1",
+      "content_item_id": "ci_fixture",
+      "content_span_id": "cspan_fixture",
+      "source_content_type": "podcast_episode",
+      "extraction_status": "coded",
+      "discourse_events": [
+        {
+          "event_type": "adoption_signal",
+          "actor_name": "guest",
+          "actor_type": "guest",
+          "actor_affiliation": null,
+          "target_concept": "coding agents in production workflows",
+          "surface_terms": ["coding agents", "production workflows"],
+          "stance": "positive",
+          "claim_text": "Coding agents are moving from demos into production workflows.",
+          "claim_type": "adoption_trend",
+          "certainty": "medium",
+          "temporal_horizon": "current transition",
+          "frame": "from demos to production",
+          "causal_mechanism": "evals and deployment tooling are improving",
+          "counterclaim": null,
+          "model_names": [],
+          "product_names": [],
+          "organizations": [],
+          "people": [],
+          "why_it_matters": "Tracks adoption movement and the mechanism behind it.",
+          "evidence": "coding agents are moving from demos into production workflows because evals and deployment tooling are improving",
+          "evidence_start": 15,
+          "evidence_end": 127,
+          "confidence": 0.86
+        }
+      ],
+      "concept_candidates": [
+        {
+          "candidate_concept": "coding agents in production workflows",
+          "surface_terms": ["coding agents", "production workflows"],
+          "topic_family": "AI",
+          "usefulness_reason": "Useful for tracking agent adoption and deployment maturity.",
+          "evidence": "coding agents are moving from demos into production workflows",
+          "evidence_start": 15,
+          "evidence_end": 76,
+          "confidence": 0.84
+        }
+      ],
+      "rejected_candidates": [],
+      "no_signal_reason": null,
+      "overall_confidence": 0.86,
+      "needs_review": false,
+      "review_reason": null
+    }
+  }
+]

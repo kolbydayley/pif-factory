@@ -1,0 +1,77 @@
+[
+  {
+    "input_hint": "A guest says coding agents will replace routine software tasks in enterprises.",
+    "output": {
+      "schema_version": "ai_discourse_v2",
+      "segment_id": "seg_example",
+      "episode_id": "ep_example",
+      "extraction_status": "coded",
+      "segment_quality": {
+        "artifact_type": "dialogue_transcript",
+        "boilerplate_risk": "low",
+        "substantive_word_count": 11,
+        "transcript_preparation_id": "prep_example"
+      },
+      "observations": [
+        {
+          "code_family": "topic",
+          "code_id": "agents",
+          "construct_type": "descriptive_code",
+          "speaker": "guest",
+          "speaker_role": "guest",
+          "entities": {"people": [], "organizations": [], "products": []},
+          "stance": "supportive",
+          "temporal_horizon": "near_future",
+          "claim_strength": "explicit",
+          "confidence": 0.86,
+          "evidence": "coding agents will replace routine software tasks",
+          "evidence_start": 13,
+          "evidence_end": 62,
+          "notes": null
+        },
+        {
+          "code_family": "adoption_pattern",
+          "code_id": "enterprise_ai",
+          "construct_type": "extracted_claim",
+          "speaker": "guest",
+          "speaker_role": "guest",
+          "entities": {"people": [], "organizations": [], "products": []},
+          "stance": "supportive",
+          "temporal_horizon": "near_future",
+          "claim_strength": "explicit",
+          "confidence": 0.78,
+          "evidence": "routine software tasks in enterprises",
+          "evidence_start": 48,
+          "evidence_end": 84,
+          "notes": "Enterprise workflow adoption claim."
+        }
+      ],
+      "quality_flags": ["llm_adjudicated_not_human_validated"],
+      "not_present_reason": null,
+      "overall_confidence": 0.82,
+      "needs_review": false,
+      "review_reason": null
+    }
+  },
+  {
+    "input_hint": "A segment contains only subscribe/share/show-note boilerplate.",
+    "output": {
+      "schema_version": "ai_discourse_v2",
+      "segment_id": "seg_empty",
+      "episode_id": "ep_empty",
+      "extraction_status": "low_signal",
+      "segment_quality": {
+        "artifact_type": "boilerplate",
+        "boilerplate_risk": "high",
+        "substantive_word_count": 12,
+        "transcript_preparation_id": null
+      },
+      "observations": [],
+      "quality_flags": ["low_signal", "boilerplate_risk"],
+      "not_present_reason": "Segment is show-page or subscription boilerplate, not substantive discourse.",
+      "overall_confidence": 0.9,
+      "needs_review": false,
+      "review_reason": null
+    }
+  }
+]
