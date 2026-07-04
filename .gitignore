@@ -13,8 +13,12 @@ data/
 runs/
 exports/
 ui_state/
-work/
 tmp/
+
+# Keep reusable operator scripts tracked; ignore generated work artifacts.
+work/*
+!work/complete_v31_pilot_labels.py
+!work/run_reviewer_audits.py
 
 # SQLite sidecars.
 factory.db
