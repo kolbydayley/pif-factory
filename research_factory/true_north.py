@@ -92,6 +92,31 @@ could verify, compare, contradict, or qualify, confirm the retention even
 when the candidate is also partly repetitive or fragmentary. For each reject,
 name the junk class and copy the deficient text verbatim as the deficiency
 quote. Return only the exact schema-valid JSON requested by the packet."""
+PHASE_C_MARGINAL_JACCARD = 0.45
+PHASE_C_MARGINAL_SPARK_CONFIRM_JACCARD = 0.60
+PHASE_C_MARGINAL_SEGMENT_RADIUS = 400
+PHASE_C_MARGINAL_MAX_GLM_CALLS = 6
+PHASE_C_MARGINAL_MAX_SPARK_CALLS = 4
+PHASE_C_MARGINAL_MAX_TOKENS = 150_000
+PHASE_C_MARGINAL_BATCH_SIZE = 12
+PHASE_C_MARGINAL_SYSTEM_PROMPT = """You are a marginal-utility auditor for a private podcast research corpus. Do
+not use tools. Each packet shows one provisionally retained candidate, the
+surrounding transcript text of its segment, and the most similar already
+retained candidates. Most inputs are valuable; your task is to catch the rare
+candidate that adds nothing to the corpus. Reject a candidate only in these
+cases. Repetition: every proposition in its evidence is already carried by
+one of the shown retained neighbors, in the same or different words, and the
+candidate adds no new subject, predicate, outcome, qualifier, or attribution;
+name which neighbor carries it. Non-assertion: read the surrounding segment
+text and confirm the evidence is a question, setup, or fragment whose
+recoverable content is either absent or already carried by a shown neighbor.
+Bare reference: the evidence only points to a document, product, page
+element, or name without asserting any verifiable proposition about it. If
+the candidate contributes any independently citable proposition that no shown
+neighbor carries, confirm the retention, even when partly repetitive,
+interrogative, or fragmentary. Quote the deficiency verbatim for every
+non-repetition reject. Return only the exact schema-valid JSON requested by
+the packet."""
 MULTIPASS_ENUMS = {
     "certainty": ("low", "medium", "high", "hedged"),
     "stance": (
@@ -1592,6 +1617,67 @@ def phase_c_junk_verify_schema(
     }
 
 
+def phase_c_marginal_schema(
+    candidate_ids: Sequence[str],
+    neighbors_by_candidate: Mapping[str, Sequence[str]],
+) -> dict[str, Any]:
+    neighbor_ids = sorted(
+        {
+            str(neighbor_id)
+            for candidate_id in candidate_ids
+            for neighbor_id in neighbors_by_candidate[candidate_id]
+        }
+    )
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["schema_version", "items"],
+        "properties": {
+            "schema_version": {
+                "type": "string",
+                "const": MULTIPASS_SCHEMA_VERSION,
+            },
+            "items": {
+                "type": "array",
+                "minItems": len(candidate_ids),
+                "maxItems": len(candidate_ids),
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": [
+                        "candidate_id",
+                        "verdict",
+                        "junk_reason",
+                        "duplicate_of",
+                        "deficiency_quote",
+                    ],
+                    "properties": {
+                        "candidate_id": {
+                            "type": "string",
+                            "enum": list(candidate_ids),
+                        },
+                        "verdict": {
+                            "type": "string",
+                            "enum": ["confirm_retain", "reject"],
+                        },
+                        "junk_reason": {
+                            "type": ["string", "null"],
+                            "enum": [None, *MULTIPASS_JUNK_REASONS],
+                        },
+                        "duplicate_of": {
+                            "type": ["string", "null"],
+                            "enum": [None, *neighbor_ids],
+                        },
+                        "deficiency_quote": {
+                            "type": ["string", "null"],
+                        },
+                    },
+                },
+            },
+        },
+    }
+
+
 def multipass_decomposition_schema(
     candidate_ids: Sequence[str],
 ) -> dict[str, Any]:
@@ -1870,6 +1956,70 @@ def validate_phase_c_junk_verify(
                     "junk deficiency quote must be copied verbatim from "
                     f"evidence: {candidate_id}"
                 )
+
+
+def validate_phase_c_marginal_verify(
+    output: Mapping[str, Any],
+    packet: Mapping[str, Any],
+) -> None:
+    _validate_schema(packet["output_schema"], output, path="$")
+    candidates = {
+        str(row["candidate_id"]): row
+        for row in packet["input"]["candidates"]
+    }
+    items = _validate_multipass_scope(output, list(candidates))
+    for candidate_id, item in items.items():
+        rejected = item["verdict"] == "reject"
+        reason = item["junk_reason"]
+        duplicate_of = item["duplicate_of"]
+        quote = item["deficiency_quote"]
+        if not rejected:
+            if any(
+                value is not None
+                for value in (reason, duplicate_of, quote)
+            ):
+                raise TrueNorthError(
+                    "marginal confirm_retain forbids junk fields: "
+                    f"{candidate_id}"
+                )
+            continue
+        if reason is None:
+            raise TrueNorthError(
+                f"marginal reject requires junk_reason: {candidate_id}"
+            )
+        shown_neighbors = {
+            str(row["candidate_id"])
+            for row in candidates[candidate_id]["neighbors"]
+        }
+        if reason == "repetition":
+            if duplicate_of not in shown_neighbors:
+                raise TrueNorthError(
+                    "repetition reject requires duplicate_of from shown "
+                    f"neighbors: {candidate_id}"
+                )
+            if quote is not None and str(quote) not in str(
+                candidates[candidate_id]["evidence_text"]
+            ):
+                raise TrueNorthError(
+                    "optional repetition quote must be copied verbatim: "
+                    f"{candidate_id}"
+                )
+            continue
+        if duplicate_of is not None:
+            raise TrueNorthError(
+                "non-repetition reject forbids duplicate_of: "
+                f"{candidate_id}"
+            )
+        if (
+            not isinstance(quote, str)
+            or not quote
+            or quote
+            not in str(candidates[candidate_id]["evidence_text"])
+        ):
+            raise TrueNorthError(
+                "non-repetition reject requires a verbatim deficiency "
+                f"quote: {candidate_id}"
+            )
 
 
 def validate_multipass_decomposition(
@@ -9079,6 +9229,369 @@ def compose_phase_c_junk_verification(
     }
 
 
+def _phase_c_is_pure_interrogative(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+    sentences = [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", stripped)
+        if sentence.strip()
+    ]
+    return bool(sentences) and all(
+        sentence.rstrip("\"'”’)]}").endswith("?")
+        for sentence in sentences
+    )
+
+
+def _phase_c_is_reference_only_claim(text: str) -> bool:
+    match = re.search(
+        r"\b(references?|mentions?|cites?|names?|points?\s+to)\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return False
+    remainder = text[match.end() :].strip(" .,:;!?")
+    if not remainder:
+        return True
+    return not bool(
+        re.search(
+            r"[;:]|\b(that|because|while|although|but|which)\b|"
+            r"\b(and|or)\s+\w+(?:ed|ing|s)\b",
+            remainder,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def screen_phase_c_marginal_candidates(
+    episode_candidates: Mapping[str, Sequence[Mapping[str, Any]]],
+    composed: Mapping[str, Mapping[str, Any]],
+    ensemble_members: Sequence[Mapping[str, Mapping[str, Any]]],
+) -> dict[str, dict[str, Any]]:
+    """Screen retained candidates using only frozen relational features."""
+
+    screened: dict[str, dict[str, Any]] = {}
+    observed: set[str] = set()
+    for episode_id, candidates in episode_candidates.items():
+        retained = [
+            candidate
+            for candidate in candidates
+            if _gold_value_state(
+                str(
+                    composed[str(candidate["candidate_id"])][
+                        "disposition"
+                    ]
+                )
+            )
+            == "value"
+        ]
+        comparison_text = {
+            str(candidate["candidate_id"]): (
+                f"{candidate.get('claim_text') or ''} "
+                f"{candidate.get('evidence_text') or ''}"
+            ).strip()
+            for candidate in retained
+        }
+        for candidate in candidates:
+            candidate_id = str(candidate["candidate_id"])
+            if candidate_id in observed:
+                raise TrueNorthError(
+                    f"duplicate marginal-screen candidate: {candidate_id}"
+                )
+            observed.add(candidate_id)
+            if candidate_id not in composed:
+                raise TrueNorthError(
+                    "marginal-screen candidate lacks disposition: "
+                    f"{candidate_id}"
+                )
+            if _gold_value_state(
+                str(composed[candidate_id]["disposition"])
+            ) != "value":
+                continue
+            neighbor_scores = sorted(
+                (
+                    {
+                        "candidate_id": neighbor_id,
+                        "similarity": round(
+                            _phase_c_token_jaccard(
+                                comparison_text[candidate_id],
+                                neighbor_text,
+                            ),
+                            6,
+                        ),
+                    }
+                    for neighbor_id, neighbor_text in comparison_text.items()
+                    if neighbor_id != candidate_id
+                ),
+                key=lambda row: (
+                    -float(row["similarity"]),
+                    str(row["candidate_id"]),
+                ),
+            )
+            top_neighbors = neighbor_scores[:3]
+            maximum_similarity = (
+                float(top_neighbors[0]["similarity"])
+                if top_neighbors
+                else 0.0
+            )
+            evidence_text = str(candidate.get("evidence_text") or "")
+            claim_text = str(candidate.get("claim_text") or "")
+            classes: list[str] = []
+            rejectors = [
+                index
+                for index, member in enumerate(ensemble_members)
+                if candidate_id in member
+                and _gold_value_state(
+                    str(member[candidate_id]["disposition"])
+                )
+                != "value"
+            ]
+            if maximum_similarity >= PHASE_C_MARGINAL_JACCARD:
+                classes.append("repetition")
+            if re.search(r"\[[^\]\r\n]+\]", evidence_text) or (
+                _phase_c_is_reference_only_claim(claim_text)
+            ):
+                classes.append("chrome_bare_mention")
+            if _phase_c_is_pure_interrogative(evidence_text):
+                classes.append("pure_interrogative")
+            stripped_evidence = evidence_text.strip()
+            terminal = stripped_evidence.rstrip("\"'”’)]}")
+            if (
+                bool(stripped_evidence)
+                and len(stripped_evidence) < 160
+                and stripped_evidence[0].islower()
+                and (
+                    not terminal
+                    or terminal[-1] not in ".!?"
+                )
+            ):
+                classes.append("dangling_fragment")
+            if rejectors:
+                classes.append("ensemble_disagreement")
+            if classes:
+                screened[candidate_id] = {
+                    "candidate_id": candidate_id,
+                    "episode_id": str(episode_id),
+                    "screen_classes": classes,
+                    "ensemble_rejectors": rejectors,
+                    "maximum_neighbor_similarity": maximum_similarity,
+                    "top_neighbors": top_neighbors,
+                }
+    if observed != set(composed):
+        raise TrueNorthError(
+            "marginal screen and disposition scopes differ"
+        )
+    return screened
+
+
+def build_phase_c_marginal_packet(
+    *,
+    suite: str,
+    candidate_ids: Sequence[str],
+    candidate_by_id: Mapping[str, Mapping[str, Any]],
+    segment_by_id: Mapping[str, Mapping[str, Any]],
+    screened: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    packet_candidates: list[dict[str, Any]] = []
+    neighbors_by_candidate: dict[str, list[str]] = {}
+    for candidate_id in candidate_ids:
+        candidate = candidate_by_id[candidate_id]
+        segment_id = str(candidate["segment_id"])
+        segment_text = str(segment_by_id[segment_id]["text"])
+        evidence_start = int(candidate["evidence_start"])
+        evidence_end = int(candidate["evidence_end"])
+        evidence_text = str(candidate["evidence_text"])
+        if (
+            evidence_start < 0
+            or evidence_end > len(segment_text)
+            or evidence_start >= evidence_end
+            or segment_text[evidence_start:evidence_end]
+            != evidence_text
+        ):
+            raise TrueNorthError(
+                "marginal packet evidence offsets do not bind exactly: "
+                f"{candidate_id}"
+            )
+        crop_start = max(
+            0, evidence_start - PHASE_C_MARGINAL_SEGMENT_RADIUS
+        )
+        crop_end = min(
+            len(segment_text),
+            evidence_end + PHASE_C_MARGINAL_SEGMENT_RADIUS,
+        )
+        neighbors = []
+        for neighbor_row in screened[candidate_id]["top_neighbors"]:
+            neighbor_id = str(neighbor_row["candidate_id"])
+            neighbor = candidate_by_id[neighbor_id]
+            neighbors.append(
+                {
+                    "candidate_id": neighbor_id,
+                    "claim_text": str(neighbor["claim_text"]),
+                    "evidence_text": str(neighbor["evidence_text"]),
+                    "similarity": float(neighbor_row["similarity"]),
+                }
+            )
+        neighbors_by_candidate[candidate_id] = [
+            str(row["candidate_id"]) for row in neighbors
+        ]
+        packet_candidates.append(
+            {
+                "candidate_id": candidate_id,
+                "claim_text": str(candidate["claim_text"]),
+                "evidence_text": evidence_text,
+                "evidence_start": evidence_start,
+                "evidence_end": evidence_end,
+                "screen_classes": list(
+                    screened[candidate_id]["screen_classes"]
+                ),
+                "segment_context": {
+                    "segment_id": segment_id,
+                    "crop_text": segment_text[crop_start:crop_end],
+                    "crop_start": crop_start,
+                    "crop_end": crop_end,
+                    "evidence_start": evidence_start,
+                    "evidence_end": evidence_end,
+                    "evidence_start_in_crop": (
+                        evidence_start - crop_start
+                    ),
+                    "evidence_end_in_crop": evidence_end - crop_start,
+                },
+                "neighbors": neighbors,
+            }
+        )
+    return {
+        "schema_version": MULTIPASS_SCHEMA_VERSION,
+        "suite_id": suite,
+        "multipass_stage": "marginal_junk_verify",
+        "task": (
+            "Decide whether each provisionally retained candidate adds a "
+            "proposition not carried by its shown retained neighbors."
+        ),
+        "instructions": [
+            "Return one verdict for every candidate and no others.",
+            "A repetition reject must name duplicate_of from the shown neighbors.",
+            "Every non-repetition reject requires a verbatim deficiency_quote from evidence_text.",
+            "A confirmed retention requires null junk_reason, duplicate_of, and deficiency_quote.",
+        ],
+        "output_schema": phase_c_marginal_schema(
+            candidate_ids, neighbors_by_candidate
+        ),
+        "input": {"candidates": packet_candidates},
+    }
+
+
+def _phase_c_marginal_reason_matches(
+    screen_classes: Sequence[str], junk_reason: str
+) -> bool:
+    if junk_reason == "repetition":
+        return "repetition" in screen_classes
+    if junk_reason in {"bare_mention", "metadata"}:
+        return "chrome_bare_mention" in screen_classes
+    if junk_reason == "question_or_setup":
+        return "pure_interrogative" in screen_classes
+    if junk_reason == "fragment":
+        return "dangling_fragment" in screen_classes
+    return False
+
+
+def compose_phase_c_marginal_verification(
+    composed: Mapping[str, Mapping[str, Any]],
+    screened: Mapping[str, Mapping[str, Any]],
+    verifier: Mapping[str, Mapping[str, Any]],
+    spark: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Apply Task-4c's asymmetric relational-junk composition."""
+
+    if set(verifier) != set(screened):
+        if not set(verifier).issubset(screened):
+            raise TrueNorthError(
+                "marginal verifier attempted an unscreened candidate"
+            )
+        raise TrueNorthError(
+            "marginal verifier did not cover every screened candidate"
+        )
+    predictions = {
+        candidate_id: dict(decision)
+        for candidate_id, decision in composed.items()
+    }
+    escalation_reasons: dict[str, str] = {}
+    flipped: list[str] = []
+    for candidate_id in sorted(screened):
+        decision = verifier[candidate_id]
+        screen = screened[candidate_id]
+        maximum_similarity = float(
+            screen["maximum_neighbor_similarity"]
+            if "maximum_neighbor_similarity" in screen
+            else max(
+                (
+                    float(row["similarity"])
+                    for row in screen["top_neighbors"]
+                ),
+                default=0.0,
+            )
+        )
+        if decision["verdict"] == "confirm_retain":
+            if (
+                "repetition" in screen["screen_classes"]
+                and maximum_similarity
+                >= PHASE_C_MARGINAL_SPARK_CONFIRM_JACCARD
+            ):
+                escalation_reasons[candidate_id] = (
+                    "high_similarity_confirm"
+                )
+            continue
+        reason = str(decision["junk_reason"])
+        duplicate_of = decision.get("duplicate_of")
+        duplicate_similarity = next(
+            (
+                float(row["similarity"])
+                for row in screen["top_neighbors"]
+                if str(row["candidate_id"]) == str(duplicate_of)
+            ),
+            0.0,
+        )
+        corroborated = (
+            bool(screen["ensemble_rejectors"])
+            or _phase_c_marginal_reason_matches(
+                list(screen["screen_classes"]), reason
+            )
+            or (
+                reason == "repetition"
+                and duplicate_of is not None
+                and duplicate_similarity
+                >= PHASE_C_MARGINAL_JACCARD
+            )
+        )
+        final_reject = corroborated
+        if not corroborated:
+            escalation_reasons[candidate_id] = (
+                "uncorroborated_reject"
+            )
+            if candidate_id in spark:
+                final_reject = (
+                    spark[candidate_id]["verdict"] == "reject"
+                )
+        if final_reject:
+            predictions[candidate_id] = {
+                "candidate_id": candidate_id,
+                "disposition": "reject",
+                "junk_reason": reason,
+            }
+            flipped.append(candidate_id)
+    if not set(spark).issubset(escalation_reasons):
+        raise TrueNorthError(
+            "Spark marginal verdict exists outside escalation scope"
+        )
+    return {
+        "predictions": predictions,
+        "spark_escalation_candidate_ids": sorted(escalation_reasons),
+        "spark_escalation_reasons": escalation_reasons,
+        "flipped_candidate_ids": flipped,
+    }
+
+
 def _load_phase_c_task4b_inputs(
     suite_root: Path,
 ) -> tuple[
@@ -9502,6 +10015,389 @@ def run_phase_c_junk_verify(
         ],
         "glm_packet_count": len(batches),
         "spark_escalation_count": len(escalation_ids),
+        "flipped_candidate_ids": composition[
+            "flipped_candidate_ids"
+        ],
+        "score": score,
+        "usage": usage,
+        "budget": budget,
+        "holdout_opened": False,
+        "production_mutation": False,
+    }
+    result["result_sha256"] = sha256_text(dumps_json(result))
+    _write_json(
+        run_root / "outputs" / "combined.private.json",
+        {
+            "items": [
+                composition["predictions"][candidate_id]
+                for candidate_id in sorted(
+                    composition["predictions"]
+                )
+            ]
+        },
+        immutable=True,
+    )
+    _write_json(
+        run_root / "result.private.json", result, immutable=True
+    )
+    return result
+
+
+def _load_phase_c_task4c_inputs(
+    suite_root: Path,
+) -> tuple[
+    dict[str, list[dict[str, Any]]],
+    dict[str, dict[str, Any]],
+    tuple[dict[str, dict[str, Any]], ...],
+    dict[str, dict[str, Any]],
+    dict[str, dict[str, Any]],
+]:
+    episodes, composed, ensemble = _load_phase_c_task4b_inputs(
+        suite_root
+    )
+    manifest = _read_json(suite_root / "manifest.json")
+    search_episode_ids = set(episodes)
+    candidate_by_id: dict[str, dict[str, Any]] = {}
+    segment_by_id: dict[str, dict[str, Any]] = {}
+    for row in manifest["bundles"]:
+        if str(row["episode_id"]) not in search_episode_ids:
+            continue
+        bundle = _read_json(Path(row["bundle_path"]))
+        for candidate in bundle["candidates"]:
+            candidate_by_id[str(candidate["candidate_id"])] = dict(
+                candidate
+            )
+        for segment in bundle["segments"]:
+            segment_id = str(segment["segment_id"])
+            if segment_id in segment_by_id:
+                raise TrueNorthError(
+                    f"duplicate Task-4c segment ID: {segment_id}"
+                )
+            segment_by_id[segment_id] = dict(segment)
+    if set(candidate_by_id) != set(composed):
+        raise TrueNorthError(
+            "Task-4c bundle and disposition scopes differ"
+        )
+    return (
+        episodes,
+        composed,
+        ensemble,
+        candidate_by_id,
+        segment_by_id,
+    )
+
+
+def dry_run_phase_c_marginal_screen(
+    *,
+    output_root: str | Path | None = None,
+    suite: str = SUITE_ID,
+) -> dict[str, Any]:
+    suite_root = _suite_root(output_root, suite)
+    if not verify_suite(output_root=output_root, suite=suite)["ok"]:
+        raise TrueNorthError(
+            "suite verification failed before Task-4c screen"
+        )
+    (
+        episodes,
+        composed,
+        ensemble,
+        candidate_by_id,
+        segment_by_id,
+    ) = _load_phase_c_task4c_inputs(suite_root)
+    screened = screen_phase_c_marginal_candidates(
+        episodes, composed, ensemble
+    )
+    selected_ids = sorted(screened)
+    batches = [
+        selected_ids[index : index + PHASE_C_MARGINAL_BATCH_SIZE]
+        for index in range(
+            0, len(selected_ids), PHASE_C_MARGINAL_BATCH_SIZE
+        )
+    ]
+    if len(batches) > PHASE_C_MARGINAL_MAX_GLM_CALLS:
+        raise TrueNorthError(
+            "Task-4c screen exceeds declared GLM call budget"
+        )
+    packet_hashes: list[str] = []
+    for candidate_ids in batches:
+        packet = build_phase_c_marginal_packet(
+            suite=suite,
+            candidate_ids=candidate_ids,
+            candidate_by_id=candidate_by_id,
+            segment_by_id=segment_by_id,
+            screened=screened,
+        )
+        packet_hashes.append(sha256_text(dumps_json(packet)))
+    class_counts = Counter(
+        screen_class
+        for row in screened.values()
+        for screen_class in row["screen_classes"]
+    )
+    retained_count = sum(
+        _gold_value_state(str(row["disposition"])) == "value"
+        for row in composed.values()
+    )
+    report = {
+        "schema_version": MULTIPASS_SCHEMA_VERSION,
+        "phase": "phase_c_marginal_screen",
+        "suite_id": suite,
+        "source_disposition_result_sha256": (
+            "f1f5ebda6e8c88ddc845767bdeab7f6fdf45a2e9c7aabd434a0a9e4c48a06fcd"
+        ),
+        "thresholds": {
+            "repetition_token_jaccard": PHASE_C_MARGINAL_JACCARD,
+            "spark_confirm_token_jaccard": (
+                PHASE_C_MARGINAL_SPARK_CONFIRM_JACCARD
+            ),
+            "segment_context_radius": (
+                PHASE_C_MARGINAL_SEGMENT_RADIUS
+            ),
+        },
+        "retained_count": retained_count,
+        "screened_count": len(screened),
+        "screen_class_counts": dict(sorted(class_counts.items())),
+        "packet_count": len(batches),
+        "packet_hashes": packet_hashes,
+        "screened": [
+            screened[candidate_id]
+            for candidate_id in selected_ids
+        ],
+        "gold_accessed": False,
+        "model_calls_made": 0,
+        "holdout_opened": False,
+        "production_mutation": False,
+    }
+    report["screen_sha256"] = sha256_text(dumps_json(report))
+    return report
+
+
+def _phase_c_marginal_outputs(
+    output_root: Path,
+) -> dict[str, dict[str, Any]]:
+    results: dict[str, dict[str, Any]] = {}
+    for path in sorted(output_root.glob("*/validated.private.json")):
+        for item in _read_json(path)["items"]:
+            candidate_id = str(item["candidate_id"])
+            if candidate_id in results:
+                raise TrueNorthError(
+                    f"duplicate marginal-verifier output: {candidate_id}"
+                )
+            results[candidate_id] = dict(item)
+    return results
+
+
+def run_phase_c_marginal_verify(
+    *,
+    output_root: str | Path | None = None,
+    suite: str = SUITE_ID,
+    timeout_seconds: int = 900,
+    opencode_binary: str = "/opt/homebrew/bin/opencode",
+    run_id: str = "phase-c-marginal-verify-20260728-v1",
+    runner: Any | None = None,
+) -> dict[str, Any]:
+    """Run Task-4c once with neighbor and segment context."""
+
+    suite_root = _suite_root(output_root, suite)
+    screen_report = dry_run_phase_c_marginal_screen(
+        output_root=output_root, suite=suite
+    )
+    (
+        episodes,
+        composed,
+        ensemble,
+        candidate_by_id,
+        segment_by_id,
+    ) = _load_phase_c_task4c_inputs(suite_root)
+    screened = screen_phase_c_marginal_candidates(
+        episodes, composed, ensemble
+    )
+    selected_ids = sorted(screened)
+    batches = [
+        selected_ids[index : index + PHASE_C_MARGINAL_BATCH_SIZE]
+        for index in range(
+            0, len(selected_ids), PHASE_C_MARGINAL_BATCH_SIZE
+        )
+    ]
+    run_root = suite_root / "phase-c" / "runs" / run_id
+    budget = {
+        "max_glm_calls": PHASE_C_MARGINAL_MAX_GLM_CALLS,
+        "max_spark_calls": PHASE_C_MARGINAL_MAX_SPARK_CALLS,
+        "max_total_calls": (
+            PHASE_C_MARGINAL_MAX_GLM_CALLS
+            + PHASE_C_MARGINAL_MAX_SPARK_CALLS
+        ),
+        "max_tokens": PHASE_C_MARGINAL_MAX_TOKENS,
+    }
+    configuration = {
+        "schema_version": MULTIPASS_SCHEMA_VERSION,
+        "phase": "phase_c_marginal_verify",
+        "suite_id": suite,
+        "suite_manifest_sha256": _read_json(
+            suite_root / "manifest.json"
+        )["manifest_sha256"],
+        "source_disposition_result_sha256": screen_report[
+            "source_disposition_result_sha256"
+        ],
+        "screen_sha256": screen_report["screen_sha256"],
+        "system_prompt_sha256": sha256_text(
+            PHASE_C_MARGINAL_SYSTEM_PROMPT
+        ),
+        "model": MULTIPASS_MODEL,
+        "spark_model": "openai/gpt-5.3-codex-spark",
+        "batch_size": PHASE_C_MARGINAL_BATCH_SIZE,
+        "budget": budget,
+        "single_run_no_iteration": True,
+        "holdout_access_allowed": False,
+        "production_database_open_allowed": False,
+    }
+    configuration["configuration_sha256"] = sha256_text(
+        dumps_json(configuration)
+    )
+    config_path = run_root / "configuration.json"
+    if config_path.is_file():
+        if _read_json(config_path) != configuration:
+            raise TrueNorthError(
+                "Task-4c resume configuration differs"
+            )
+    else:
+        _write_json(config_path, configuration, immutable=True)
+    _write_json(
+        run_root / "screen.private.json",
+        screen_report,
+        immutable=True,
+    )
+    actual_runner = runner or _run_opencode_packet
+    for index, candidate_ids in enumerate(batches, start=1):
+        packet = build_phase_c_marginal_packet(
+            suite=suite,
+            candidate_ids=candidate_ids,
+            candidate_by_id=candidate_by_id,
+            segment_by_id=segment_by_id,
+            screened=screened,
+        )
+        packet_path = (
+            run_root
+            / "packets"
+            / "glm"
+            / f"batch-{index:03d}.private.json"
+        )
+        _write_json(packet_path, packet, immutable=True)
+        kwargs = {
+            "packet_path": packet_path,
+            "output_dir": (
+                run_root
+                / "outputs"
+                / "glm"
+                / f"batch-{index:03d}"
+            ),
+            "models": (MULTIPASS_MODEL,),
+            "stage": "phase-c-marginal-verify",
+            "timeout_seconds": timeout_seconds,
+            "opencode_binary": opencode_binary,
+            "system_prompt": PHASE_C_MARGINAL_SYSTEM_PROMPT,
+            "validator": validate_phase_c_marginal_verify,
+        }
+        if runner is None:
+            kwargs["_semantic_retry_remaining"] = 0
+        actual_runner(**kwargs)
+        usage = _multipass_usage(
+            _phase_c_paid_attempt_receipts(run_root)
+        )
+        if (
+            usage["calls"] > PHASE_C_MARGINAL_MAX_GLM_CALLS
+            or usage["tokens"] > PHASE_C_MARGINAL_MAX_TOKENS
+        ):
+            raise TrueNorthError(
+                "Task-4c GLM usage exceeded declared budget"
+            )
+    verifier = _phase_c_marginal_outputs(
+        run_root / "outputs" / "glm"
+    )
+    preliminary = compose_phase_c_marginal_verification(
+        composed, screened, verifier, {}
+    )
+    escalation_ids = preliminary[
+        "spark_escalation_candidate_ids"
+    ]
+    if len(escalation_ids) > PHASE_C_MARGINAL_MAX_SPARK_CALLS:
+        raise TrueNorthError(
+            "Task-4c needs more Spark calls than authorized"
+        )
+    spark_results: dict[str, dict[str, Any]] = {}
+    for candidate_id in escalation_ids:
+        packet = build_phase_c_marginal_packet(
+            suite=suite,
+            candidate_ids=[candidate_id],
+            candidate_by_id=candidate_by_id,
+            segment_by_id=segment_by_id,
+            screened=screened,
+        )
+        packet_path = (
+            run_root
+            / "packets"
+            / "spark"
+            / f"{candidate_id}.private.json"
+        )
+        _write_json(packet_path, packet, immutable=True)
+        kwargs = {
+            "packet_path": packet_path,
+            "output_dir": (
+                run_root / "outputs" / "spark" / candidate_id
+            ),
+            "models": ("openai/gpt-5.3-codex-spark",),
+            "stage": "phase-c-marginal-verify-spark",
+            "timeout_seconds": timeout_seconds,
+            "opencode_binary": opencode_binary,
+            "system_prompt": PHASE_C_MARGINAL_SYSTEM_PROMPT,
+            "validator": validate_phase_c_marginal_verify,
+        }
+        if runner is None:
+            kwargs["_semantic_retry_remaining"] = 0
+        output, _, _ = actual_runner(**kwargs)
+        spark_results[candidate_id] = dict(output["items"][0])
+        usage = _multipass_usage(
+            _phase_c_paid_attempt_receipts(run_root)
+        )
+        if (
+            usage["calls"] > budget["max_total_calls"]
+            or usage["tokens"] > PHASE_C_MARGINAL_MAX_TOKENS
+        ):
+            raise TrueNorthError(
+                "Task-4c total usage exceeded declared budget"
+            )
+    composition = compose_phase_c_marginal_verification(
+        composed, screened, verifier, spark_results
+    )
+    consensus = _read_json(
+        suite_root
+        / "gold"
+        / "development"
+        / "final"
+        / "consensus.private.json"
+    )
+    score = _score_phase_c_dispositions(
+        consensus, composition["predictions"]
+    )
+    usage = _multipass_usage(
+        _phase_c_paid_attempt_receipts(run_root)
+    )
+    result = {
+        "schema_version": MULTIPASS_SCHEMA_VERSION,
+        "phase": "phase_c_marginal_verify",
+        "run_id": run_id,
+        "configuration_sha256": configuration[
+            "configuration_sha256"
+        ],
+        "screen_sha256": screen_report["screen_sha256"],
+        "screened_count": len(screened),
+        "screen_class_counts": screen_report[
+            "screen_class_counts"
+        ],
+        "glm_packet_count": len(batches),
+        "spark_escalation_count": len(escalation_ids),
+        "spark_escalation_reasons": composition[
+            "spark_escalation_reasons"
+        ],
         "flipped_candidate_ids": composition[
             "flipped_candidate_ids"
         ],
@@ -10632,6 +11528,23 @@ def build_parser() -> argparse.ArgumentParser:
     phase_c_junk_verify.add_argument(
         "--dry-run", action="store_true"
     )
+    phase_c_marginal_verify = sub.add_parser(
+        "phase-c-marginal-verify",
+        help="Run the approved relational Task-4c junk verifier.",
+    )
+    phase_c_marginal_verify.add_argument(
+        "--timeout-seconds", type=int, default=900
+    )
+    phase_c_marginal_verify.add_argument(
+        "--opencode-binary", default="/opt/homebrew/bin/opencode"
+    )
+    phase_c_marginal_verify.add_argument(
+        "--run-id",
+        default="phase-c-marginal-verify-20260728-v1",
+    )
+    phase_c_marginal_verify.add_argument(
+        "--dry-run", action="store_true"
+    )
     report = sub.add_parser("report", help="Render sanitized JSON and HTML reports.")
     report.add_argument("--run-id", required=True)
     for command_parser in (
@@ -10645,6 +11558,7 @@ def build_parser() -> argparse.ArgumentParser:
         multipass_score,
         phase_c_disposition,
         phase_c_junk_verify,
+        phase_c_marginal_verify,
         report,
     ):
         command_parser.add_argument(
@@ -10761,6 +11675,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 result = dry_run_phase_c_junk_screen(**common)
             else:
                 result = run_phase_c_junk_verify(
+                    timeout_seconds=args.timeout_seconds,
+                    opencode_binary=args.opencode_binary,
+                    run_id=args.run_id,
+                    **common,
+                )
+        elif args.command == "phase-c-marginal-verify":
+            if args.dry_run:
+                result = dry_run_phase_c_marginal_screen(**common)
+            else:
+                result = run_phase_c_marginal_verify(
                     timeout_seconds=args.timeout_seconds,
                     opencode_binary=args.opencode_binary,
                     run_id=args.run_id,

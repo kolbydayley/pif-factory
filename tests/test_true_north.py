@@ -1676,5 +1676,196 @@ def test_junk_verify_cannot_flip_unscreened_candidate():
         )
 
 
+def test_phase_c_marginal_screen_selects_all_five_fixture_junk_ids():
+    repeated_claim = (
+        "Frontier systems may resemble military technology distributed "
+        "to the public in a reduced form."
+    )
+    complete_evidence = (
+        "The speaker says frontier systems may resemble military "
+        "technology distributed to the public in a reduced form."
+    )
+    fixture_ids = {
+        "dev_c094b91406c9222943a29eba",
+        "dev_d7f6bd87ab720be875111f97",
+        "dev_ab9794e907ab6d420d4a9bea",
+        "dev_6184abb2048d10e9496e6ee4",
+        "dev_fcec890304c9c2b40332af53",
+    }
+    candidates = [
+        {
+            "candidate_id": "neighbor",
+            "claim_text": repeated_claim,
+            "evidence_text": complete_evidence,
+        },
+        {
+            "candidate_id": "dev_c094b91406c9222943a29eba",
+            "claim_text": repeated_claim,
+            "evidence_text": complete_evidence,
+        },
+        {
+            "candidate_id": "dev_d7f6bd87ab720be875111f97",
+            "claim_text": "A dangling hypothesis remains unfinished.",
+            "evidence_text": "because this thought never reaches a conclusion",
+        },
+        {
+            "candidate_id": "dev_ab9794e907ab6d420d4a9bea",
+            "claim_text": "The page references a request for information.",
+            "evidence_text": "[request for information]",
+        },
+        {
+            "candidate_id": "dev_6184abb2048d10e9496e6ee4",
+            "claim_text": "Could this system create a public risk?",
+            "evidence_text": "Could this system create a public risk?",
+        },
+        {
+            "candidate_id": "dev_fcec890304c9c2b40332af53",
+            "claim_text": "A complete substantive proposition.",
+            "evidence_text": "The speaker makes a complete proposition.",
+        },
+    ]
+    composed = {
+        row["candidate_id"]: {
+            "candidate_id": row["candidate_id"],
+            "disposition": "retain",
+            "junk_reason": None,
+        }
+        for row in candidates
+    }
+    first = {key: dict(value) for key, value in composed.items()}
+    second = {key: dict(value) for key, value in composed.items()}
+    first["dev_fcec890304c9c2b40332af53"] = {
+        "candidate_id": "dev_fcec890304c9c2b40332af53",
+        "disposition": "reject",
+        "junk_reason": "question_or_setup",
+    }
+
+    screened = true_north.screen_phase_c_marginal_candidates(
+        {"episode": candidates}, composed, (first, second)
+    )
+
+    assert fixture_ids.issubset(screened)
+    assert screened["dev_c094b91406c9222943a29eba"][
+        "top_neighbors"
+    ][0]["candidate_id"] == "neighbor"
+    assert "chrome_bare_mention" in screened[
+        "dev_ab9794e907ab6d420d4a9bea"
+    ]["screen_classes"]
+
+
+def test_phase_c_marginal_packet_has_crop_offsets_and_matched_neighbor():
+    segment_text = "x" * 500 + "exact evidence" + "y" * 500
+    candidate = {
+        "candidate_id": "candidate",
+        "segment_id": "segment",
+        "claim_text": "A repeated claim.",
+        "evidence_text": "exact evidence",
+        "evidence_start": 500,
+        "evidence_end": 514,
+    }
+    neighbor = {
+        "candidate_id": "neighbor",
+        "segment_id": "segment",
+        "claim_text": "A repeated claim.",
+        "evidence_text": "The repeated claim is stated.",
+    }
+    screened = {
+        "candidate": {
+            "candidate_id": "candidate",
+            "screen_classes": ["repetition"],
+            "ensemble_rejectors": [],
+            "top_neighbors": [
+                {"candidate_id": "neighbor", "similarity": 0.8}
+            ],
+        }
+    }
+
+    packet = true_north.build_phase_c_marginal_packet(
+        suite="suite",
+        candidate_ids=["candidate"],
+        candidate_by_id={"candidate": candidate, "neighbor": neighbor},
+        segment_by_id={"segment": {"segment_id": "segment", "text": segment_text}},
+        screened=screened,
+    )
+
+    row = packet["input"]["candidates"][0]
+    assert row["segment_context"]["crop_start"] == 100
+    assert row["segment_context"]["crop_end"] == 914
+    assert row["segment_context"]["evidence_start"] == 500
+    assert row["segment_context"]["evidence_end"] == 514
+    assert segment_text[500:514] == "exact evidence"
+    assert row["neighbors"][0]["candidate_id"] == "neighbor"
+    assert row["neighbors"][0]["similarity"] == 0.8
+
+
+def test_phase_c_marginal_repetition_reject_requires_shown_duplicate():
+    packet = {
+        "output_schema": true_north.phase_c_marginal_schema(
+            ["candidate"], {"candidate": ["neighbor"]}
+        ),
+        "input": {
+            "candidates": [
+                {
+                    "candidate_id": "candidate",
+                    "evidence_text": "Repeated proposition.",
+                    "neighbors": [{"candidate_id": "neighbor"}],
+                }
+            ]
+        },
+    }
+    output = {
+        "schema_version": true_north.MULTIPASS_SCHEMA_VERSION,
+        "items": [
+            {
+                "candidate_id": "candidate",
+                "verdict": "reject",
+                "junk_reason": "repetition",
+                "duplicate_of": None,
+                "deficiency_quote": None,
+            }
+        ],
+    }
+
+    with pytest.raises(
+        true_north.TrueNorthError, match="duplicate_of"
+    ):
+        true_north.validate_phase_c_marginal_verify(output, packet)
+
+
+def test_phase_c_marginal_high_similarity_confirm_triggers_spark():
+    composed = {
+        "candidate": {
+            "candidate_id": "candidate",
+            "disposition": "retain",
+            "junk_reason": None,
+        }
+    }
+    screened = {
+        "candidate": {
+            "screen_classes": ["repetition"],
+            "ensemble_rejectors": [],
+            "top_neighbors": [
+                {"candidate_id": "neighbor", "similarity": 0.72}
+            ],
+        }
+    }
+    verifier = {
+        "candidate": {
+            "candidate_id": "candidate",
+            "verdict": "confirm_retain",
+            "junk_reason": None,
+            "duplicate_of": None,
+            "deficiency_quote": None,
+        }
+    }
+
+    result = true_north.compose_phase_c_marginal_verification(
+        composed, screened, verifier, {}
+    )
+
+    assert result["spark_escalation_candidate_ids"] == ["candidate"]
+    assert result["predictions"]["candidate"]["disposition"] == "retain"
+
+
 if __name__ == "__main__":
     unittest.main()
