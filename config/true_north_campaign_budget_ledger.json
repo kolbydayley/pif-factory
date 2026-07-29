@@ -75,6 +75,22 @@
         "cumulative_calls_after": 208,
         "known_cumulative_tokens_after": 1688964
       }
+    },
+    {
+      "experiment_id": "stage-b-input-split-default-20260729-v1",
+      "sequence": 3,
+      "model": "zai-coding-plan/glm-5.2",
+      "max_calls": 30,
+      "max_tokens": 350000,
+      "max_wall_seconds": 7200,
+      "input_contract_exception": "owner_authorized_flagged_clause_segmentation_and_merge_default",
+      "unflagged_control": "reuse_frozen_task5_outputs_without_new_calls",
+      "status": "declared",
+      "provenance": {
+        "source_kind": "review_thread_directive_in_active_codex_thread",
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Run one input-side split-default inversion on conjunction-or-comma flagged Search candidates, then stop if it fails."
+      }
     }
   ]
 }
