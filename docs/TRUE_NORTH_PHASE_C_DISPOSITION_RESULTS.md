@@ -125,3 +125,50 @@ at manifest SHA-256
 `f27c15b26388be7773d1457ced2ebd5cfc1c78c8edbecf86398213d7c0140bde`;
 the production source remained unchanged. No further Task 4c calls are
 authorized under the unchanged one-run, 150,000-token contract.
+
+## Task 4d option 2 checkpoint
+
+Task 4c is retired. An offline review swept 36 proximity, shared-stem, and
+stem-rarity parameterizations against the real development bundles. Every
+setting that admitted all five known junk fixtures selected 946–1,001 of 1,056
+retained candidates; selective settings dropped fixtures. This independently
+reproduced the Amendment 2a failure mode and established that there is no
+surface-screen operating point.
+
+The approved option-2 measurement contract is recorded in the suite manifest:
+
+- Previous manifest SHA-256:
+  `f27c15b26388be7773d1457ced2ebd5cfc1c78c8edbecf86398213d7c0140bde`
+- Amended manifest SHA-256:
+  `519250505f6b458502b8825cb8a6d65c66d93c9b6bd6d7892e94663b3b98d961`
+- Measurement-contract SHA-256:
+  `dedab8c1cb837229da2d2b38730ee37e76e4eaa7e1b9bb6a4ba4681116ef754f`
+
+The Phase C disposition gate now counts intrinsic junk only. Relational
+families (`non_useful_repetition*`, `nonasserted_question_frame`) are excluded
+from that gate only conditionally: certification must prove an identifying
+canonical merge with a corroborating non-junk peer and ledger category
+`merged_duplicate_retained`.
+
+### Coupled gate result
+
+| Measure | Result | Required | Pass |
+|---|---:|---:|---|
+| Intrinsic junk escapes | 1 | 0 | No |
+| False rejects | 8 | ≤10 | Yes |
+| Retained-value recall | 0.966527 | ≥0.95 | Yes |
+| Relational escapes | 2 | — | — |
+| Canonically merged relational escapes | 0 | 2 | No |
+| `merged_duplicate_retained` rows | 0 | 2 | No |
+| Relational contamination | 2 | 0 | No |
+
+The remaining intrinsic escape is
+`dev_6184abb2048d10e9496e6ee4`. The two relational contamination candidates are
+`dev_ab9794e907ab6d420d4a9bea` and
+`dev_fcec890304c9c2b40332af53`. Both are unmerged, and neither carries
+`merged_duplicate_retained`.
+
+The combined checkpoint failed and Task 5 was not authorized or started. No
+sealed holdout was opened, no paid model call was made, and the production
+source remained unchanged. The checkpoint is frozen at SHA-256
+`52b10ea706fb381f9c9bef1c2e9246a290ba408f8441bf96b2a5c8889d8c1c92`.
