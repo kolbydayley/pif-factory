@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import signal
 import shutil
 import subprocess
@@ -19,6 +20,10 @@ from .util import dumps_json, loads_json, now_iso, read_text, stable_id, write_t
 
 
 CORPUS_TEXT_READ_TIMEOUT_SECONDS = 3.0
+# Darwin exposes this as SF_DATALESS in sys/stat.h, but Python's stat module
+# does not currently export it.  Checking the inode flag does not hydrate the
+# file-provider placeholder.
+SF_DATALESS = 0x40000000
 
 
 def preflight(model: str) -> dict[str, Any]:
@@ -50,14 +55,49 @@ def run_jobs(
     job_types: tuple[str, ...] | None = None,
     max_label_prompts: int | None = 25,
 ) -> dict[str, Any]:
-    stats: dict[str, Any] = {"processed": 0, "completed": 0, "claimed_prompts": 0, "failed": 0, "details": []}
+    stats: dict[str, Any] = {
+        "processed": 0,
+        "completed": 0,
+        "claimed_prompts": 0,
+        "failed": 0,
+        "deferred": 0,
+        "details": [],
+    }
     job_types = job_types or ("fetch_transcript", "transcribe_audio", "prepare_transcript", "episode_context", "label_segment", "audit_label")
     if worker_id.startswith("transcript-discovery") and "label_segment" in job_types:
         raise ValueError("transcript-discovery workers are fetch-only and may not claim label_segment jobs")
+    deferred_job_ids: set[int] = set()
     for _ in range(limit):
-        job = claim_next_job(conn, lane=lane, worker_id=worker_id, job_types=job_types)
+        job = claim_next_job(
+            conn,
+            lane=lane,
+            worker_id=worker_id,
+            job_types=job_types,
+            exclude_job_ids=deferred_job_ids,
+        )
         if not job:
             break
+        readiness = prompt_input_readiness(conn, job)
+        if not readiness["ready"]:
+            release_job(conn, job["id"])
+            deferred_job_ids.add(int(job["id"]))
+            reason = "corpus_input_not_hydrated:" + ",".join(
+                item["reason"] for item in readiness["unready"]
+            )
+            conn.execute(
+                "UPDATE jobs SET error = ?, updated_at = ? WHERE id = ?",
+                (reason, now_iso(), job["id"]),
+            )
+            stats["deferred"] += 1
+            stats["details"].append(
+                {
+                    "job_id": job["id"],
+                    "type": job["job_type"],
+                    "result": "deferred_corpus_input_not_ready",
+                    "readiness": readiness,
+                }
+            )
+            continue
         stats["processed"] += 1
         try:
             payload = loads_json(job["payload_json"], {})
@@ -155,7 +195,15 @@ def run_jobs(
     return stats
 
 
-def claim_next_job(conn, *, lane: str, worker_id: str, lease_minutes: int = 45, job_types: tuple[str, ...] | None = None):
+def claim_next_job(
+    conn,
+    *,
+    lane: str,
+    worker_id: str,
+    lease_minutes: int = 45,
+    job_types: tuple[str, ...] | None = None,
+    exclude_job_ids: set[int] | None = None,
+):
     now = now_iso()
     leased_until = (dt.datetime.fromisoformat(now) + dt.timedelta(minutes=lease_minutes)).isoformat()
     params: list[Any] = [worker_id, leased_until, now, lane, now]
@@ -164,6 +212,12 @@ def claim_next_job(conn, *, lane: str, worker_id: str, lease_minutes: int = 45, 
         placeholders = ", ".join("?" for _ in job_types)
         job_type_filter = f" AND job_type IN ({placeholders})"
         params.extend(job_types)
+    excluded_filter = ""
+    if exclude_job_ids:
+        excluded = sorted(int(job_id) for job_id in exclude_job_ids)
+        placeholders = ", ".join("?" for _ in excluded)
+        excluded_filter = f" AND id NOT IN ({placeholders})"
+        params.extend(excluded)
     claimed = conn.execute(
         f"""
         UPDATE jobs
@@ -178,6 +232,7 @@ def claim_next_job(conn, *, lane: str, worker_id: str, lease_minutes: int = 45, 
             AND attempts < max_attempts
             AND (status = 'pending' OR (status = 'claimed' AND leased_until < ?))
             {job_type_filter}
+            {excluded_filter}
           ORDER BY priority ASC, id ASC
           LIMIT 1
         )
@@ -223,6 +278,134 @@ def release_job(conn, job_id: int) -> None:
         """,
         (ts, job_id),
     )
+
+
+def prompt_input_readiness(conn, job) -> dict[str, Any]:
+    """Inspect every filesystem input a prompt job will read without opening it."""
+
+    paths: list[tuple[str, str]] = []
+    if job["job_type"] == "label_segment":
+        row = conn.execute(
+            """
+            SELECT episode_id, segment_index, text_path
+            FROM segments
+            WHERE id = ?
+            """,
+            (job["target_id"],),
+        ).fetchone()
+        if row is None:
+            return {
+                "ready": False,
+                "checked": 0,
+                "unready": [
+                    {
+                        "kind": "segment",
+                        "id": job["target_id"],
+                        "reason": "segment_missing",
+                    }
+                ],
+            }
+        payload = loads_json(job["payload_json"], {})
+        if payload.get("label_pack") == "ai_discourse_v3_1":
+            rows = conn.execute(
+                """
+                SELECT id, text_path
+                FROM segments
+                WHERE episode_id = ?
+                  AND segment_index BETWEEN ? AND ?
+                ORDER BY segment_index
+                """,
+                (
+                    row["episode_id"],
+                    int(row["segment_index"]) - 1,
+                    int(row["segment_index"]) + 1,
+                ),
+            ).fetchall()
+            paths.extend(
+                (f"segment:{neighbor['id']}", neighbor["text_path"])
+                for neighbor in rows
+            )
+        else:
+            paths.append((f"segment:{job['target_id']}", row["text_path"]))
+    elif job["job_type"] == "episode_context":
+        rows = conn.execute(
+            """
+            SELECT id, text_path
+            FROM segments
+            WHERE episode_id = ?
+            ORDER BY transcript_id, segment_index
+            """,
+            (job["target_id"],),
+        ).fetchall()
+        if not rows:
+            return {
+                "ready": False,
+                "checked": 0,
+                "unready": [
+                    {
+                        "kind": "episode_context",
+                        "id": job["target_id"],
+                        "reason": "episode_segments_missing",
+                    }
+                ],
+            }
+        paths.extend(
+            (f"segment:{segment['id']}", segment["text_path"])
+            for segment in rows
+        )
+    else:
+        return {"ready": True, "checked": 0, "unready": []}
+
+    unready: list[dict[str, Any]] = []
+    project_root = corpus_dir().parent
+    for identifier, text_path in paths:
+        path = project_root / text_path
+        identity = corpus_path_readiness(path)
+        if not identity["ready"]:
+            unready.append(
+                {
+                    "kind": identifier.split(":", 1)[0],
+                    "id": identifier.split(":", 1)[1],
+                    "reason": identity["reason"],
+                    "text_path": text_path,
+                }
+            )
+    return {
+        "ready": not unready,
+        "checked": len(paths),
+        "unready": unready,
+    }
+
+
+def corpus_path_readiness(path: str | Path) -> dict[str, Any]:
+    """Return storage readiness without causing File Provider materialization."""
+
+    resolved = Path(path)
+    try:
+        info = os.stat(resolved)
+    except FileNotFoundError:
+        return {"ready": False, "reason": "missing"}
+    except OSError as exc:
+        return {
+            "ready": False,
+            "reason": f"stat_failed:{exc.__class__.__name__}:{exc.errno}",
+        }
+    flags = int(getattr(info, "st_flags", 0))
+    if flags & SF_DATALESS:
+        return {
+            "ready": False,
+            "reason": "dataless",
+            "size_bytes": int(info.st_size),
+            "flags": flags,
+        }
+    if not resolved.is_file():
+        return {"ready": False, "reason": "not_regular_file", "flags": flags}
+    return {
+        "ready": True,
+        "reason": None,
+        "size_bytes": int(info.st_size),
+        "flags": flags,
+    }
 
 
 def fail_job(conn, job_id: int, reason: str) -> None:
