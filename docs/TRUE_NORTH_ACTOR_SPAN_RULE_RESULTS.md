@@ -77,6 +77,50 @@ The natural composition to measure next: deterministic span rule for emission,
 cheap model only for value selection among literal spans when several are
 present.
 
+## Oracle bound for the remaining half — before anyone funds a value stage
+
+T1 fixed emission. Value selection (64.3182% on gold non-null) is the open half.
+`runs/actor-span-rule-20260729/oracle_bound.py` measures what a value stage
+could ever achieve, with no model calls.
+
+| Question | Result |
+|---|---:|
+| Gold actor is a literal span of its own evidence | **440/440 = 100.0%** |
+| Unreachable for any span-restricted selector | **0** |
+| Prior already correct when reachable | 283/440 = 64.3182% |
+| **Residual — the only items a paid value stage can win** | **157** |
+
+**Nothing is out of reach.** Every gold actor is present verbatim in its own
+evidence, so a span-restricted selector has no structural ceiling and the whole
+problem is picking the right span. The addressable surface is 157 atomics —
+10.8% of the 1,458-atomic population.
+
+### The decisive number
+
+| Composition | Field agreement |
+|---|---:|
+| Span-enforced prior (T1, shipped) | 1094/1458 = 75.0343% |
+| **+ a PERFECT value stage on all 157 residual items** | **1251/1458 = 85.8025%** |
+| Reported-actor gate | 90.3182% |
+
+**A perfect actor value selector still lands 4.5 points below the gate.** No
+amount of spend on value selection can close this gate, because the gate is not
+reachable on this measure. That is the same conclusion the denominator work
+reached from the other direction
+(`docs/TRUE_NORTH_GATE_DENOMINATOR_ALIGNMENT.md`: gold-vs-gold reaches 0.6847
+on the gate's own denominator).
+
+**Recommendation: do not fund a paid actor value stage until the gate contract
+is settled.** The ceiling is known, it is below the bar, and T1 already captured
+the free 55.6 points. Fix the measurement first.
+
+Caveat: this script's span *option enumerator* (capitalized-run heuristic plus
+speaker roster) failed to enumerate the gold span on 255 of 440 items, so its
+`span_option_count_distribution` and `residual_option_count_distribution` are
+indicative only and understate how often a single-option deterministic pick is
+available. Reachability (100%) and the residual count (157) do not depend on the
+enumerator — they are computed directly against gold.
+
 ## What this does not establish
 
 - Not a gate result. The composite reported-actor gate runs through the Search
