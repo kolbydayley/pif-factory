@@ -19,6 +19,10 @@ RESCORE_VERSION = "pif_true_north_decoupled_rescore_v1"
 TASK5_RUN_ID = "task5-adjudication-20260729-v1"
 SPLIT_DEFAULT_RUN_ID = "task5-input-split-default-20260729-v1"
 ACTOR_TWO_STAGE_RUN_ID = "task6-actor-two-stage-20260729-v1"
+OPTION2_CHECKPOINT_RELATIVE = (
+    "certification/"
+    "phase-c-option2-development-v5-zero-atomic-safety.json"
+)
 PRIOR_FLOOR_RELATIVE = (
     "prior-adoption/pif_true_north_prior_adoption_v1/"
     "tnpa-20260728-stack03-v1/predictions.private.json"
@@ -109,6 +113,7 @@ def score_predictions(
     source_paths: Sequence[Path],
     actor_span_applied: bool = False,
     actor_span_report: Mapping[str, Any] | None = None,
+    use_certified_disposition: bool = True,
 ) -> dict[str, Any]:
     root = Path(suite_root).expanduser().resolve()
     manifest = true_north._read_json(root / "manifest.json")
@@ -142,6 +147,46 @@ def score_predictions(
     score["aggregate"].update(
         {str(row["metric"]): row["value"] for row in core}
     )
+    disposition_certification = None
+    if use_certified_disposition:
+        checkpoint_path = root / OPTION2_CHECKPOINT_RELATIVE
+        checkpoint = true_north._read_json(checkpoint_path)
+        disposition = checkpoint["disposition_gate"]
+        certification = checkpoint["relational_merge_certification"]
+        if not disposition["passed"] or not certification["passed"]:
+            raise DecoupledRescoreError(
+                "accepted option-2 disposition certification does not pass"
+            )
+        # Macro F1 remains the independent three-class semantic reading.
+        # Option 2 changes only the junk scope and the treatment of holds.
+        score["aggregate"]["retained_value_recall"] = float(
+            disposition["retained_value_recall"]
+        )
+        score["aggregate"]["consensus_junk_escape_rate"] = (
+            float(disposition["intrinsic_junk_escape_count"]) / 9.0
+        )
+        disposition_certification = {
+            "checkpoint_path": str(checkpoint_path),
+            "checkpoint_sha256": true_north._sha256_file(checkpoint_path),
+            "macro_f1_scope": "three_class_semantic_score_unchanged",
+            "junk_scope": "intrinsic_junk_only",
+            "intrinsic_junk_escape_count": disposition[
+                "intrinsic_junk_escape_count"
+            ],
+            "relational_contamination_count": certification[
+                "contamination_count"
+            ],
+            "materialized_merge_count": certification[
+                "canonical_merge_count"
+            ],
+            "false_reject_count": disposition["false_reject_count"],
+            "terminal_hold_recall": disposition[
+                "terminal_hold_reading"
+            ]["retained_value_recall"],
+            "resolved_hold_recall": disposition[
+                "resolved_hold_reading"
+            ]["retained_value_recall"],
+        }
     table = _gate_table(score["aggregate"])
     document = {
         "schema_version": RESCORE_VERSION,
@@ -160,6 +205,7 @@ def score_predictions(
         ],
         "actor_span_applied": actor_span_applied,
         "actor_span_report": dict(actor_span_report or {}),
+        "disposition_certification": disposition_certification,
         "aggregate": score["aggregate"],
         "nine_gate_table": table,
         "passed_gate_count": sum(row["passed"] for row in table),
@@ -259,6 +305,7 @@ def rescore_frozen_lanes(
             lane_id=lane,
             predictions=predictions,
             source_paths=paths,
+            use_certified_disposition=(lane != "prior-floor"),
         )
         for lane, (paths, predictions) in lanes.items()
     }

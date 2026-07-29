@@ -138,7 +138,7 @@
       "max_calls": 14,
       "max_tokens": 250000,
       "max_wall_seconds": 7200,
-      "status": "declared",
+      "status": "terminal_budget_breach_partial_ineligible",
       "input_contract": "exact_19_flagged_packets_from_task5-input-split-default-20260729-v1",
       "provider_envelopes": 14,
       "batching_contract": "deterministically pack the 19 immutable semantic packets into 14 provider envelopes; validate every inner output against its original packet",
@@ -151,6 +151,25 @@
         "source_kind": "review_thread_directive_in_active_codex_thread",
         "directive_received_at": "2026-07-29",
         "directive_summary": "Run one Spark x split-default probe, then stop decomposition if it fails."
+      },
+      "actual": {
+        "run_id": "task5-spark-input-split-default-20260729-v1",
+        "calls": 14,
+        "tokens": 309122,
+        "token_overage": 59122,
+        "validated_provider_envelopes": 4,
+        "expected_provider_envelopes": 14,
+        "validated_spark_candidates": 12,
+        "flagged_candidates": 106,
+        "same_candidate_spark_atomic_accuracy": 0.9166666666666666,
+        "same_candidate_glm_atomic_accuracy": 0.9166666666666666,
+        "partial_fallback_full_fold_atomic_accuracy": 0.7844827586206896,
+        "partial_fallback_aligned_faithfulness": 0.747826,
+        "result_sha256": "6c65cd742a5133775f2f63ddfc7c3a73552e91d1df50e9bb9dd07c785b106657",
+        "cumulative_calls_after": 250,
+        "known_cumulative_tokens_after": 2326768,
+        "acceptance_eligible": false,
+        "decomposition_lane_stopped": true
       }
     }
   ]

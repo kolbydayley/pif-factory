@@ -511,7 +511,7 @@ def score_spark_split_default_probe(
         actor_span_applied=True,
         actor_span_report=span_report,
     )
-    private = true_north._read_json(decoupled["output_path"])
+    private = true_north._read_json(Path(decoupled["output_path"]))
     candidate_scores = {
         str(row["candidate_id"]): row
         for row in private["private_candidate_scores"]
@@ -684,3 +684,329 @@ def score_spark_split_default_probe(
     path = run_root / "spark-split-default-score.private.json"
     true_north._write_json(path, document, immutable=False)
     return {**document, "score_path": str(path)}
+
+
+def finalize_partial_spark_split_default_probe(
+    *,
+    suite_root: str | Path,
+    run_id: str,
+) -> dict[str, Any]:
+    """Freeze a budget-breaching partial run with explicit Task-5 fallback."""
+
+    root = Path(suite_root).expanduser().resolve()
+    run_root = root / "multipass" / "runs" / run_id
+    configuration = true_north._read_json(
+        run_root / "configuration.json"
+    )
+    state = true_north._read_json(run_root / "state.json")
+    if configuration.get("schema_version") != SCHEMA_VERSION:
+        raise SparkSplitDefaultError(
+            "run is not a Spark split-default probe"
+        )
+    if state.get("complete") is True:
+        raise SparkSplitDefaultError(
+            "complete runs use the normal Spark scorer"
+        )
+    if int(state["usage"]["calls"]) != MAX_CALLS:
+        raise SparkSplitDefaultError(
+            "partial Spark probe has not exhausted its call ceiling"
+        )
+    if int(state["usage"]["tokens"]) <= MAX_TOKENS:
+        raise SparkSplitDefaultError(
+            "partial finalizer is reserved for the measured token breach"
+        )
+
+    valid_outputs: list[dict[str, Any]] = []
+    valid_paths: list[Path] = []
+    for path in sorted(
+        (run_root / "outputs" / "spark-input-split-default").glob(
+            "*/*/validated.private.json"
+        )
+    ):
+        packet = true_north._read_json(
+            run_root
+            / "packets"
+            / "spark-input-split-default"
+            / "search"
+            / f"{path.parent.name}.private.json"
+        )
+        output = true_north._read_json(path)
+        validate_provider_output(output, packet)
+        valid_paths.append(path)
+        valid_outputs.append(output)
+    spark_by_candidate = {
+        str(row["candidate_id"]): {
+            key: value
+            for key, value in row.items()
+            if key != "merge_reason"
+        }
+        for output in valid_outputs
+        for row in output["items"]
+    }
+    if not spark_by_candidate:
+        raise SparkSplitDefaultError(
+            "partial probe has no validated Spark candidates"
+        )
+
+    manifest = true_north._read_json(root / "manifest.json")
+    base_jobs, dispositions, candidates = _load_search_context(
+        root, manifest
+    )
+    (
+        _reference_root,
+        reference_packets,
+        reference_outputs,
+        _reference_provenance,
+    ) = _reference_artifacts(root)
+    predictions: list[dict[str, Any]] = []
+    for key, reference in sorted(reference_outputs.items()):
+        adjudication = {
+            "schema_version": true_north.MULTIPASS_SCHEMA_VERSION,
+            "items": [
+                copy.deepcopy(
+                    spark_by_candidate.get(
+                        str(row["candidate_id"]), row
+                    )
+                )
+                for row in reference["items"]
+            ],
+        }
+        true_north.validate_multipass_adjudication(
+            adjudication, reference_packets[key]
+        )
+        output = true_north.compose_multipass_output(
+            base_jobs[key],
+            dispositions[key],
+            adjudication,
+            None,
+            stage_b_mode="adjudication",
+        )
+        predictions.extend(output["items"])
+        true_north._write_json(
+            run_root
+            / "outputs"
+            / "composed-partial-task5-fallback"
+            / key[0]
+            / key[1]
+            / "validated.private.json",
+            output,
+            immutable=False,
+        )
+    span_predictions, span_report = _apply_actor_span(predictions)
+    span_path = (
+        run_root
+        / "outputs"
+        / "composed-partial-actor-span"
+        / "predictions.private.json"
+    )
+    span_document = {
+        "schema_version": true_north.WORK_OUTPUT_SCHEMA_VERSION,
+        "actor_span_rule": "deterministic_actor_span_rule_v1",
+        "fallback": (
+            "Spark for validated candidates; frozen Task-5 for every "
+            "unvalidated flagged candidate and every unflagged candidate"
+        ),
+        "items": span_predictions,
+    }
+    span_document["predictions_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(span_document)
+    )
+    true_north._write_json(span_path, span_document, immutable=False)
+    decoupled = score_predictions(
+        suite_root=root,
+        lane_id=f"{run_id}-partial-actor-span",
+        predictions=span_predictions,
+        source_paths=[*valid_paths, span_path],
+        actor_span_applied=True,
+        actor_span_report=span_report,
+    )
+    private = true_north._read_json(Path(decoupled["output_path"]))
+    candidate_scores = {
+        str(row["candidate_id"]): row
+        for row in private["private_candidate_scores"]
+    }
+    prediction_map = {
+        str(row["candidate_id"]): row for row in span_predictions
+    }
+    consensus = true_north._read_json(
+        root / "gold" / "development" / "final" / "consensus.private.json"
+    )
+    preferred = true_north._read_json(
+        root / "gold" / "development" / "final" / "gold.private.json"
+    )
+    speaker_maps: dict[str, Any] = {}
+    for bundle_row in manifest["bundles"]:
+        if bundle_row["partition"] != "development":
+            continue
+        bundle = true_north._read_json(Path(bundle_row["bundle_path"]))
+        for candidate in bundle["candidates"]:
+            speaker_maps[str(candidate["candidate_id"])] = (
+                bundle["episode_context"].get("speaker_map", [])
+            )
+    aligned_ids = {
+        candidate_id
+        for candidate_id, row in candidate_scores.items()
+        if row["strictly_scoreable"]
+        and row["atomic_count"]["acceptable_count"]
+        and row["value_state"]["predicted"] == "value"
+    }
+    aligned = score_campaign(
+        [
+            prediction_map[candidate_id]
+            for candidate_id in sorted(aligned_ids)
+        ],
+        consensus["items"],
+        preferred["items"],
+        subset_candidate_ids=aligned_ids,
+        speaker_maps_by_candidate=speaker_maps,
+    )
+    measured_ids = set(spark_by_candidate)
+    glm_paths = sorted(
+        (
+            root
+            / "multipass"
+            / "runs"
+            / SOURCE_RUN_ID
+            / "outputs"
+            / "composed-partial-fallback"
+        ).glob("*/*/validated.private.json")
+    )
+    glm_map = {
+        str(row["candidate_id"]): row
+        for path in glm_paths
+        for row in true_north._read_json(path)["items"]
+    }
+    flagged_ids = {
+        str(candidate["candidate_id"])
+        for packet in _source_packets(root)
+        for candidate in packet["packet"]["input"]["candidates"]
+    }
+    comparison = {
+        "measured_same_candidate_count": len(measured_ids),
+        "spark_acceptable_atomic_count_rate": _atomic_subset(
+            consensus=consensus,
+            predictions=prediction_map,
+            candidate_ids=measured_ids,
+        ),
+        "glm_acceptable_atomic_count_rate": _atomic_subset(
+            consensus=consensus,
+            predictions=glm_map,
+            candidate_ids=measured_ids,
+        ),
+        "full_flagged_partial_spark_with_task5_fallback": _atomic_subset(
+            consensus=consensus,
+            predictions=prediction_map,
+            candidate_ids=flagged_ids,
+        ),
+        "full_flagged_glm_with_task5_fallback": _atomic_subset(
+            consensus=consensus,
+            predictions=glm_map,
+            candidate_ids=flagged_ids,
+        ),
+    }
+    checkpoint = true_north._read_json(
+        root
+        / "certification"
+        / true_north.TASK5_CHECKPOINT_FILENAME
+    )
+    aggregate = decoupled["aggregate"]
+    document = {
+        "schema_version": SCHEMA_VERSION,
+        "experiment_id": EXPERIMENT_ID,
+        "run_id": run_id,
+        "complete": False,
+        "acceptance_eligible": False,
+        "terminal_reason": (
+            "call_ceiling_exhausted_and_actual_tokens_exceeded_declared_"
+            "ceiling_after_under_reserved_provider_envelopes"
+        ),
+        "coverage": {
+            "validated_provider_envelopes": len(valid_outputs),
+            "expected_provider_envelopes": MAX_CALLS,
+            "validated_spark_candidate_count": len(measured_ids),
+            "flagged_candidate_count": len(flagged_ids),
+        },
+        "partial_fallback_composition": {
+            "acceptable_atomic_count_rate": aggregate[
+                "acceptable_atomic_count_rate"
+            ],
+            "aligned_candidate_count": len(aligned_ids),
+            "aligned_claim_text_faithfulness": aligned["aggregate"][
+                "claim_text_faithfulness_proxy"
+            ],
+            "nine_gate_table": decoupled["nine_gate_table"],
+            "passed_gate_count": decoupled["passed_gate_count"],
+        },
+        "flagged_comparison": comparison,
+        "junk_and_contamination": {
+            "intrinsic_junk_escape_count": checkpoint[
+                "disposition_gate"
+            ]["intrinsic_junk_escape_count"],
+            "relational_contamination_count": checkpoint[
+                "relational_merge_certification"
+            ]["contamination_count"],
+        },
+        "acceptance": {
+            "complete_full_search_measurement": False,
+            "within_declared_call_ceiling": (
+                int(state["usage"]["calls"]) <= MAX_CALLS
+            ),
+            "within_declared_token_ceiling": False,
+            "atomic_count_accuracy_at_least_0_90": (
+                float(aggregate["acceptable_atomic_count_rate"]) >= 0.90
+            ),
+            "aligned_faithfulness_at_least_decoupled_gate": (
+                float(
+                    aligned["aggregate"][
+                        "claim_text_faithfulness_proxy"
+                    ]
+                )
+                >= true_north.APPROVED_GATE_POLICY[
+                    "claim_text_faithfulness_proxy"
+                ][1]
+            ),
+            "intrinsic_junk_escapes_zero": (
+                checkpoint["disposition_gate"][
+                    "intrinsic_junk_escape_count"
+                ]
+                == 0
+            ),
+            "relational_contamination_zero": (
+                checkpoint["relational_merge_certification"][
+                    "contamination_count"
+                ]
+                == 0
+            ),
+        },
+        "passed": False,
+        "stop_decomposition_lane": True,
+        "usage": state["usage"],
+        "budget_overage": {
+            "calls": max(
+                0, int(state["usage"]["calls"]) - MAX_CALLS
+            ),
+            "tokens": max(
+                0, int(state["usage"]["tokens"]) - MAX_TOKENS
+            ),
+            "cause": (
+                "reserved_tokens_per_call was set to 17000; actual Spark "
+                "envelopes averaged above that reservation"
+            ),
+        },
+        "cumulative_calls_after_run": (
+            CUMULATIVE_CALLS_BEFORE_RUN
+            + int(state["usage"]["calls"])
+        ),
+        "known_cumulative_tokens_after_run": (
+            KNOWN_CUMULATIVE_TOKENS_BEFORE_RUN
+            + int(state["usage"]["tokens"])
+        ),
+        "holdout_opened": False,
+        "production_mutation": False,
+    }
+    document["result_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(document)
+    )
+    path = run_root / "terminal-partial-result.private.json"
+    true_north._write_json(path, document, immutable=False)
+    return {**document, "result_path": str(path)}
