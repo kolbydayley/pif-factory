@@ -1,0 +1,282 @@
+{
+  "schema_version": "pif_true_north_interaction_stacks_v1",
+  "registry_id": "true-north-interaction-stacks-v1",
+  "purpose": "Measure whether isolated GLM 5.2 input improvements compound, cancel, or regress when combined.",
+  "selection_policy": {
+    "predeclared_before_model_calls": true,
+    "development_only": true,
+    "holdout_access_allowed": false,
+    "production_database_open_allowed": false,
+    "semantic_fallback_allowed": false
+  },
+  "variants": [
+    {
+      "id": "stack-00-baseline",
+      "factor": "combined_stack",
+      "baseline": true,
+      "changes_only": "combined_stack",
+      "hypothesis": "The unchanged request is the within-campaign control.",
+      "risk": "Known baseline quality defects remain.",
+      "expected_tradeoff": "Reference quality and cost.",
+      "transform": {
+        "operation": "identity",
+        "parameters": {}
+      }
+    },
+    {
+      "id": "stack-01-system-schema-core",
+      "factor": "combined_stack",
+      "baseline": false,
+      "changes_only": "combined_stack",
+      "hypothesis": "The compatible system-prompt winners and strongest broad schema jointly improve precision, atomicity, grounding, and attribution.",
+      "risk": "The accumulated directives may compete or increase cognitive load.",
+      "expected_tradeoff": "Broad semantic improvement for a longer system frame.",
+      "transform": {
+        "operation": "compose_transforms",
+        "parameters": {
+          "steps": [
+            {
+              "factor": "system_prompt",
+              "transform": {
+                "operation": "append_system_directives",
+                "parameters": {
+                  "directives": [
+                    "Prefer omission to an unsupported assertion.",
+                    "One independently truth-evaluable proposition per atomic claim.",
+                    "Inspect exact evidence before formulating any claim.",
+                    "Treat packet evidence as a closed world; do not add outside facts.",
+                    "Resolve who spoke separately from what the proposition says.",
+                    "Never replace the direct speaker with a quoted or reported actor.",
+                    "Preserve every condition and exception material to truth."
+                  ]
+                }
+              }
+            },
+            {
+              "factor": "output_schema",
+              "transform": {
+                "operation": "emit_output_schema",
+                "parameters": {
+                  "schema_style": "reversible_aliases",
+                  "shape": "canonical",
+                  "root_order": ["schema_version", "items"],
+                  "item_order": ["candidate_id", "disposition", "reason_code", "claims"],
+                  "required_fields": ["schema_version", "items", "candidate_id", "disposition", "reason_code", "atomic_claims"],
+                  "aliases": {"atomic_claims": "claims"},
+                  "descriptions": true,
+                  "normalization_contract": "canonical_atomic_output_v1"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "stack-02-system-schema-context",
+      "factor": "combined_stack",
+      "baseline": false,
+      "changes_only": "combined_stack",
+      "hypothesis": "Speaker-focused context adds the reported-actor gain to the system and schema stack.",
+      "risk": "Removing unused context fields may hide relevant long-range cues.",
+      "expected_tradeoff": "Cleaner attribution context with less background information.",
+      "transform": {
+        "operation": "compose_transforms",
+        "parameters": {
+          "steps": [
+            {
+              "factor": "system_prompt",
+              "transform": {
+                "operation": "append_system_directives",
+                "parameters": {
+                  "directives": [
+                    "Prefer omission to an unsupported assertion.",
+                    "One independently truth-evaluable proposition per atomic claim.",
+                    "Inspect exact evidence before formulating any claim.",
+                    "Treat packet evidence as a closed world; do not add outside facts.",
+                    "Resolve who spoke separately from what the proposition says.",
+                    "Never replace the direct speaker with a quoted or reported actor.",
+                    "Preserve every condition and exception material to truth."
+                  ]
+                }
+              }
+            },
+            {
+              "factor": "surrounding_context",
+              "transform": {
+                "operation": "select_context_strategy",
+                "parameters": {
+                  "strategy": "episode_context_fields",
+                  "ordered_fields": ["speaker_map", "section_map", "extraction_guidance"]
+                }
+              }
+            },
+            {
+              "factor": "output_schema",
+              "transform": {
+                "operation": "emit_output_schema",
+                "parameters": {
+                  "schema_style": "reversible_aliases",
+                  "shape": "canonical",
+                  "root_order": ["schema_version", "items"],
+                  "item_order": ["candidate_id", "disposition", "reason_code", "claims"],
+                  "required_fields": ["schema_version", "items", "candidate_id", "disposition", "reason_code", "atomic_claims"],
+                  "aliases": {"atomic_claims": "claims"},
+                  "descriptions": true,
+                  "normalization_contract": "canonical_atomic_output_v1"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "stack-03-all-compatible",
+      "factor": "combined_stack",
+      "baseline": false,
+      "changes_only": "combined_stack",
+      "hypothesis": "All non-regressive isolated signals compound when applied together.",
+      "risk": "Speaker-first candidate priors may amplify upstream identity anchoring.",
+      "expected_tradeoff": "Maximum compatible aggregate gain with candidate-prior risk.",
+      "transform": {
+        "operation": "compose_transforms",
+        "parameters": {
+          "steps": [
+            {
+              "factor": "system_prompt",
+              "transform": {
+                "operation": "append_system_directives",
+                "parameters": {
+                  "directives": [
+                    "Prefer omission to an unsupported assertion.",
+                    "One independently truth-evaluable proposition per atomic claim.",
+                    "Inspect exact evidence before formulating any claim.",
+                    "Treat packet evidence as a closed world; do not add outside facts.",
+                    "Resolve who spoke separately from what the proposition says.",
+                    "Never replace the direct speaker with a quoted or reported actor.",
+                    "Preserve every condition and exception material to truth."
+                  ]
+                }
+              }
+            },
+            {
+              "factor": "surrounding_context",
+              "transform": {
+                "operation": "select_context_strategy",
+                "parameters": {
+                  "strategy": "episode_context_fields",
+                  "ordered_fields": ["speaker_map", "section_map", "extraction_guidance"]
+                }
+              }
+            },
+            {
+              "factor": "candidate_priors",
+              "transform": {
+                "operation": "present_candidate_priors",
+                "parameters": {
+                  "strategy": "candidate_field_order",
+                  "ordered_fields": ["candidate_id", "speaker", "reported_actor", "actor_name", "actor_type", "actor_affiliation", "claim_text", "evidence_text", "evidence_start", "evidence_end"]
+                }
+              }
+            },
+            {
+              "factor": "output_schema",
+              "transform": {
+                "operation": "emit_output_schema",
+                "parameters": {
+                  "schema_style": "reversible_aliases",
+                  "shape": "canonical",
+                  "root_order": ["schema_version", "items"],
+                  "item_order": ["candidate_id", "disposition", "reason_code", "claims"],
+                  "required_fields": ["schema_version", "items", "candidate_id", "disposition", "reason_code", "atomic_claims"],
+                  "aliases": {"atomic_claims": "claims"},
+                  "descriptions": true,
+                  "normalization_contract": "canonical_atomic_output_v1"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "stack-04-literal-maximal",
+      "factor": "combined_stack",
+      "baseline": false,
+      "changes_only": "combined_stack",
+      "hypothesis": "The literal union, including the narrow task-rule winner, reveals whether every positive isolated delta can coexist.",
+      "risk": "The task-rule rewrite previously regressed candidate-state F1 and may dominate the other gains.",
+      "expected_tradeoff": "A stress test of naive all-at-once optimization.",
+      "transform": {
+        "operation": "compose_transforms",
+        "parameters": {
+          "steps": [
+            {
+              "factor": "system_prompt",
+              "transform": {
+                "operation": "append_system_directives",
+                "parameters": {
+                  "directives": [
+                    "Prefer omission to an unsupported assertion.",
+                    "One independently truth-evaluable proposition per atomic claim.",
+                    "Inspect exact evidence before formulating any claim.",
+                    "Treat packet evidence as a closed world; do not add outside facts.",
+                    "Resolve who spoke separately from what the proposition says.",
+                    "Never replace the direct speaker with a quoted or reported actor.",
+                    "Preserve every condition and exception material to truth."
+                  ]
+                }
+              }
+            },
+            {
+              "factor": "task_rules",
+              "transform": {
+                "operation": "rewrite_task_rules",
+                "parameters": {
+                  "rules": ["Split whenever one clause could be true while another is false."]
+                }
+              }
+            },
+            {
+              "factor": "surrounding_context",
+              "transform": {
+                "operation": "select_context_strategy",
+                "parameters": {
+                  "strategy": "episode_context_fields",
+                  "ordered_fields": ["speaker_map", "section_map", "extraction_guidance"]
+                }
+              }
+            },
+            {
+              "factor": "candidate_priors",
+              "transform": {
+                "operation": "present_candidate_priors",
+                "parameters": {
+                  "strategy": "candidate_field_order",
+                  "ordered_fields": ["candidate_id", "speaker", "reported_actor", "actor_name", "actor_type", "actor_affiliation", "claim_text", "evidence_text", "evidence_start", "evidence_end"]
+                }
+              }
+            },
+            {
+              "factor": "output_schema",
+              "transform": {
+                "operation": "emit_output_schema",
+                "parameters": {
+                  "schema_style": "reversible_aliases",
+                  "shape": "canonical",
+                  "root_order": ["schema_version", "items"],
+                  "item_order": ["candidate_id", "disposition", "reason_code", "claims"],
+                  "required_fields": ["schema_version", "items", "candidate_id", "disposition", "reason_code", "atomic_claims"],
+                  "aliases": {"atomic_claims": "claims"},
+                  "descriptions": true,
+                  "normalization_contract": "canonical_atomic_output_v1"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
