@@ -286,7 +286,7 @@ def evaluate_checkpoint(
     combined = _read_json(
         phase_root / "outputs" / "combined.private.json"
     )
-    predictions = {
+    raw_predictions = {
         str(row["candidate_id"]): row
         for row in combined["items"]
     }
@@ -295,13 +295,18 @@ def evaluate_checkpoint(
         bundle = _read_json(Path(bundle_record["bundle_path"]))
         for candidate in bundle["candidates"]:
             candidate_id = str(candidate["candidate_id"])
-            if candidate_id in predictions:
+            if candidate_id in raw_predictions:
                 candidate_by_id[candidate_id] = dict(candidate)
     intrinsic_rules = apply_phase_c_intrinsic_composition_rules(
-        predictions, candidate_by_id
+        raw_predictions, candidate_by_id
     )
     predictions = intrinsic_rules["predictions"]
     gold_root = suite_root / "gold" / "development" / "final"
+    baseline_disposition = _score_phase_c_dispositions(
+        _read_json(gold_root / "consensus.private.json"),
+        raw_predictions,
+        _read_json(gold_root / "gold.private.json"),
+    )
     initial_disposition = _score_phase_c_dispositions(
         _read_json(gold_root / "consensus.private.json"),
         predictions,
@@ -375,6 +380,24 @@ def evaluate_checkpoint(
             "deterministic_rule_model_calls": intrinsic_rules[
                 "model_calls_made"
             ],
+            "deterministic_rule_false_reject_delta": (
+                initial_disposition["false_reject_count"]
+                - baseline_disposition["false_reject_count"]
+            ),
+            "pre_held_false_reject_count": (
+                initial_disposition["false_reject_count"]
+            ),
+            "pre_held_retained_value_recall": (
+                initial_disposition["retained_value_recall"]
+            ),
+            "held_false_reject_delta": (
+                disposition["false_reject_count"]
+                - initial_disposition["false_reject_count"]
+            ),
+            "held_retained_value_recall_delta": (
+                disposition["retained_value_recall"]
+                - initial_disposition["retained_value_recall"]
+            ),
         },
         "relational_merge_certification": {
             "passed": contamination_count == 0,
@@ -421,7 +444,7 @@ def evaluate_checkpoint(
     output_path = (
         suite_root
         / "certification"
-        / "phase-c-option2-development-v2.json"
+        / "phase-c-option2-development-v2-accounting.json"
     )
     _write_json(output_path, checkpoint, immutable=True)
     return {**checkpoint, "output_path": str(output_path)}
