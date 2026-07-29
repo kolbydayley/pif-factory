@@ -33,7 +33,7 @@ OPERATIONAL_STAGE_NAMES = DAILY_STAGE_NAMES[:-1]
 MAX_DAILY_RUNTIME_SECONDS = 7_200
 MAX_DAILY_ITEMS = 500
 MAX_EXCEPTION_RUNTIME_MS = 1_200_000
-DEFAULT_DAILY_RUNTIME_SECONDS = 1_800
+DEFAULT_DAILY_RUNTIME_SECONDS = 5_400
 DEFAULT_DAILY_ITEMS = 25
 AUTHORITY_CHECKPOINT_RETENTION = 7
 ZOMBIE_WORKER_GRACE_SECONDS = 3_600
@@ -274,6 +274,7 @@ def run_daily_cycle(
     since: str | None = None,
     execute_ingestion: bool = False,
     execute_normalize: bool = False,
+    execute_extraction: bool = False,
     apply_reconcile: bool = False,
     record_exception_contracts: bool = False,
     publish_observer: bool = False,
@@ -289,10 +290,9 @@ def run_daily_cycle(
 ) -> dict[str, Any]:
     """Run one deterministic, bounded local daily cycle.
 
-    The orchestrator itself never starts Codex, app-server turns, chats, or a
-    headless queue. Bulk extraction remains on the managed-auth app-server
-    boundary; bounded headless contracts are reserved for manual discovery or
-    adjudication exceptions.
+    Extraction remains disabled unless ``execute_extraction`` is explicitly
+    set.  When enabled, the bounded baseline uses subscription-authenticated
+    local Codex CLI handoffs only.
     """
 
     runtime = int(max_runtime_seconds)
@@ -316,6 +316,7 @@ def run_daily_cycle(
         "since": since,
         "execute_ingestion": bool(execute_ingestion),
         "execute_normalize": bool(execute_normalize),
+        "execute_extraction": bool(execute_extraction),
         "apply_reconcile": bool(apply_reconcile),
         "record_exception_contracts": bool(record_exception_contracts),
         "publish_observer": bool(publish_observer),
@@ -384,6 +385,7 @@ def run_daily_cycle(
         since=since,
         execute_ingestion=execute_ingestion,
         execute_normalize=execute_normalize,
+        execute_extraction=execute_extraction,
         apply_reconcile=apply_reconcile,
         record_exception_contracts=record_exception_contracts,
         publish_observer=publish_observer,
@@ -394,6 +396,7 @@ def run_daily_cycle(
         label_pack=label_pack,
         model=model,
         pilot_id=pilot_id,
+        now=_now,
     )
     handlers.update(stage_handlers or {})
     cycle_started = _monotonic()
@@ -628,6 +631,7 @@ def _default_stage_handlers(
     since: str | None,
     execute_ingestion: bool,
     execute_normalize: bool,
+    execute_extraction: bool,
     apply_reconcile: bool,
     record_exception_contracts: bool,
     publish_observer: bool,
@@ -638,6 +642,7 @@ def _default_stage_handlers(
     label_pack: str,
     model: str,
     pilot_id: str | None,
+    now: Callable[[], str] = now_iso,
 ) -> dict[str, StageHandler]:
     def backup_health(context: DailyStageContext) -> Mapping[str, Any]:
         context.artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -770,22 +775,101 @@ def _default_stage_handlers(
         }
 
     def bounded_baseline(context: DailyStageContext) -> Mapping[str, Any]:
-        pending = _job_count(conn, ("episode_context", "label_segment"))
-        planned = min(pending, context.max_items)
+        job_types = ("episode_context", "label_segment")
+        backlog_total = _job_count(conn, job_types)
+        recent_since = _recent_job_window_start(
+            conn,
+            current_run_id=context.run_id,
+            at=now(),
+        )
+        recent_pending_before = _job_count_recent(conn, job_types, recent_since)
+        planned = min(recent_pending_before, context.max_items)
+        if not execute_extraction:
+            return {
+                "status": "skipped",
+                "processed": 0,
+                "reason": "managed_app_server_dispatch_required",
+                "backlog_total": backlog_total,
+                "pending": recent_pending_before,
+                "recent_pending": recent_pending_before,
+                "recent_window_since": recent_since,
+                "planned_items": planned,
+                "work_due": recent_pending_before > 0,
+                "required_work_enabled": False,
+                "healthy_no_work": recent_pending_before == 0,
+                "work_satisfied": recent_pending_before == 0,
+                "dispatch_boundary": "managed_auth_app_server_local_sqlite_queue",
+                "dispatch_contracts": [],
+                "headless_exception_dispatch_created": False,
+                "external_launch_attempted": False,
+                "self_resuming_chats": False,
+            }
+
+        from . import headless_codex
+        from .worker import run_jobs
+
+        lease_owner = f"pif-daily-extraction-{context.run_date}-{context.run_id}"
+        worker_result = run_jobs(
+            conn,
+            lane=lane,
+            limit=context.max_items,
+            model=model,
+            label_pack=label_pack,
+            worker_id=lease_owner,
+            claim_prompts=True,
+            job_types=job_types,
+            max_label_prompts=context.max_items,
+        )
+        claimed_prompts = min(
+            context.max_items,
+            int(worker_result.get("claimed_prompts", 0) or 0),
+        )
+        concurrency = 3
+        waves = max(1, (claimed_prompts + concurrency - 1) // concurrency)
+        timeout_seconds = max(
+            1,
+            min(900, int(max(1.0, context.remaining_seconds) / waves)),
+        )
+        headless_result = headless_codex.execute_claimed_label_runs(
+            conn,
+            lease_owner=lease_owner,
+            limit=claimed_prompts,
+            model=model,
+            timeout_seconds=timeout_seconds,
+            audit=True,
+            concurrency=concurrency,
+        )
+        recent_pending_after = _job_count_recent(conn, job_types, recent_since)
+        worker_failed = int(worker_result.get("failed", 0) or 0)
+        headless_failed = int(headless_result.get("failed", 0) or 0)
+        work_satisfied = (
+            recent_pending_after == 0
+            and worker_failed == 0
+            and headless_failed == 0
+        )
         return {
-            "status": "skipped",
-            "processed": 0,
-            "reason": "managed_app_server_dispatch_required",
-            "pending": pending,
+            "status": "completed" if worker_failed == 0 and headless_failed == 0 else "failed",
+            # Headless execution is the second phase of the same claimed queue
+            # items, so it is not added again to this unique-item count.
+            "processed": int(worker_result.get("processed", 0) or 0),
+            "reason": None,
+            "backlog_total": backlog_total,
+            "backlog_total_after": _job_count(conn, job_types),
+            "pending": recent_pending_before,
+            "recent_pending": recent_pending_before,
+            "recent_pending_after": recent_pending_after,
+            "recent_window_since": recent_since,
             "planned_items": planned,
-            "work_due": pending > 0,
-            "required_work_enabled": False,
-            "healthy_no_work": pending == 0,
-            "work_satisfied": pending == 0,
+            "work_due": recent_pending_before > 0,
+            "required_work_enabled": True,
+            "healthy_no_work": recent_pending_before == 0,
+            "work_satisfied": work_satisfied,
+            "worker_result": worker_result,
+            "headless_result": headless_result,
             "dispatch_boundary": "managed_auth_app_server_local_sqlite_queue",
             "dispatch_contracts": [],
             "headless_exception_dispatch_created": False,
-            "external_launch_attempted": False,
+            "external_launch_attempted": bool(headless_result.get("selected", 0)),
             "self_resuming_chats": False,
         }
 
@@ -933,6 +1017,48 @@ def _job_count(conn: sqlite3.Connection, job_types: tuple[str, ...]) -> int:
     return int(row[0]) if row else 0
 
 
+def _job_count_recent(
+    conn: sqlite3.Connection,
+    job_types: tuple[str, ...],
+    since: str,
+) -> int:
+    placeholders = ",".join("?" for _ in job_types)
+    row = conn.execute(
+        f"""
+        SELECT COUNT(*) FROM jobs
+        WHERE status = 'pending'
+          AND job_type IN ({placeholders})
+          AND created_at >= ?
+        """,
+        (*job_types, since),
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def _recent_job_window_start(
+    conn: sqlite3.Connection,
+    *,
+    current_run_id: str,
+    at: str,
+) -> str:
+    row = conn.execute(
+        """
+        SELECT completed_at
+        FROM pif_daily_runs
+        WHERE id != ?
+          AND status IN ('completed', 'completed_with_skips')
+          AND completed_at IS NOT NULL
+        ORDER BY completed_at DESC, id DESC
+        LIMIT 1
+        """,
+        (current_run_id,),
+    ).fetchone()
+    if row and row["completed_at"]:
+        return str(row["completed_at"])
+    parsed = dt.datetime.fromisoformat(at.replace("Z", "+00:00"))
+    return (parsed - dt.timedelta(hours=24)).replace(microsecond=0).isoformat()
+
+
 def _assess_required_stage_truth(
     stage_receipts: list[Mapping[str, Any]],
     *,
@@ -947,10 +1073,11 @@ def _assess_required_stage_truth(
         status = str(receipt.get("status") or "failed")
         result = receipt.get("result")
         result = result if isinstance(result, Mapping) else {}
+        declared_work_due = "work_due" in result
         work_due = bool(result.get("work_due")) or any(
             int(result.get(field, 0) or 0) > 0 for field in ("pending", "due", "planned_items")
         )
-        if conn is not None and not work_due:
+        if conn is not None and not work_due and not declared_work_due:
             if stage_name == "normalize":
                 work_due = _job_count(conn, ("prepare_transcript",)) > 0
             elif stage_name == "bounded_baseline_extraction":
@@ -1486,6 +1613,7 @@ def _record_scale_gate_state_receipt(
         "pending_growth": growth,
         "growth_allowance": int(max_items),
         "growth_bounded": growth_bounded,
+        "absolute_pending_is_pass_condition": False,
     }
     runtime = {
         "passed": elapsed_seconds <= float(max_runtime_seconds),

@@ -20,30 +20,55 @@ def execute_claimed_label_runs(
     model: str,
     timeout_seconds: int = 900,
     audit: bool = True,
+    concurrency: int = 1,
 ) -> dict[str, Any]:
+    concurrency = max(1, int(concurrency or 1))
+    bounded_limit = max(0, int(limit))
     log_dir = runs_dir() / "headless_logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    results: list[dict[str, Any]] = []
-    selected = 0
-    while len(results) < limit:
-        row = conn.execute(
+    rows = conn.execute(
+        """
+        SELECT jobs.id AS job_id, jobs.lease_owner, label_runs.id AS label_run_id,
+               label_runs.prompt_path, label_runs.output_path
+        FROM label_runs
+        JOIN jobs ON jobs.id = label_runs.job_id
+        WHERE label_runs.status = 'claimed'
+          AND jobs.status = 'claimed'
+          AND jobs.job_type = 'label_segment'
+          AND jobs.lease_owner = ?
+        ORDER BY jobs.id
+        LIMIT ?
+        """,
+        (lease_owner, bounded_limit),
+    ).fetchall()
+    selected = len(rows)
+    immediate_results: dict[int, dict[str, Any]] = {}
+    executable_rows: list[dict[str, Any]] = []
+    for raw_row in rows:
+        row = dict(raw_row)
+        job_id = int(row["job_id"])
+        current = conn.execute(
             """
-            SELECT jobs.id AS job_id, jobs.lease_owner, label_runs.id AS label_run_id,
-                   label_runs.prompt_path, label_runs.output_path
-            FROM label_runs
-            JOIN jobs ON jobs.id = label_runs.job_id
-            WHERE label_runs.status = 'claimed'
-              AND jobs.status = 'claimed'
-              AND jobs.job_type = 'label_segment'
-              AND jobs.lease_owner = ?
-            ORDER BY jobs.id
-            LIMIT 1
+            SELECT jobs.status AS job_status, jobs.lease_owner, label_runs.status AS run_status
+            FROM jobs
+            JOIN label_runs ON label_runs.job_id = jobs.id
+            WHERE jobs.id = ? AND label_runs.id = ?
             """,
-            (lease_owner,),
+            (job_id, row["label_run_id"]),
         ).fetchone()
-        if not row:
-            break
-        selected += 1
+        if not current or current["job_status"] != "claimed" or current["run_status"] != "claimed" or current["lease_owner"] != lease_owner:
+            immediate_results[job_id] = {
+                "job_id": str(job_id),
+                "label_run_id": row["label_run_id"],
+                "prompt_artifact": "local_prompt_file",
+                "output_artifact": "local_output_file",
+                "status": "stale_handoff_skipped",
+                "completed_at": now_iso(),
+            }
+            continue
+        executable_rows.append(row)
+
+    def _execute_one(row: dict[str, Any]) -> dict[str, Any]:
         job_id = int(row["job_id"])
         prompt_path = Path(row["prompt_path"]).expanduser().resolve()
         output_path = Path(row["output_path"]).expanduser().resolve()
@@ -55,29 +80,14 @@ def execute_claimed_label_runs(
             f"Write the final JSON object, and only the JSON object, to {output_path}. "
             "Do not edit any other file. Do not include markdown fences or commentary."
         )
-        started_at = now_iso()
         item: dict[str, Any] = {
             "job_id": str(job_id),
             "label_run_id": row["label_run_id"],
             "prompt_artifact": "local_prompt_file",
             "output_artifact": "local_output_file",
             "log_path": str(log_path),
-            "started_at": started_at,
+            "started_at": now_iso(),
         }
-        current = conn.execute(
-            """
-            SELECT jobs.status AS job_status, jobs.lease_owner, label_runs.status AS run_status
-            FROM jobs
-            JOIN label_runs ON label_runs.job_id = jobs.id
-            WHERE jobs.id = ? AND label_runs.id = ?
-            """,
-            (job_id, row["label_run_id"]),
-        ).fetchone()
-        if not current or current["job_status"] != "claimed" or current["run_status"] != "claimed" or current["lease_owner"] != lease_owner:
-            item["status"] = "stale_handoff_skipped"
-            item["completed_at"] = now_iso()
-            results.append(item)
-            continue
         with log_path.open("w", encoding="utf-8") as log_file:
             completed = subprocess.run(
                 [
@@ -104,8 +114,35 @@ def execute_claimed_label_runs(
         item["completed_at"] = now_iso()
         if completed.returncode != 0:
             item["status"] = "codex_exec_failed"
+        else:
+            item["status"] = "codex_exec_completed"
+        return item
+
+    # SQLite connections stay on the caller thread.  Worker threads only run
+    # independent subprocesses against already-claimed, lease-protected
+    # handoffs; submission and audit mutations are serialized below.
+    executed_results: dict[int, dict[str, Any]] = {}
+    if executable_rows:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
+            futures = {
+                executor.submit(_execute_one, row): int(row["job_id"])
+                for row in executable_rows
+            }
+            for future in concurrent.futures.as_completed(futures):
+                executed_results[futures[future]] = future.result()
+
+    results: list[dict[str, Any]] = []
+    for raw_row in rows:
+        row = dict(raw_row)
+        job_id = int(row["job_id"])
+        if job_id in immediate_results:
+            results.append(immediate_results[job_id])
+            continue
+        item = executed_results[job_id]
+        if item["status"] != "codex_exec_completed":
             results.append(item)
             continue
+        output_path = Path(row["output_path"]).expanduser().resolve()
         try:
             submission = submit_label_output(
                 conn,
@@ -151,6 +188,7 @@ def execute_claimed_label_runs(
         "ok": all(item.get("status") in {"submitted", "stale_handoff_skipped"} for item in results),
         "lease_owner": lease_owner,
         "model": model,
+        "concurrency": concurrency,
         "selected": selected,
         "processed": len(results),
         "submitted": sum(1 for item in results if item.get("status") == "submitted"),

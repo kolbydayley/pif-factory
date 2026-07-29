@@ -1,0 +1,254 @@
+from __future__ import annotations
+
+import threading
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from research_factory import db
+from research_factory.cli import build_parser
+from research_factory.daily_cycle import (
+    DEFAULT_DAILY_RUNTIME_SECONDS,
+    DailyStageContext,
+    _default_stage_handlers,
+    _job_count_recent,
+    ensure_daily_schema,
+)
+from research_factory.headless_codex import execute_claimed_label_runs
+
+
+NOW = "2026-07-29T12:00:00+00:00"
+
+
+def _baseline_handler(conn, artifact_dir: Path, *, execute_extraction: bool):
+    handlers = _default_stage_handlers(
+        conn,
+        source_list=None,
+        since=None,
+        execute_ingestion=False,
+        execute_normalize=False,
+        execute_extraction=execute_extraction,
+        apply_reconcile=False,
+        record_exception_contracts=False,
+        publish_observer=False,
+        snapshot_output=None,
+        observer_url=None,
+        observer_token=None,
+        lane="podcast",
+        label_pack="ai_discourse_v3_1",
+        model="gpt-5.5",
+        pilot_id=None,
+        now=lambda: NOW,
+    )
+    return handlers["bounded_baseline_extraction"], DailyStageContext(
+        conn=conn,
+        run_id="current-run",
+        run_date="2026-07-29",
+        stage_name="bounded_baseline_extraction",
+        stage_index=4,
+        max_items=5,
+        remaining_seconds=300.0,
+        deadline_monotonic=300.0,
+        artifact_dir=artifact_dir,
+    )
+
+
+def test_execute_extraction_enables_real_bounded_baseline_and_honest_counts(tmp_path: Path) -> None:
+    conn = db.connect(tmp_path / "factory.sqlite")
+    try:
+        db.init_db(conn)
+        ensure_daily_schema(conn)
+        handler, context = _baseline_handler(conn, tmp_path / "receipts", execute_extraction=True)
+        worker_result = {
+            "processed": 2,
+            "completed": 0,
+            "claimed_prompts": 2,
+            "failed": 0,
+            "details": [],
+        }
+        headless_result = {
+            "ok": True,
+            "selected": 2,
+            "processed": 2,
+            "submitted": 2,
+            "failed": 0,
+            "results": [],
+        }
+        with patch("research_factory.daily_cycle._job_count_recent", side_effect=[2, 0]), patch(
+            "research_factory.worker.run_jobs",
+            return_value=worker_result,
+        ) as run_jobs, patch(
+            "research_factory.headless_codex.execute_claimed_label_runs",
+            return_value=headless_result,
+        ) as execute:
+            result = handler(context)
+
+        assert result["status"] == "completed"
+        assert result["processed"] == 2
+        assert result["required_work_enabled"] is True
+        assert result["work_due"] is True
+        assert result["work_satisfied"] is True
+        assert result["recent_pending"] == 2
+        assert result["recent_pending_after"] == 0
+        assert run_jobs.call_args.kwargs["job_types"] == ("episode_context", "label_segment")
+        assert run_jobs.call_args.kwargs["limit"] == 5
+        assert execute.call_args.kwargs["concurrency"] == 3
+        assert execute.call_args.kwargs["limit"] == 2
+    finally:
+        conn.close()
+
+
+def test_recent_window_not_absolute_backlog_controls_satisfaction(tmp_path: Path) -> None:
+    conn = db.connect(tmp_path / "factory.sqlite")
+    try:
+        db.init_db(conn)
+        ensure_daily_schema(conn)
+        old_job_id = db.enqueue_job(
+            conn,
+            lane="podcast",
+            job_type="label_segment",
+            target_id="old-backlog",
+            payload={"label_pack": "ai_discourse_v3_1", "model": "gpt-5.5"},
+        )
+        conn.execute(
+            "UPDATE jobs SET created_at = ?, updated_at = ? WHERE id = ?",
+            ("2026-07-27T11:59:59+00:00", "2026-07-27T11:59:59+00:00", old_job_id),
+        )
+        conn.commit()
+        handler, context = _baseline_handler(conn, tmp_path / "receipts", execute_extraction=True)
+        empty_worker = {
+            "processed": 0,
+            "completed": 0,
+            "claimed_prompts": 0,
+            "failed": 0,
+            "details": [],
+        }
+        empty_headless = {
+            "ok": True,
+            "selected": 0,
+            "processed": 0,
+            "submitted": 0,
+            "failed": 0,
+            "results": [],
+        }
+        with patch("research_factory.worker.run_jobs", return_value=empty_worker), patch(
+            "research_factory.headless_codex.execute_claimed_label_runs",
+            return_value=empty_headless,
+        ):
+            result = handler(context)
+
+        assert _job_count_recent(
+            conn,
+            ("episode_context", "label_segment"),
+            "2026-07-28T12:00:00+00:00",
+        ) == 0
+        assert result["backlog_total"] == 1
+        assert result["recent_pending"] == 0
+        assert result["work_due"] is False
+        assert result["work_satisfied"] is True
+        assert result["healthy_no_work"] is True
+    finally:
+        conn.close()
+
+
+class _Cursor:
+    def __init__(self, *, rows=None, row=None):
+        self._rows = list(rows or [])
+        self._row = row
+
+    def fetchall(self):
+        return self._rows
+
+    def fetchone(self):
+        return self._row
+
+
+class _FakeClaimedConnection:
+    def __init__(self, rows):
+        self.rows = rows
+        self.execute_thread_ids: list[int] = []
+
+    def execute(self, sql, params=()):
+        self.execute_thread_ids.append(threading.get_ident())
+        if "ORDER BY jobs.id" in sql:
+            return _Cursor(rows=self.rows[: int(params[-1])])
+        if "SELECT jobs.status AS job_status" in sql:
+            return _Cursor(
+                row={
+                    "job_status": "claimed",
+                    "run_status": "claimed",
+                    "lease_owner": "daily-owner",
+                }
+            )
+        raise AssertionError(sql)
+
+
+def _fake_claimed_rows(tmp_path: Path):
+    return [
+        {
+            "job_id": index,
+            "lease_owner": "daily-owner",
+            "label_run_id": f"run-{index}",
+            "prompt_path": str(tmp_path / f"prompt-{index}.json"),
+            "output_path": str(tmp_path / f"output-{index}.json"),
+        }
+        for index in range(1, 5)
+    ]
+
+
+def test_concurrent_claimed_execution_matches_serial_with_fake_codex(tmp_path: Path) -> None:
+    rows = _fake_claimed_rows(tmp_path)
+
+    def fake_run(*args, **kwargs):
+        return SimpleNamespace(returncode=0)
+
+    def fake_submit(conn, *, job_id, output_json_path, worker_id, allow_expired):
+        return {"label_id": f"label-{job_id}"}
+
+    summaries = []
+    connections = []
+    with patch("research_factory.headless_codex.runs_dir", return_value=tmp_path), patch(
+        "research_factory.headless_codex.root",
+        return_value=tmp_path,
+    ), patch("research_factory.headless_codex.subprocess.run", side_effect=fake_run), patch(
+        "research_factory.headless_codex.submit_label_output",
+        side_effect=fake_submit,
+    ):
+        for concurrency in (1, 3):
+            connection = _FakeClaimedConnection(rows)
+            connections.append(connection)
+            summaries.append(
+                execute_claimed_label_runs(
+                    connection,
+                    lease_owner="daily-owner",
+                    limit=4,
+                    model="gpt-5.5",
+                    timeout_seconds=30,
+                    audit=False,
+                    concurrency=concurrency,
+                )
+            )
+
+    serial, concurrent = summaries
+    for result in summaries:
+        assert result["selected"] == 4
+        assert result["processed"] == 4
+        assert result["submitted"] == 4
+        assert result["failed"] == 0
+    assert [item["job_id"] for item in serial["results"]] == [
+        item["job_id"] for item in concurrent["results"]
+    ]
+    assert [item["status"] for item in serial["results"]] == [
+        item["status"] for item in concurrent["results"]
+    ]
+    main_thread = threading.get_ident()
+    assert all(set(connection.execute_thread_ids) == {main_thread} for connection in connections)
+
+
+def test_daily_cli_requires_explicit_extraction_flag() -> None:
+    parser = build_parser()
+    default = parser.parse_args(["run", "daily"])
+    enabled = parser.parse_args(["run", "daily", "--execute-extraction"])
+    assert default.execute_extraction is False
+    assert enabled.execute_extraction is True
+    assert default.max_runtime_seconds == DEFAULT_DAILY_RUNTIME_SECONDS == 5_400

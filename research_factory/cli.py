@@ -19,7 +19,7 @@ from .app_server_evaluation import (
 )
 from .claim_canonicalizer import canonicalize_claims
 from .claim_subjects import build_claim_subjects
-from .daily_cycle import run_daily_cycle
+from .daily_cycle import DEFAULT_DAILY_RUNTIME_SECONDS, run_daily_cycle
 from .exports import (
     export_actor_stance_report,
     export_graph,
@@ -1181,7 +1181,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum label prompt handoffs this run may claim. Use 0 to prevent prompt creation.",
     )
     run.add_argument("--date", dest="run_date", help="Daily cycle date in YYYY-MM-DD; defaults to current UTC date.")
-    run.add_argument("--max-runtime-seconds", type=int, default=1800)
+    run.add_argument("--max-runtime-seconds", type=int, default=DEFAULT_DAILY_RUNTIME_SECONDS)
     run.add_argument("--max-items", type=int, default=25, help="Per-stage daily item bound.")
     run.add_argument("--idempotency-key", help="Explicit retry key; identical keys replay the immutable receipt.")
     run.add_argument("--receipt-dir")
@@ -1189,6 +1189,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--since", help="Optional lower publication-date bound for daily RSS ingestion.")
     run.add_argument("--execute-ingestion", action="store_true")
     run.add_argument("--execute-normalize", action="store_true")
+    run.add_argument(
+        "--execute-extraction",
+        action="store_true",
+        help="Explicitly execute the bounded subscription-auth extraction stage.",
+    )
     run.add_argument("--apply-reconcile", action="store_true")
     run.add_argument("--record-exception-contracts", action="store_true")
     run.add_argument("--publish-ops", dest="daily_publish_ops", action="store_true")
@@ -2446,6 +2451,7 @@ def main(argv: list[str] | None = None) -> int:
                         since=args.since,
                         execute_ingestion=args.execute_ingestion,
                         execute_normalize=args.execute_normalize,
+                        execute_extraction=args.execute_extraction,
                         apply_reconcile=args.apply_reconcile,
                         record_exception_contracts=args.record_exception_contracts,
                         publish_observer=args.daily_publish_ops,

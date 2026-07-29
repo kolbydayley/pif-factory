@@ -277,7 +277,8 @@ class DailyCycleTests(unittest.TestCase):
                     record_exception_contracts=True,
                     stage_handlers=handlers,
                 )
-                self.assertTrue(result["ok"])
+                self.assertFalse(result["ok"])
+                self.assertEqual(result["status"], "blocked_required_work")
                 row = conn.execute(
                     "SELECT receipt_json FROM pif_daily_stage_receipts WHERE stage_name='bounded_baseline_extraction'"
                 ).fetchone()
