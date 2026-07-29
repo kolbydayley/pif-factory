@@ -50,6 +50,23 @@
         "claim_text_faithfulness_proxy": 0.744435
       },
       "arithmetic_note": "The authoritative formula yields speaker 0.954615; the directive's displayed 0.9700 result was arithmetic, not the adopted rule."
+    },
+    {
+      "decision_id": "owner-gold-author-class-decomposition-probe-20260729-v1",
+      "owner": "Kolby Dayley",
+      "recorded_at": "2026-07-29",
+      "source_kind": "review_thread_directive_in_active_codex_thread",
+      "provenance": {
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Kolby selected option (a): one bounded gpt-5.6-sol gold-author-class probe over the exact frozen split-default flagged packets, preceded by a zero-call hallucination gold-vs-gold calibration."
+      },
+      "authorizes": {
+        "model": "gpt-5.6-sol",
+        "invocation": "codex_exec_ephemeral_subscription_lane",
+        "one_run_only": true,
+        "prompt_changes": false,
+        "sealed_holdout_access": false
+      }
     }
   ],
   "cumulative_before_new_authorization": {
@@ -170,6 +187,31 @@
         "known_cumulative_tokens_after": 2326768,
         "acceptance_eligible": false,
         "decomposition_lane_stopped": true
+      }
+    },
+    {
+      "experiment_id": "stage-b-sol-input-split-default-20260729-v1",
+      "sequence": 5,
+      "model": "gpt-5.6-sol",
+      "provider_lane": "codex_subscription_ephemeral",
+      "max_calls": 16,
+      "max_tokens": 450000,
+      "max_wall_seconds": 14400,
+      "reserved_tokens_per_call": 25000,
+      "status": "declared",
+      "input_contract": "exact_19_flagged_packets_from_task5-input-split-default-20260729-v1",
+      "provider_envelopes": 16,
+      "batching_contract": "deterministically pack the 19 immutable semantic packets into 16 provider envelopes; validate every inner output against its original packet",
+      "unflagged_control": "reuse_frozen_task5_outputs_without_new_calls",
+      "whole_run_reserved_tokens": 400000,
+      "cumulative_before": {
+        "calls": 250,
+        "known_tokens": 2326768
+      },
+      "provenance": {
+        "source_kind": "review_thread_directive_in_active_codex_thread",
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Run one gpt-5.6-sol gold-author-class decomposition probe and stop the decomposition lane if it fails."
       }
     }
   ]
