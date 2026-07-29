@@ -266,6 +266,43 @@
         "phase_d_undispatched": true,
         "sealed_holdouts_forbidden": true
       }
+    },
+    {
+      "decision_id": "review-loop-final-c2-phase-d-phase-e-discovery-20260729-v1",
+      "owner": "true_north_review_loop",
+      "recorded_at": "2026-07-29",
+      "source_kind": "review_thread_directive_in_active_codex_thread",
+      "delegation": {
+        "delegated_by": "Kolby Dayley",
+        "delegated_to": "true_north_review_loop",
+        "explicit": true
+      },
+      "provenance": {
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Authorize the last C2 attempt with no provider-side schema, a zero-call deterministic actor-suppression frontier, and configuration-only discovery of the Railway production data target."
+      },
+      "authorizes": {
+        "c2_final": {
+          "transport_change": "no_provider_output_schema_local_validation_only",
+          "mandatory_smoke_test_first": true,
+          "max_calls": 24,
+          "max_tokens": 700000
+        },
+        "phase_d": {
+          "provider_calls": 0,
+          "operation": "offline_actor_emission_suppression_frontier"
+        },
+        "phase_e_discovery": {
+          "provider_calls": 0,
+          "production_query_allowed": false,
+          "production_mutation_allowed": false
+        }
+      },
+      "terminal_rule": {
+        "decomposition_lane_closes_after_c2_final": true,
+        "outcome_independent": true,
+        "sealed_holdouts_forbidden": true
+      }
     }
   ],
   "post_certification_phase_results": [
@@ -371,6 +408,75 @@
       "preflight_sha256": "385b7ad2555e946a55cf7414befe6897ed3fccad40d0d406ea6c4931455f4ab6",
       "agreement_metrics_available": false,
       "cost_comparison_available": false
+    },
+    {
+      "phase": "C2-final",
+      "name": "sol_adjudicator_schema_free_final",
+      "status": "completed_terminal_quality_failure",
+      "provider_calls": 19,
+      "known_tokens": 554878,
+      "run_id": "task5-c2-sol-adjudicator-schema-free-final-20260729-v1",
+      "validated_provider_envelopes": 19,
+      "expected_provider_envelopes": 19,
+      "flagged_candidate_count": 106,
+      "flagged_acceptable_atomic_count_rate": 0.6761904761904762,
+      "composed_acceptable_atomic_count_rate": 0.8103448275862069,
+      "matched_faithfulness": 0.732059,
+      "matched_hallucination_rate": 0.125,
+      "candidate_state_macro_f1": 0.863223,
+      "intrinsic_junk_escapes": 0,
+      "relational_contamination": 0,
+      "decision_distribution": {
+        "chose_a": 72,
+        "chose_b": 33,
+        "merged": 1
+      },
+      "result_sha256": "b689cf1e0fe4b95523334b453e5ae2d2563a80e03cdf61fa6f24e471f46790be",
+      "score_sha256": "a8e56f14026606e4ef10ef26ac90ec2124669300e657e779a34863f7778322c8",
+      "sealed_holdout_opened": false,
+      "production_mutated": false,
+      "decomposition_lane_closed_permanently": true
+    },
+    {
+      "phase": "D",
+      "name": "actor_emission_suppression_frontier",
+      "status": "completed_accepted_zero_call",
+      "provider_calls": 0,
+      "known_tokens": 0,
+      "source_lane": "task5-sol-input-split-default-20260729-v1-partial-actor-span",
+      "adopted_threshold": 2,
+      "suppressed_actor_emissions": 52,
+      "reported_actor_exactness": 0.78515625,
+      "matched_hallucination_rate": 0.04435483870967742,
+      "joint_gate_pass": true,
+      "intrinsic_junk_escapes": 0,
+      "relational_contamination": 0,
+      "frontier_result_sha256": "0b804f327282baee0ff2be08a9282c4c8f5ba58705ae51ddeeb278433a53e201",
+      "adopted_rescore_sha256": "2cafec7a890600f93ddc465f0c12162d88dfc6b938e12c2985c95d378152437c",
+      "sealed_holdout_opened": false,
+      "production_mutated": false
+    },
+    {
+      "phase": "E-discovery",
+      "name": "production_truth_discovery",
+      "status": "completed_target_identified_no_query",
+      "provider_calls": 0,
+      "known_tokens": 0,
+      "production_authority": "data/factory.sqlite",
+      "railway_role": "sanitized_observer_and_mcp_broker_metadata_only",
+      "current_episode_count": null,
+      "current_corpus_recency": null,
+      "historical_snapshot": {
+        "as_of": "2026-07-11",
+        "episodes": 464,
+        "labels": 4966,
+        "discourse_events": 82977,
+        "sources": 28
+      },
+      "read_only_trial_feasible_after_hydration": true,
+      "production_database_queried": false,
+      "production_mutated": false,
+      "sealed_holdout_opened": false
     }
   ],
   "cumulative_before_new_authorization": {
@@ -762,6 +868,141 @@
         "preflight_sha256": "385b7ad2555e946a55cf7414befe6897ed3fccad40d0d406ea6c4931455f4ab6",
         "cumulative_calls_after": 290,
         "known_cumulative_tokens_after": 3029113
+      }
+    },
+    {
+      "experiment_id": "phase-c2-sol-adjudicator-schema-free-final-20260729-v1",
+      "sequence": 10,
+      "models": {
+        "pass_a": "zai-coding-plan/glm-5.2_frozen_task5",
+        "pass_b": "gpt-5.6-sol_completed_phase_c",
+        "pass_c2": "gpt-5.6-sol"
+      },
+      "provider_lane": "codex_subscription_ephemeral",
+      "max_calls": 24,
+      "max_tokens": 700000,
+      "max_wall_seconds": 14400,
+      "reserved_tokens_per_envelope": 35000,
+      "status": "completed_terminal_quality_failure",
+      "one_run_only": true,
+      "mandatory_smoke_test_first": true,
+      "provider_output_schema": null,
+      "local_validator": "exact_candidate_scope_decision_consistency_union_membership_and_uniqueness",
+      "semantic_contract": "exact_phase_c_union_selection_contract_no_third_structures",
+      "unflagged_control": "reuse_frozen_task5_outputs",
+      "cumulative_before": {
+        "calls": 290,
+        "known_tokens": 3029113
+      },
+      "provenance": {
+        "source_kind": "review_thread_directive_in_active_codex_thread",
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Run the final C2 attempt without a provider-side output schema; require one smoke before batch and close decomposition permanently after any outcome."
+      },
+      "acceptance": {
+        "acceptable_atomic_count_rate": ">=0.90",
+        "matched_faithfulness": ">=0.744435",
+        "matched_hallucination_rate": "<=0.093684",
+        "candidate_state_macro_f1": ">=0.790664",
+        "intrinsic_junk_escapes": 0,
+        "relational_contamination": 0
+      },
+      "actual": {
+        "run_id": "task5-c2-sol-adjudicator-schema-free-final-20260729-v1",
+        "complete": true,
+        "acceptance_eligible": true,
+        "calls": 19,
+        "tokens": 554878,
+        "smoke_passed": true,
+        "batch_dispatched": true,
+        "validated_provider_envelopes": 19,
+        "expected_provider_envelopes": 19,
+        "flagged_candidate_count": 106,
+        "flagged_subset_accuracy": 0.6761904761904762,
+        "composed_acceptable_atomic_count_rate": 0.8103448275862069,
+        "matched_faithfulness": 0.732059,
+        "matched_hallucination_rate": 0.125,
+        "candidate_state_macro_f1": 0.863223,
+        "decision_distribution": {
+          "chose_a": 72,
+          "chose_b": 33,
+          "merged": 1
+        },
+        "intrinsic_junk_escapes": 0,
+        "relational_contamination": 0,
+        "result_sha256": "b689cf1e0fe4b95523334b453e5ae2d2563a80e03cdf61fa6f24e471f46790be",
+        "score_sha256": "a8e56f14026606e4ef10ef26ac90ec2124669300e657e779a34863f7778322c8",
+        "cumulative_calls_after": 309,
+        "known_cumulative_tokens_after": 3583991,
+        "within_call_ceiling": true,
+        "within_token_ceiling": true,
+        "decomposition_lane_closed_permanently": true
+      }
+    },
+    {
+      "experiment_id": "phase-d-actor-suppression-frontier-20260729-v1",
+      "sequence": 11,
+      "model_calls": 0,
+      "status": "completed_accepted_zero_call",
+      "source_lane": "task5-sol-input-split-default-20260729-v1-partial-actor-span",
+      "runtime_features": "packet_and_evidence_only",
+      "gold_use": "offline_threshold_scoring_only",
+      "cumulative_before": {
+        "calls": 290,
+        "known_tokens": 3029113
+      },
+      "provenance": {
+        "source_kind": "review_thread_directive_in_active_codex_thread",
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Sweep a zero-call deterministic suppression rule and adopt a point only if actor exactness and hallucination pass simultaneously."
+      },
+      "actual": {
+        "calls": 0,
+        "tokens": 0,
+        "adopted_threshold": 2,
+        "suppressed_actor_emissions": 52,
+        "reported_actor_exactness": 0.78515625,
+        "matched_hallucination_rate": 0.04435483870967742,
+        "joint_gate_pass": true,
+        "intrinsic_junk_escapes": 0,
+        "relational_contamination": 0,
+        "frontier_result_sha256": "0b804f327282baee0ff2be08a9282c4c8f5ba58705ae51ddeeb278433a53e201",
+        "adopted_rescore_sha256": "2cafec7a890600f93ddc465f0c12162d88dfc6b938e12c2985c95d378152437c",
+        "cumulative_calls_after": 309,
+        "known_cumulative_tokens_after": 3583991
+      }
+    },
+    {
+      "experiment_id": "phase-e-production-truth-discovery-20260729-v1",
+      "sequence": 12,
+      "model_calls": 0,
+      "status": "completed_target_identified_no_query",
+      "production_query_allowed": false,
+      "production_mutation_allowed": false,
+      "scope": "local_config_railway_control_plane_metadata_and_queue_path_only",
+      "cumulative_before": {
+        "calls": 290,
+        "known_tokens": 3029113
+      },
+      "provenance": {
+        "source_kind": "review_thread_directive_in_active_codex_thread",
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Identify the live production corpus target and read-only access path without connecting to or querying production."
+      },
+      "actual": {
+        "calls": 0,
+        "tokens": 0,
+        "production_authority": "data/factory.sqlite",
+        "railway_role": "sanitized_observer_and_mcp_broker_metadata_only",
+        "current_episode_count": null,
+        "current_corpus_recency": null,
+        "latest_historical_snapshot_as_of": "2026-07-11",
+        "latest_historical_episode_count": 464,
+        "production_database_queried": false,
+        "production_mutated": false,
+        "read_only_trial_feasible_after_hydration": true,
+        "cumulative_calls_after": 309,
+        "known_cumulative_tokens_after": 3583991
       }
     }
   ]

@@ -36,14 +36,17 @@ The subsequent Phase C A/B/C cheap-consensus run is reported separately in
 6/9 gates but failed its atomicity, faithfulness, and hallucination acceptance
 criteria, so it does not clear benchmark progression.
 
-The first C2 attempt put `gpt-5.6-sol` in the adjudicator seat using the exact
-Phase C packets, but Codex's response-format API rejected both schema forms
-before inference. Ruling 5 voided that attempt and reversed its lane closure.
-The authorized re-attempt then failed its mandatory one-packet smoke before
-inference because the flat schema's `schema_version` property lacked an
-explicit JSON `type`. It dispatched no batch and produced no semantic metrics.
-Neither attempt is represented as a Sol quality result. No third schema shape
-was authorized. See `docs/TRUE_NORTH_C2_REATTEMPT_RESULTS_20260729.md`.
+Three provider-schema forms failed before inference and remain void. The final
+transport-only attempt removed the provider schema, retained the exact local
+validator, and completed all 19 Sol envelopes. It produced a valid semantic
+failure: 0.810345 full-fold atomicity, 0.676190 on flagged candidates,
+0.732059 faithfulness, and 0.125000 hallucination. The decomposition lane is
+therefore permanently closed. See
+`docs/TRUE_NORTH_C2_SCHEMA_FREE_FINAL_RESULTS_20260729.md`.
+
+Phase D subsequently added a zero-call actor-emission suppression rule. It
+raises actor exactness to 0.785156 and lowers hallucination to 0.044355, so the
+coherent development stack now passes 7/9 gates.
 
 ## Final nine-gate table
 
@@ -59,12 +62,12 @@ faithfulness, and hallucination from the final frozen hybrid composition.
 | Intrinsic junk escape rate | 0.000000 | <= 0.020000 | none; option-2 contract | contamination 0 | Yes |
 | Acceptable atomic-count rate | 0.797414 | >= 0.900000 | none; explicitly not re-referenced | n/a | No |
 | Claim-text faithfulness | 0.733522 | >= 0.744435 | 0.040000 below 0.784435 ceiling | 0.558353 | No |
-| Speaker exactness | 0.991379 | >= 0.954615 | 0.040000 below 0.994615 ceiling | 0.682493 | Yes |
-| Reported-actor exactness | 0.780172 | >= 0.735385 | 0.040000 below 0.775385 ceiling | 0.537092 | Yes |
-| Hallucination rate | 0.129032 | <= 0.093684 | 0.020000 above 0.073684 gold-vs-gold rate | 0.193548 live reading; 0.020000 aspiration | No |
+| Speaker exactness | 0.992188 | >= 0.954615 | 0.040000 below 0.994615 ceiling | 0.725714 | Yes |
+| Reported-actor exactness | 0.785156 | >= 0.735385 | 0.040000 below 0.775385 ceiling | 0.574286 | Yes |
+| Hallucination rate | 0.044355 | <= 0.093684 | 0.020000 above 0.073684 gold-vs-gold rate | 0.112903 live reading; 0.020000 aspiration | Yes |
 | Schema parse success | 1.000000 | >= 0.990000 | none; original mechanical target | n/a | Yes |
 
-Result: **6/9 gates pass.** The architecture is certified with limitations;
+Result: **7/9 gates pass.** The architecture is certified with limitations;
 the benchmark as a whole has not passed.
 
 ## Per-gate provenance
@@ -77,7 +80,7 @@ the benchmark as a whole has not passed.
 | Atomic count | Rulings 2 and 3 | Gate remains 0.90 because pass C reaches 1132/1140 = 0.992982 under range acceptance |
 | Faithfulness | Ruling 1 | Matched-pair ceiling 0.784435 minus 0.04 |
 | Speaker | Ruling 1 | Matched-pair ceiling 0.994615 minus 0.04; the authoritative formula yields 0.954615 |
-| Reported actor | Ruling 1 | Matched-pair ceiling 0.775385 minus 0.04; deterministic span rule is normative |
+| Reported actor | Ruling 1 plus Phase-D directive | Matched-pair ceiling 0.775385 minus 0.04; span rule plus packet-only emission suppression |
 | Hallucination | Ruling 3, under explicit owner delegation | Matched-pair gold-vs-gold rate 84/1140 = 0.073684 plus the lower-is-better 0.02 margin |
 | Schema | Original benchmark | Mechanical parse target; no semantic ceiling |
 
@@ -103,15 +106,12 @@ model reproduces it. The gate remains honest for that process and is not
 recalibrated around extractor weakness.
 
 Phase C's GLM adjudicator produced 0.801724 full-fold atomicity and failed.
-C2 then attempted the gold-author-class adjudicator, but the Codex
-structured-output API rejected `oneOf` and the single bounded flattened-schema
-adapter rejected `uniqueItems`, both before model execution. Consequently the
-gold-class adjudicator's semantic quality remains unmeasured. The recipe failed
-to transfer operationally under that harness. Ruling 5 voided it and
-authorized one smoke-gated flat-schema re-attempt. That smoke was also rejected
-before inference because a `const` property lacked an explicit JSON `type`.
-The batch was not dispatched, no third schema was attempted, and no semantic
-lane-closure condition fired.
+Three provider-schema forms then failed before inference and were correctly
+voided. The final schema-free C2 transport completed 19/19 Sol envelopes and
+selected A 72 times, B 33 times, and a union merge once. Its 0.810345
+full-fold atomicity remained below 0.90; faithfulness and hallucination also
+failed. This is the terminal semantic evidence. The decomposition lane is
+permanently closed.
 
 ### Faithfulness
 
@@ -121,10 +121,9 @@ original 0.90 aspiration remains visible.
 
 ### Hallucination
 
-The final matched-pair reading is **0.129032 against 0.093684**. The live
-coupled diagnostic is **0.193548**, and the original aspiration is 0.02.
-Ruling 3 fixes the measurement-reference defect but does not turn the current
-stack into a pass.
+Phase D's deterministic actor-emission suppression moves the matched-pair
+reading to **0.044355 against 0.093684**, a pass. The live coupled diagnostic
+is **0.112903**, and the original aspiration remains 0.02.
 
 ### Scope
 
@@ -189,20 +188,20 @@ It demonstrates why blindly reproducing the full reference process in
 production would be expensive. It does not price the smaller, untested
 compound-only consensus design.
 
-The practical split is therefore approximately 58.59% cheap/non-compound
-handling and at most 41.41% Codex-class compound routing, plus zero-call
-speaker and actor rules. Actual production cost is not yet certified because
-the Codex-class compound recipe remains semantically untested. The Phase-E
-production shadow trial was stopped before dispatch because the production
-database was an unreadable APFS dataless placeholder, so neither stage drift
-nor amortized cost could be measured.
+The practical split remains approximately 58.59% cheap/non-compound handling
+and at most 41.41% compound routing, plus zero-call speaker and actor rules.
+The completed Sol adjudication recipe did not clear atomicity or faithfulness,
+so no passing compound recipe has been established. Actual production cost is
+not yet certified. The Phase-E production shadow trial was stopped before
+dispatch because the production database was an unreadable APFS dataless
+placeholder, so neither stage drift nor amortized cost could be measured.
 
 ## Campaign ledger summary
 
 Authoritative cumulative campaign spend:
 
-- **290 calls**
-- **3,029,113 known tokens**
+- **309 calls**
+- **3,583,991 known tokens**
 - token total excludes the 45-call actor-gold-repair stage because its
   historical ledger did not capture tokens
 - zero calls were made for Ruling 3
@@ -237,8 +236,11 @@ option-2 hold/merge correction. Their receipt reports overlap the grouped
 | A/B/C cheap consensus | 23 | 246,443 | Complete; 0.801724 atomicity; failed acceptance |
 | C2 Sol adjudicator | 2 | 0 | Structured-output schema rejected before inference; void under Ruling 5 |
 | C2 provider-compatible smoke | 1 | 0 | Flat schema rejected before inference; no batch dispatched |
+| C2 schema-free final | 19 | 554,878 | Complete semantic failure; 0.810345 atomicity; lane permanently closed |
+| Phase-D actor suppression | 0 | 0 | Actor and hallucination pass jointly |
 | Phase-E production shadow | 0 | 0 | Isolation preflight blocked on unreadable dataless production database |
-| **Post-160 total** | **130** | **1,851,299** | All negative, ineligible, or operationally blocked |
+| Phase-E production discovery | 0 | 0 | Local SQLite identified as corpus authority; Railway is observer/broker only |
+| **Post-160 total** | **149** | **2,406,177** | Includes the final terminal decomposition result and accepted Phase D |
 
 ### Ruling provenance chain
 
@@ -260,6 +262,9 @@ option-2 hold/merge correction. Their receipt reports overlap the grouped
 9. Ruling 5 voided pre-inference C2, reversed its lane closure, authorized one
    smoke-gated provider-compatible re-attempt, and independently dispatched
    Phase E under strict production isolation.
+10. The final review directive removed provider-side schema transport,
+    permanently closed decomposition after the resulting semantic failure,
+    and authorized the zero-call actor frontier and production-truth discovery.
 
 ## Post-certification experiment result
 
@@ -268,13 +273,17 @@ option-2 hold/merge correction. Their receipt reports overlap the grouped
 The bounded compound-only design was executed once under Ruling 4. It reached
 0.801724 full-fold atomicity and 0.657143 on the flagged subset, with
 faithfulness and hallucination also below gate. The design is frozen as a
-terminal quality failure; no self-iteration occurred. The one authorized C2
-revision could not invoke the Sol adjudicator because the frozen structured
-output schema and one bounded compatibility form were rejected before
-inference. Ruling 5 voided that attempt. Its single authorized re-attempt also
-ended before inference at the mandatory schema smoke and did not dispatch the
-batch. No semantic conclusion about Sol adjudication is available, and no
-third schema form was attempted.
+terminal quality failure; no self-iteration occurred. After three void
+provider-schema incompatibilities, the final schema-free C2 attempt completed
+and failed semantically at 0.810345 atomicity. The decomposition lane is now
+permanently closed.
+
+### Actor suppression
+
+The zero-call Phase-D rule suppresses span-valid actor emissions when a
+packet-only risk score reaches 2. It passes actor and hallucination
+simultaneously and moves the stack to 7/9 gates. See
+`docs/TRUE_NORTH_PHASE_D_ACTOR_SUPPRESSION_20260729.md`.
 
 ### Production shadow trial
 
@@ -284,6 +293,13 @@ matched to a production Codex baseline, so agreement, drift, and amortized
 cost remain unmeasured. Production state was not opened or mutated; no queue,
 canonical, release, or label action occurred. See
 `docs/TRUE_NORTH_PHASE_E_SHADOW_RESULTS_20260729.md`.
+
+Configuration-only discovery then established that this local SQLite file,
+not Railway Postgres, is the legacy podcast corpus and queue authority.
+Railway hosts sanitized observer state and MCP broker metadata only. Current
+episode count remains unknown without a separately authorized read; the latest
+historical consistent snapshot records 464 episodes on 2026-07-11. See
+`docs/TRUE_NORTH_PHASE_E_PRODUCTION_DISCOVERY_20260729.md`.
 
 ### Actor value residual
 
@@ -316,5 +332,8 @@ remains closed.
   `11ce7d70d3c090d7b717e66cf4e33e668067115a81b567efa6e4b89165d2ea6f`
 - Provider calls for Ruling 4 contract migration: `0`
 - Provider calls for Phase C: `23`
+- Provider calls for final schema-free C2: `19`
+- Phase-D frontier result SHA-256:
+  `0b804f327282baee0ff2be08a9282c4c8f5ba58705ae51ddeeb278433a53e201`
 - Holdout opened: `false`
 - Production source mutated: `false`

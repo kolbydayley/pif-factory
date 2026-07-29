@@ -5678,7 +5678,7 @@ def _codex_usage_from_jsonl(value: str) -> dict[str, int]:
 def _run_codex_gold_packet(
     *,
     packet_path: Path,
-    schema_path: Path,
+    schema_path: Path | None,
     output_dir: Path,
     timeout_seconds: int,
     codex_binary: str,
@@ -5714,13 +5714,17 @@ def _run_codex_gold_packet(
         "--ephemeral",
         "--sandbox",
         "read-only",
-        "--output-schema",
-        str(schema_path),
         "--output-last-message",
         str(raw_output_path),
         "--json",
         "-",
     ]
+    if schema_path is not None:
+        output_index = command.index("--output-last-message")
+        command[output_index:output_index] = [
+            "--output-schema",
+            str(schema_path),
+        ]
     prompt = (
         (
             prompt_prefix

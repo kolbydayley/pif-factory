@@ -1,4 +1,4 @@
-"""Ruling-5 C2 re-attempt with a smoke-gated Codex-compatible schema."""
+"""Final C2 attempt with schema-free transport and local validation."""
 
 from __future__ import annotations
 
@@ -31,14 +31,16 @@ from .true_north_sol_split_default import (
 )
 
 
-SCHEMA_VERSION = "pif_true_north_c2_reattempt_v1"
-EXPERIMENT_ID = "phase-c2-sol-adjudicator-reattempt-20260729-v1"
-RUN_ID = "task5-c2-sol-adjudicator-reattempt-20260729-v1"
+SCHEMA_VERSION = "pif_true_north_c2_schema_free_final_v1"
+EXPERIMENT_ID = (
+    "phase-c2-sol-adjudicator-schema-free-final-20260729-v1"
+)
+RUN_ID = "task5-c2-sol-adjudicator-schema-free-final-20260729-v1"
 MAX_CALLS = 24
 MAX_TOKENS = 700_000
 MAX_WALL_SECONDS = 4 * 60 * 60
 RESERVED_TOKENS_PER_ENVELOPE = 35_000
-CUMULATIVE_CALLS_BEFORE = 289
+CUMULATIVE_CALLS_BEFORE = 290
 KNOWN_CUMULATIVE_TOKENS_BEFORE = 3_029_113
 LEDGER_PATH = (
     Path(__file__).resolve().parent.parent
@@ -48,17 +50,22 @@ LEDGER_PATH = (
 SYSTEM_PROMPT = """\
 You adjudicate atomic decompositions, not wording.
 
-For every candidate, inspect the evidence and both proposed decompositions.
-Return:
-- decision="chose_a" only when the resulting_claim_texts exactly equal Pass A.
-- decision="chose_b" only when the resulting_claim_texts exactly equal Pass B.
-- decision="merged" only when selecting a non-empty, non-duplicative
-  combination or subset from the supplied union that is not exactly A or B.
+Return one JSON object and no Markdown:
+{"schema_version":"pif_true_north_c2_schema_free_final_v1","items":[...]}
+
+Each item must contain exactly:
+{"candidate_id":"...","decision":"chose_a|chose_b|merged",
+ "resulting_claim_texts":["..."]}
 
 Every resulting claim must be copied byte-for-byte from union_claim_texts.
 Never paraphrase, repair, or invent a third claim. Select the smallest set in
 which every item is independently true or false and the set preserves the
-evidence-supported proposition. Return only JSON matching the schema."""
+evidence-supported proposition.
+
+Use decision="chose_a" only when the claim list exactly equals Pass A,
+decision="chose_b" only when it exactly equals Pass B, and decision="merged"
+only for a non-empty, duplicate-free subset or combination from the supplied
+union that differs from both A and B. Include every candidate exactly once."""
 
 
 class C2ReattemptError(RuntimeError):
@@ -80,6 +87,7 @@ def _ledger() -> tuple[dict[str, Any], str]:
         or row.get("status") != "declared"
         or row.get("mandatory_smoke_test_first") is not True
         or row.get("one_run_only") is not True
+        or row.get("provider_output_schema") is not None
         or row.get("provider_lane") != SOL_MODEL_LANE
         or int(row.get("max_calls", -1)) != MAX_CALLS
         or int(row.get("max_tokens", -1)) != MAX_TOKENS
@@ -87,7 +95,7 @@ def _ledger() -> tuple[dict[str, Any], str]:
         != RESERVED_TOKENS_PER_ENVELOPE
     ):
         raise C2ReattemptError(
-            "C2 re-attempt budget is not declared exactly"
+            "final C2 budget is not declared exactly"
         )
     return ledger, true_north.sha256_text(
         true_north.dumps_json(ledger)
@@ -268,17 +276,7 @@ def prepare_reattempt(
             / episode_id
             / f"{segment_id}.private.json"
         )
-        schema_path = (
-            run_root
-            / "schemas"
-            / "sol-flat-adjudication"
-            / episode_id
-            / f"{segment_id}.json"
-        )
         true_north._write_json(packet_path, packet, immutable=True)
-        true_north._write_json(
-            schema_path, packet["output_schema"], immutable=True
-        )
         packet_hashes[f"{episode_id}/{segment_id}"] = (
             true_north._sha256_file(packet_path)
         )
@@ -311,9 +309,8 @@ def prepare_reattempt(
         "smoke_packet": f"{smoke_key[0]}/{smoke_key[1]}",
         "smoke_must_pass_before_batch": True,
         "system_prompt_sha256": true_north.sha256_text(SYSTEM_PROMPT),
-        "provider_schema": (
-            "flat decision plus claim list; no oneOf; no uniqueItems"
-        ),
+        "provider_schema": None,
+        "transport": "prompt_json_shape_plus_local_validation",
         "semantic_validator": (
             "local exact candidate scope, decision consistency, "
             "union membership, and uniqueness"
@@ -409,13 +406,7 @@ def _execute_packet(
     started = time.monotonic()
     receipt = true_north._run_codex_gold_packet(
         packet_path=packet_path,
-        schema_path=(
-            run_root
-            / "schemas"
-            / "sol-flat-adjudication"
-            / episode_id
-            / f"{segment_id}.json"
-        ),
+        schema_path=None,
         output_dir=output_dir,
         timeout_seconds=timeout_seconds,
         codex_binary=codex_binary,
@@ -423,6 +414,14 @@ def _execute_packet(
         prompt_prefix=SYSTEM_PROMPT,
     )
     elapsed = time.monotonic() - started
+    base_receipt_path = output_dir / "receipt.json"
+    if receipt.get("idempotent_replay") and base_receipt_path.is_file():
+        receipt = true_north._read_json(base_receipt_path)
+        elapsed = float(receipt.get("elapsed_seconds", elapsed))
+    receipt = dict(receipt)
+    receipt["receipt_sha256"] = true_north._sha256_file(
+        base_receipt_path
+    )
     true_north._write_json(
         output_dir / "c2-reattempt-receipt.json",
         {
@@ -431,9 +430,7 @@ def _execute_packet(
             "provider_model": SOL_MODEL,
             "provider_lane": SOL_MODEL_LANE,
             "usage": receipt.get("usage", {}),
-            "base_receipt_sha256": true_north._sha256_file(
-                output_dir / "receipt.json"
-            ),
+            "base_receipt_sha256": receipt["receipt_sha256"],
         },
         immutable=True,
     )
