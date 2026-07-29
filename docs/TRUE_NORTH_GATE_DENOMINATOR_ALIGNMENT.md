@@ -47,13 +47,53 @@ because the gold process does not pass it.
 
 All three semantic gates sit above the agreement their own gold achieves.
 
+## Full ceiling audit — which gates can gold itself pass?
+
+Running `compute_ceiling_document` over the same pass-A/pass-B artifacts gives
+every calibrated metric, not just the three with a denominator problem:
+
+| Metric | Gold vs gold | Current target | Gold clears its own gate? |
+|---|---:|---:|---|
+| `speaker_exactness` | 0.9946 | 0.9700 | Yes (matched-pair) / **No** (gate denominator, 0.8917) |
+| `value_state_exactness` | 0.9632 | 0.9000 | Yes |
+| `atomic_count_exactness` | **0.8404** | 0.9000 | **No** |
+| `disposition_exactness` | **0.8070** | 0.9000 | **No** |
+| `claim_text_faithfulness_proxy` | 0.7844 | 0.9000 | **No** |
+| `reported_actor_exactness` | 0.7754 | 0.9500 | **No** |
+
+**Only `value_state_exactness` is cleanly passable by the gold process itself.**
+
+### This includes the atomic-count gate
+
+The atomic-count gate was the one target still believed to be measured on an
+undisputed basis, and it is the gate the campaign is actively spending model
+calls against (`docs/TRUE_NORTH_COUNT_FIRST_RESULTS.md` and the split-default
+experiment, both frozen as negative results).
+
+Gold-vs-gold exact atomic-count agreement is **0.8404** against a **0.90**
+gate. The system currently sits at 0.7802. Of the 12-point gap to the gate,
+**6 points are unreachable** — no extractor can be more consistent about
+decomposition than the gold it is scored against.
+
+Note on formulation: the figure above is *exact* count agreement, while the
+live gate uses acceptable-range (min–max) acceptance. The plan's own
+post-consensus range-acceptance figure is 86.98% — also below 0.90. Both
+formulations of the ceiling land under the gate.
+
+**Practical consequence:** further paid decomposition experiments cannot close
+this gate. The remaining honest headroom is 0.7802 → 0.8404, about 6 points,
+and closing all of it still fails a 0.90 gate.
+
 ## What this does and does not establish
 
 - **Does:** these three gate readings certify nothing about the extractor. A
   failure against them is not evidence of an extraction defect.
-- **Does not:** say the extractor is good. Atomic-count accuracy (78.02% vs
-  ≥90%) is measured on a denominator that is not in dispute, and the junk and
-  contamination gates are unaffected by this finding.
+- **Does not:** say the extractor is good. Atomic-count accuracy at 78.02% is a
+  real shortfall against a gold ceiling of 84.04% — roughly 6 points of genuine,
+  reachable headroom. The junk and contamination gates are unaffected by this
+  finding. (An earlier draft of this document described the atomic-count gate as
+  measured on an undisputed basis; the ceiling audit above corrects that — its
+  0.90 target also exceeds what gold achieves.)
 - **Does not:** propose that decomposition go unmeasured. The coupled
   denominator exists to stop a system from hiding missing atomics inside field
   scores. The correct split is: `acceptable_atomic_count_rate` carries
