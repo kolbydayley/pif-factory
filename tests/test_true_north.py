@@ -203,6 +203,15 @@ class TrueNorthTest(unittest.TestCase):
         self.assertEqual(output, {})
         self.assertEqual(rerun.call_count, 1)
         self.assertFalse(any(r["usage"].get("checkpoint_reuse") for r in receipts))
+        failures = list(
+            output_dir.glob(
+                "semantic-failure-1-*.private.jsonl"
+            )
+        )
+        self.assertEqual(len(failures), 1)
+        self.assertEqual(
+            failures[0].read_text(encoding="utf-8"), empty_stream
+        )
 
     def _seed(self) -> None:
         evidence = "The system is dangerous without independent evaluation."

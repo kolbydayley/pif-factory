@@ -3305,8 +3305,25 @@ def _run_opencode_packet(
             except Exception:
                 # A prior process may have checkpointed an answer that failed a
                 # newer invariant. Re-run the same provider; never fall through
-                # to another provider for a semantic/schema failure.
+                # to another provider for a semantic/schema failure. Preserve
+                # the paid invalid answer before reusing the attempt pathname.
                 receipts.pop()
+                failure_suffix = _sha256_file(checkpoint)[:12]
+                checkpoint.replace(
+                    output_dir
+                    / (
+                        f"semantic-failure-{index}-{failure_suffix}"
+                        ".private.jsonl"
+                    )
+                )
+                if checkpoint_stderr.is_file():
+                    checkpoint_stderr.replace(
+                        output_dir
+                        / (
+                            f"semantic-failure-{index}-{failure_suffix}"
+                            ".stderr.private.txt"
+                        )
+                    )
             else:
                 output_path = output_dir / "validated.private.json"
                 _write_json(output_path, output, immutable=False)
