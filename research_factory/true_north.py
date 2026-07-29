@@ -8671,7 +8671,9 @@ def _multipass_execute_stage(
                 results.append(future.result())
             except Exception as exc:
                 errors.append(exc)
-    stage_wall = round(time.monotonic() - started, 3)
+    stage_wall = (
+        round(time.monotonic() - started, 3) if pending else 0.0
+    )
     for episode_id, segment_id, output, receipts, model in results:
         output_dir = (
             run_root

@@ -519,12 +519,22 @@ def run_dual_decomposition(
     state["disagreement_candidate_count"] = len(all_disagreements)
     state["spark_escalation_packet_count"] = len(escalation_jobs)
     true_north._multipass_state_write(state_path, state)
+    charged_glm_attempts = (
+        int(state["usage"]["calls"]) - len(escalation_jobs)
+    )
     cost = {
-        "new_glm_calls": len(jobs),
+        "successful_glm_packet_calls": len(jobs),
+        "charged_glm_attempts": charged_glm_attempts,
+        "failed_glm_attempts": max(
+            0, charged_glm_attempts - len(jobs)
+        ),
         "spark_escalation_calls": len(escalation_jobs),
         "total_new_calls": int(state["usage"]["calls"]),
         "total_new_tokens": int(state["usage"]["tokens"]),
         "all_spark_baseline_calls": len(jobs),
+        "total_call_ratio_vs_all_spark": round(
+            int(state["usage"]["calls"]) / len(jobs), 6
+        ),
         "effective_frontier_call_ratio_vs_all_spark": round(
             len(escalation_jobs) / len(jobs), 6
         ),
