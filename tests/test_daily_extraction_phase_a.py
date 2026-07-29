@@ -16,6 +16,7 @@ from research_factory.daily_cycle import (
     ensure_daily_schema,
 )
 from research_factory.headless_codex import execute_claimed_label_runs
+from research_factory.worker import claim_next_job
 
 
 NOW = "2026-07-29T12:00:00+00:00"
@@ -508,6 +509,46 @@ def test_recent_window_not_absolute_backlog_controls_satisfaction(tmp_path: Path
         assert result["work_due"] is False
         assert result["work_satisfied"] is True
         assert result["healthy_no_work"] is True
+    finally:
+        conn.close()
+
+
+def test_target_scoped_claim_does_not_take_unrelated_backfill_work(
+    tmp_path: Path,
+) -> None:
+    conn = db.connect(tmp_path / "factory.sqlite")
+    try:
+        db.init_db(conn)
+        wanted = db.enqueue_job(
+            conn,
+            lane="podcast",
+            job_type="label_segment",
+            target_id="segment-wanted",
+            payload={"label_pack": "ai_discourse_v3_1"},
+            priority=100,
+        )
+        unrelated = db.enqueue_job(
+            conn,
+            lane="podcast",
+            job_type="label_segment",
+            target_id="segment-unrelated",
+            payload={"label_pack": "ai_discourse_v3_1"},
+            priority=1,
+        )
+
+        claimed = claim_next_job(
+            conn,
+            lane="podcast",
+            worker_id="targeted-backfill",
+            job_types=("label_segment",),
+            target_ids=("segment-wanted",),
+        )
+
+        assert claimed["id"] == wanted
+        assert conn.execute(
+            "SELECT status FROM jobs WHERE id = ?",
+            (unrelated,),
+        ).fetchone()["status"] == "pending"
     finally:
         conn.close()
 
