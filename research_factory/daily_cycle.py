@@ -892,6 +892,19 @@ def _default_stage_handlers(
         }
 
     def validate(context: DailyStageContext) -> Mapping[str, Any]:
+        release_count = _current_accepted_release_count(conn)
+        if release_count == 0:
+            return {
+                "status": "completed",
+                "processed": 0,
+                "reason": "no_current_accepted_release",
+                "current_release_id": None,
+                "claims_checked": 0,
+                "work_due": False,
+                "required_work_enabled": True,
+                "healthy_no_work": True,
+                "work_satisfied": True,
+            }
         validation = _validate_current_accepted_release(conn, at=now())
         return {
             "status": "completed" if validation["ok"] else "failed",
@@ -1075,6 +1088,16 @@ def _recent_job_window_start(
         return str(row["completed_at"])
     parsed = dt.datetime.fromisoformat(at.replace("Z", "+00:00"))
     return (parsed - dt.timedelta(hours=24)).replace(microsecond=0).isoformat()
+
+
+def _current_accepted_release_count(conn: sqlite3.Connection) -> int:
+    if not _relation_exists(conn, "current_accepted_corpus_releases"):
+        return -1
+    return int(
+        conn.execute(
+            "SELECT COUNT(*) FROM current_accepted_corpus_releases"
+        ).fetchone()[0]
+    )
 
 
 def _assess_required_stage_truth(

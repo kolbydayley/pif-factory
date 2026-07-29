@@ -95,6 +95,9 @@ def test_validation_stage_uses_injected_clock(tmp_path: Path) -> None:
             "issues": [],
         }
         with patch(
+            "research_factory.daily_cycle._current_accepted_release_count",
+            return_value=1,
+        ), patch(
             "research_factory.daily_cycle._validate_current_accepted_release",
             return_value=validation,
         ) as validate:
@@ -102,6 +105,55 @@ def test_validation_stage_uses_injected_clock(tmp_path: Path) -> None:
 
         validate.assert_called_once_with(conn, at=NOW)
         assert result["status"] == "completed"
+    finally:
+        conn.close()
+
+
+def test_validation_stage_is_healthy_no_work_before_first_release(
+    tmp_path: Path,
+) -> None:
+    conn = db.connect(tmp_path / "factory.sqlite")
+    try:
+        db.init_db(conn)
+        ensure_daily_schema(conn)
+        handlers = _default_stage_handlers(
+            conn,
+            source_list=None,
+            since=None,
+            execute_ingestion=False,
+            execute_normalize=False,
+            execute_extraction=False,
+            apply_reconcile=False,
+            record_exception_contracts=False,
+            publish_observer=False,
+            snapshot_output=None,
+            observer_url=None,
+            observer_token=None,
+            lane="podcast",
+            label_pack="ai_discourse_v3_1",
+            model="gpt-5.5",
+            pilot_id=None,
+            now=lambda: NOW,
+        )
+        context = DailyStageContext(
+            conn=conn,
+            run_id="current-run",
+            run_date="2026-07-29",
+            stage_name="evidence_schema_privacy_validation",
+            stage_index=5,
+            max_items=5,
+            remaining_seconds=300.0,
+            deadline_monotonic=300.0,
+            artifact_dir=tmp_path / "receipts",
+        )
+
+        result = handlers["evidence_schema_privacy_validation"](context)
+
+        assert result["status"] == "completed"
+        assert result["reason"] == "no_current_accepted_release"
+        assert result["work_due"] is False
+        assert result["healthy_no_work"] is True
+        assert result["work_satisfied"] is True
     finally:
         conn.close()
 
