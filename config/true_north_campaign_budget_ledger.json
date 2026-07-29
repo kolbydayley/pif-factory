@@ -303,6 +303,42 @@
         "outcome_independent": true,
         "sealed_holdouts_forbidden": true
       }
+    },
+    {
+      "decision_id": "review-loop-best-stack-faithfulness-phase-e-readiness-20260729-v1",
+      "owner": "true_north_review_loop",
+      "recorded_at": "2026-07-29",
+      "source_kind": "review_thread_directive_in_active_codex_thread",
+      "delegation": {
+        "delegated_by": "Kolby Dayley",
+        "delegated_to": "true_north_review_loop",
+        "explicit": true
+      },
+      "provenance": {
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Compose the definitive frozen best-of-lanes stack, measure matched-pair faithfulness headroom, and prepare but do not open the Phase-E production shadow trial."
+      },
+      "authorizes": {
+        "best_stack_composition": {
+          "provider_calls": 0,
+          "source_outputs": "frozen_only"
+        },
+        "faithfulness_diagnostic": {
+          "provider_calls": 0,
+          "rewriting_stage_authorized": false
+        },
+        "phase_e_readiness": {
+          "provider_calls": 0,
+          "production_access_allowed": false,
+          "max_calls_when_separately_opened": 60,
+          "max_tokens_when_separately_opened": 1500000
+        }
+      },
+      "terminal_rule": {
+        "decomposition_lane_closed_permanently": true,
+        "sealed_holdouts_forbidden": true,
+        "phase_e_budget_recorded_not_opened": true
+      }
     }
   ],
   "post_certification_phase_results": [
@@ -477,6 +513,68 @@
       "production_database_queried": false,
       "production_mutated": false,
       "sealed_holdout_opened": false
+    },
+    {
+      "phase": "post-certification-best-stack",
+      "name": "c2_plus_phase_d_definitive_composition",
+      "status": "completed_zero_call",
+      "provider_calls": 0,
+      "known_tokens": 0,
+      "coherent": true,
+      "candidate_state_macro_f1": 0.863223,
+      "retained_value_recall": 0.9707112970711297,
+      "intrinsic_junk_escape_rate": 0.0,
+      "acceptable_atomic_count_rate": 0.8103448275862069,
+      "matched_faithfulness": 0.732059,
+      "speaker_exactness": 0.992218,
+      "reported_actor_exactness": 0.782101,
+      "matched_hallucination_rate": 0.040323,
+      "schema_parse_success_rate": 1.0,
+      "passed_gate_count": 7,
+      "predictions_sha256": "c1f90d1847e18c32b9423881b956c9b45eb9fe69d94f3d64205ee9ac6f7a486f",
+      "rescore_sha256": "c43c574261026e6b022c961147b61ae41d73531ae25e2c5b485e5fa75e2c24c1",
+      "sealed_holdout_opened": false,
+      "production_mutated": false
+    },
+    {
+      "phase": "post-certification-faithfulness",
+      "name": "matched_pair_wording_headroom_diagnostic",
+      "status": "completed_zero_call",
+      "provider_calls": 0,
+      "known_tokens": 0,
+      "matched_pair_count": 256,
+      "candidate_verbatim_mean": 0.70689,
+      "emitted_mean": 0.732059,
+      "gold_a_vs_gold_b_mean": 0.784435,
+      "best_of_emitted_or_candidate_mean": 0.736442,
+      "emitted_below_candidate_count": 17,
+      "acceptable_count_pair_mean": 0.751302,
+      "unacceptable_count_pair_mean": 0.652774,
+      "wording_only_reaches_gate": false,
+      "result_sha256": "fbb1357aa5b21a4272dc290ee7eed5f96715d63863064bc42c4b9114ce88d416",
+      "rewriting_stage_run": false,
+      "sealed_holdout_opened": false,
+      "production_mutated": false
+    },
+    {
+      "phase": "E-readiness",
+      "name": "three_episode_shadow_trial_preparation",
+      "status": "prepared_budget_not_opened",
+      "provider_calls": 0,
+      "known_tokens": 0,
+      "production_database_accessed": false,
+      "production_database_hydrated": false,
+      "executable_fail_closed_preflight_ready": true,
+      "episode_selection_ready": true,
+      "drift_and_cost_plan_ready": true,
+      "measurement_plan_sha256": "29d206d67b1db8bee5ff2b9430864a6aacdab8f866c85acca2655951a82d4e24",
+      "remaining_blocks": [
+        "production SQLite remains an APFS dataless placeholder",
+        "separate authorization to open and query production has not been granted",
+        "declared provider budget is recorded but not opened"
+      ],
+      "sealed_holdout_opened": false,
+      "production_mutated": false
     }
   ],
   "cumulative_before_new_authorization": {
@@ -1001,6 +1099,45 @@
         "production_database_queried": false,
         "production_mutated": false,
         "read_only_trial_feasible_after_hydration": true,
+        "cumulative_calls_after": 309,
+        "known_cumulative_tokens_after": 3583991
+      }
+    },
+    {
+      "experiment_id": "phase-e-three-episode-shadow-readiness-20260729-v1",
+      "sequence": 13,
+      "architecture": "definitive_frozen_hybrid_stack",
+      "episode_count": 3,
+      "max_calls": 60,
+      "max_tokens": 1500000,
+      "status": "declared_not_opened_readiness_only",
+      "production_access_allowed": false,
+      "provider_calls_allowed": false,
+      "production_database_access": "future_sqlite_uri_mode_ro_plus_query_only",
+      "writes": "future_isolated_shadow_store_only",
+      "canonical_mutation": false,
+      "release_publication": false,
+      "label_publication": false,
+      "queue_mutation": false,
+      "cumulative_before": {
+        "calls": 309,
+        "known_tokens": 3583991
+      },
+      "provenance": {
+        "source_kind": "review_thread_directive_in_active_codex_thread",
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Record but do not open the Phase-E 60-call, 1.5M-token ceiling and prepare a fail-closed read-only trial."
+      },
+      "actual": {
+        "calls": 0,
+        "tokens": 0,
+        "budget_opened": false,
+        "production_database_accessed": false,
+        "production_mutated": false,
+        "executable_fail_closed_preflight_ready": true,
+        "episode_selection_ready": true,
+        "drift_and_cost_plan_ready": true,
+        "measurement_plan_sha256": "29d206d67b1db8bee5ff2b9430864a6aacdab8f866c85acca2655951a82d4e24",
         "cumulative_calls_after": 309,
         "known_cumulative_tokens_after": 3583991
       }

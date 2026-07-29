@@ -44,9 +44,10 @@ failure: 0.810345 full-fold atomicity, 0.676190 on flagged candidates,
 therefore permanently closed. See
 `docs/TRUE_NORTH_C2_SCHEMA_FREE_FINAL_RESULTS_20260729.md`.
 
-Phase D subsequently added a zero-call actor-emission suppression rule. It
-raises actor exactness to 0.785156 and lowers hallucination to 0.044355, so the
-coherent development stack now passes 7/9 gates.
+Phase D subsequently added a zero-call actor-emission suppression rule. The
+definitive zero-call composition applies that frozen rule to C2's actor-span
+output. It reaches 0.810345 atomicity, 0.782101 actor exactness, and 0.040323
+hallucination, so the coherent development stack passes 7/9 gates.
 
 ## Final nine-gate table
 
@@ -60,11 +61,11 @@ faithfulness, and hallucination from the final frozen hybrid composition.
 | Candidate-state macro F1 | 0.863223 | >= 0.790664 | 0.040000 below 0.830664 ceiling | raw agreement 0.807018; aspiration 0.900000 | Yes |
 | Retained-value recall | 0.970711 | >= 0.900000 | none; option-2 contract | n/a | Yes |
 | Intrinsic junk escape rate | 0.000000 | <= 0.020000 | none; option-2 contract | contamination 0 | Yes |
-| Acceptable atomic-count rate | 0.797414 | >= 0.900000 | none; explicitly not re-referenced | n/a | No |
-| Claim-text faithfulness | 0.733522 | >= 0.744435 | 0.040000 below 0.784435 ceiling | 0.558353 | No |
-| Speaker exactness | 0.992188 | >= 0.954615 | 0.040000 below 0.994615 ceiling | 0.725714 | Yes |
-| Reported-actor exactness | 0.785156 | >= 0.735385 | 0.040000 below 0.775385 ceiling | 0.574286 | Yes |
-| Hallucination rate | 0.044355 | <= 0.093684 | 0.020000 above 0.073684 gold-vs-gold rate | 0.112903 live reading; 0.020000 aspiration | Yes |
+| Acceptable atomic-count rate | 0.810345 | >= 0.900000 | none; explicitly not re-referenced | n/a | No |
+| Claim-text faithfulness | 0.732059 | >= 0.744435 | 0.040000 below 0.784435 ceiling | 0.562784 | No |
+| Speaker exactness | 0.992218 | >= 0.954615 | 0.040000 below 0.994615 ceiling | 0.732759 | Yes |
+| Reported-actor exactness | 0.782101 | >= 0.735385 | 0.040000 below 0.775385 ceiling | 0.577586 | Yes |
+| Hallucination rate | 0.040323 | <= 0.093684 | 0.020000 above 0.073684 gold-vs-gold rate | 0.100806 live reading; 0.020000 aspiration | Yes |
 | Schema parse success | 1.000000 | >= 0.990000 | none; original mechanical target | n/a | Yes |
 
 Result: **7/9 gates pass.** The architecture is certified with limitations;
@@ -93,7 +94,7 @@ gate.
 
 ### Atomic decomposition
 
-Atomicity is **0.797414 against 0.90**, a 10.26-point shortfall. The single-pass
+Atomicity is **0.810345 against 0.90**, an 8.97-point shortfall. The single-pass
 GLM Task-5 result was 0.780172. Count-first framing did not change it. Spark
 tied GLM on its direct measured subset. The sol-class probe scored 0.631579 on
 its 96 validated flagged candidates versus 0.652632 for the GLM/Task-5 control
@@ -115,15 +116,16 @@ permanently closed.
 
 ### Faithfulness
 
-Matched-pair faithfulness is **0.733522 against 0.744435**, 1.09 points low.
+Matched-pair faithfulness is **0.732059 against 0.744435**, 1.24 points low.
 Candidate-state macro F1 now passes its Ruling-4 ceiling-referenced gate; its
 original 0.90 aspiration remains visible.
 
 ### Hallucination
 
-Phase D's deterministic actor-emission suppression moves the matched-pair
-reading to **0.044355 against 0.093684**, a pass. The live coupled diagnostic
-is **0.112903**, and the original aspiration remains 0.02.
+Phase D's deterministic actor-emission suppression on the definitive C2
+composition moves the matched-pair reading to **0.040323 against 0.093684**, a
+pass. The live coupled diagnostic is **0.100806**, and the original aspiration
+remains 0.02.
 
 ### Scope
 
@@ -284,6 +286,10 @@ The zero-call Phase-D rule suppresses span-valid actor emissions when a
 packet-only risk score reaches 2. It passes actor and hallucination
 simultaneously and moves the stack to 7/9 gates. See
 `docs/TRUE_NORTH_PHASE_D_ACTOR_SUPPRESSION_20260729.md`.
+
+The definitive composition applies the frozen rule to C2 and records the
+faithfulness-headroom finding plus Phase-E readiness in
+`docs/TRUE_NORTH_BEST_STACK_AND_PHASE_E_READINESS_20260729.md`.
 
 ### Production shadow trial
 
