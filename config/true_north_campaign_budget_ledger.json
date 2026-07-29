@@ -1452,7 +1452,7 @@
       "episode_count": 1,
       "max_calls": 150,
       "max_tokens": 4800000,
-      "status": "declared_before_first_call",
+      "status": "complete_transfer_failed_4_of_9_no_tuning",
       "cumulative_before": {
         "calls": 309,
         "known_tokens": 3583991
@@ -1476,10 +1476,26 @@
         "gold_may_not_enter_extraction_packets": true
       },
       "actual": {
-        "calls": 0,
-        "tokens": 0,
-        "holdout_opened": false,
-        "status": "not_started"
+        "calls": 134,
+        "tokens": 4089348,
+        "glm_calls": 68,
+        "glm_tokens": 869461,
+        "codex_lane_calls": 66,
+        "codex_lane_tokens": 3219887,
+        "blind_prediction_candidate_count": 312,
+        "blind_prediction_atomic_count": 252,
+        "sealed_gold_atomic_count": 515,
+        "actor_gold_disagreement_count": 73,
+        "passed_gate_count": 4,
+        "development_passed_gate_count": 7,
+        "post_result_tuning_performed": false,
+        "authorized_holdout_opened": true,
+        "second_holdout_opened": false,
+        "holdout_opened": true,
+        "status": "complete_transfer_failed_4_of_9",
+        "result_sha256": "4b020f6d21673c04f2363ba5219a089648bbfd08db234c356bd2a65dd516ec46",
+        "cumulative_calls_after": 443,
+        "known_cumulative_tokens_after": 7673339
       }
     }
   ]

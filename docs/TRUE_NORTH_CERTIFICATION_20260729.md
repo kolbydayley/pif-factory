@@ -6,9 +6,29 @@ Suite: `ai-safety-v1`
 
 Measurement contract: `pif_true_north_measurement_contract_v8`
 
-Certification: **GLM-ONLY RUNTIME ARCHITECTURE, DEVELOPMENT FOLD ONLY**
+Certification: **DEVELOPMENT-FOLD ONLY; SEALED TRANSFER FAILED 4/9**
 
-Benchmark progression: **not cleared; sealed transfer episodes remain closed**
+Benchmark progression: **not cleared; the remaining sealed episode is closed**
+
+## Ruling 8 sealed-transfer finding
+
+Ruling 8 authorized one complete, blind transfer check on
+`ep_97a45100ce0d305f58d7dd69`. The certified GLM-only output was frozen and
+hashed before sealed gold existed. Independent atomic A/B/C gold and
+span-enforced actor repair were then built without feeding gold to extraction.
+
+The transfer stack passes **4/9 gates**, versus 7/9 on development. Candidate
+macro F1 drops from 0.873162 to 0.414597, retained-value recall from 0.974895
+to 0.820690, atomic count from 0.802575 to 0.722689, and actor exactness from
+0.793249 to 0.734694. The latter misses its gate by 0.000691. Speaker,
+intrinsic junk, hallucination, and schema still pass.
+
+This is material development overfit, concentrated in the selected
+disposition and actor components as well as the known decomposition weakness.
+The development certification remains a truthful development-fold result but
+does **not** stand as transfer validation, production readiness, or evidence
+that the stack is ready to scale. Nothing was tuned after observing sealed
+results. See `docs/TRUE_NORTH_SEALED_TRANSFER_RESULTS_20260729.md`.
 
 ## Authority and scope
 

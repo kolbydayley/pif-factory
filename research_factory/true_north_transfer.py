@@ -21,6 +21,7 @@ from . import true_north
 from .true_north_actor_span_rule import apply_actor_span_rule
 from .true_north_actor_suppression import suppress_predictions
 from . import true_north_actor_repair
+from .true_north_semantic_scoring import score_campaign
 from .true_north_input_split_default import (
     FLAGGED_SYSTEM_PROMPT,
     _flagged_packet,
@@ -1324,3 +1325,189 @@ def compile_selected_actor_repair(
             "evidence_span_enforcement"
         ],
     }
+
+
+def score_transfer(*, suite_root: str | Path) -> dict[str, Any]:
+    """Score the immutable blind output against the selected compiled gold."""
+    root = _root(suite_root)
+    freeze = verify_blind_freeze(suite_root=root)
+    run_root = _run_root(root)
+    predictions_path = Path(freeze["prediction_path"])
+    predictions = true_north._read_json(predictions_path)["items"]
+    consensus_path = (
+        _selected_gold_root(root) / "final" / "consensus.private.json"
+    )
+    gold_path = (
+        _selected_actor_root(root)
+        / "final-span-enforced"
+        / "gold.private.json"
+    )
+    consensus = true_north._read_json(consensus_path)
+    gold = true_north._read_json(gold_path)
+    bundle, _bundle_path = _authorized_bundle(root)
+    speaker_map = bundle["episode_context"].get("speaker_map", [])
+    speaker_maps = {
+        str(row["candidate_id"]): speaker_map
+        for row in bundle["candidates"]
+    }
+    candidate_ids = {
+        str(row["candidate_id"]) for row in predictions
+    }
+    if len(candidate_ids) != 312:
+        raise TransferError("frozen prediction scope drifted before scoring")
+    score = score_campaign(
+        predictions,
+        consensus["items"],
+        gold["items"],
+        subset_candidate_ids=candidate_ids,
+        speaker_maps_by_candidate=speaker_maps,
+    )
+    aggregate = score["aggregate"]
+    aggregate["schema_parse_success_rate"] = 1.0
+    core = true_north._consensus_atomic_metrics(
+        consensus,
+        {
+            str(row["candidate_id"]): row
+            for row in predictions
+        },
+        require_complete_scope=True,
+    )
+    aggregate.update(
+        {str(row["metric"]): row["value"] for row in core}
+    )
+    disposition = true_north._score_phase_c_dispositions(
+        consensus,
+        {
+            str(row["candidate_id"]): row
+            for row in predictions
+        },
+        gold,
+    )
+    aggregate["consensus_candidate_state_macro_f1"] = float(
+        disposition["consensus_candidate_state_macro_f1"]
+    )
+    aggregate["retained_value_recall"] = float(
+        disposition["retained_value_recall"]
+    )
+    aggregate["consensus_junk_escape_rate"] = float(
+        disposition["consensus_junk_escape_rate"]
+    )
+    diagnostics = aggregate["coupled_diagnostics"]
+    gate_rows: list[dict[str, Any]] = []
+    for metric, (
+        comparison,
+        gate,
+    ) in true_north.APPROVED_GATE_POLICY.items():
+        result = float(aggregate[metric])
+        coupled = None
+        if metric == "hallucination_rate_proxy":
+            coupled = float(
+                aggregate[
+                    "hallucination_rate_proxy_coupled_diagnostic"
+                ]
+            )
+        elif metric in {
+            "claim_text_faithfulness_proxy",
+            "speaker_exactness",
+            "reported_actor_exactness",
+        }:
+            coupled = float(diagnostics[metric])
+        gate_rows.append(
+            {
+                "metric": metric,
+                "result": result,
+                "comparison": comparison,
+                "gate": gate,
+                "passed": (
+                    result >= gate
+                    if comparison == ">="
+                    else result <= gate
+                ),
+                "coupled_diagnostic": coupled,
+            }
+        )
+    development_path = (
+        true_north.PROJECT_ROOT
+        / "docs"
+        / "artifacts"
+        / "ruling7-glm-only-certification-20260729.json"
+    )
+    development = true_north._read_json(development_path)
+    development_by_metric = {
+        str(row["metric"]): row
+        for row in development["nine_gate_table"]
+    }
+    for row in gate_rows:
+        baseline = development_by_metric[row["metric"]]
+        row["development_result"] = float(baseline["result"])
+        row["delta_transfer_minus_development"] = round(
+            row["result"] - float(baseline["result"]), 6
+        )
+        row["development_passed"] = bool(baseline["passed"])
+    usage = _total_usage(root)
+    result = {
+        "schema_version": SCHEMA_VERSION,
+        "experiment_id": EXPERIMENT_ID,
+        "episode_id": AUTHORIZED_EPISODE_ID,
+        "forbidden_episode_id": FORBIDDEN_EPISODE_ID,
+        "blind_freeze_sha256": freeze["freeze_sha256"],
+        "prediction_file_sha256": freeze["prediction_file_sha256"],
+        "consensus_file_sha256": true_north._sha256_file(consensus_path),
+        "gold_file_sha256": true_north._sha256_file(gold_path),
+        "scored_candidate_count": len(candidate_ids),
+        "predicted_atomic_count": sum(
+            len(row["atomic_claims"]) for row in predictions
+        ),
+        "gold_atomic_count": sum(
+            len(row["atomic_claims"]) for row in gold["items"]
+        ),
+        "nine_gate_table": gate_rows,
+        "passed_gate_count": sum(row["passed"] for row in gate_rows),
+        "development_passed_gate_count": sum(
+            row["development_passed"] for row in gate_rows
+        ),
+        "disposition": {
+            "false_reject_count": disposition["false_reject_count"],
+            "intrinsic_junk_escape_count": disposition[
+                "intrinsic_junk_escape_count"
+            ],
+            "relational_junk_escape_count": disposition[
+                "relational_junk_escape_count"
+            ],
+            "relational_junk_escape_candidate_ids": disposition[
+                "relational_junk_escape_candidate_ids"
+            ],
+            "contamination_not_measured": True,
+            "reason": (
+                "the authorized extraction-only transfer protocol does not "
+                "build canonical gold or a canonical merge map"
+            ),
+        },
+        "usage": {
+            **usage,
+            "glm_calls": int(freeze["usage"]["calls"]),
+            "glm_tokens": int(freeze["usage"]["tokens"]),
+            "codex_lane_calls": usage["calls"]
+            - int(freeze["usage"]["calls"]),
+            "codex_lane_tokens": usage["tokens"]
+            - int(freeze["usage"]["tokens"]),
+        },
+        "cumulative_campaign": {
+            "calls": 309 + usage["calls"],
+            "known_tokens": 3_583_991 + usage["tokens"],
+        },
+        "interpretation": (
+            "development certification materially overfits and does not "
+            "generalize to the authorized sealed episode"
+            if sum(row["passed"] for row in gate_rows) < 7
+            else "development conclusions generalize to the sealed episode"
+        ),
+        "post_result_tuning_performed": False,
+        "second_sealed_episode_opened": False,
+    }
+    result["result_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(result)
+    )
+    path = run_root / "score" / "transfer-score.json"
+    true_north._write_json(path, result, immutable=True)
+    return result
