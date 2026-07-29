@@ -122,6 +122,8 @@ PHASE_C_MARGINAL_MAX_GLM_CALLS = 6
 PHASE_C_MARGINAL_MAX_SPARK_CALLS = 4
 PHASE_C_MARGINAL_MAX_TOKENS = 150_000
 PHASE_C_MARGINAL_BATCH_SIZE = 37
+PHASE_C_MARGINAL_PREFLIGHT_CHARS_PER_TOKEN = 3
+PHASE_C_MARGINAL_PREFLIGHT_NONINPUT_TOKENS_PER_CALL = 10_000
 PHASE_C_MARGINAL_SYSTEM_PROMPT = """You are a marginal-utility auditor for a private podcast research corpus. Do
 not use tools. Each packet shows one provisionally retained candidate, the
 surrounding transcript text of its segment, and the most similar already
@@ -10748,6 +10750,7 @@ def dry_run_phase_c_marginal_screen(
             "Task-4c screen exceeds declared GLM call budget"
         )
     packet_hashes: list[str] = []
+    packet_bytes: list[int] = []
     for candidate_ids in batches:
         packet = build_phase_c_marginal_packet(
             suite=suite,
@@ -10756,7 +10759,18 @@ def dry_run_phase_c_marginal_screen(
             segment_by_id=segment_by_id,
             screened=screened,
         )
-        packet_hashes.append(sha256_text(dumps_json(packet)))
+        rendered_packet = dumps_json(packet)
+        packet_hashes.append(sha256_text(rendered_packet))
+        packet_bytes.append(len(rendered_packet.encode("utf-8")))
+    estimated_input_tokens = (
+        sum(packet_bytes)
+        + PHASE_C_MARGINAL_PREFLIGHT_CHARS_PER_TOKEN
+        - 1
+    ) // PHASE_C_MARGINAL_PREFLIGHT_CHARS_PER_TOKEN
+    estimated_total_tokens = estimated_input_tokens + (
+        len(batches)
+        * PHASE_C_MARGINAL_PREFLIGHT_NONINPUT_TOKENS_PER_CALL
+    )
     class_counts = Counter(
         screen_class
         for row in screened.values()
@@ -10793,6 +10807,18 @@ def dry_run_phase_c_marginal_screen(
         "screen_class_counts": dict(sorted(class_counts.items())),
         "packet_count": len(batches),
         "packet_hashes": packet_hashes,
+        "budget_preflight": {
+            "packet_bytes": packet_bytes,
+            "estimated_input_tokens": estimated_input_tokens,
+            "reserved_noninput_tokens": (
+                len(batches)
+                * PHASE_C_MARGINAL_PREFLIGHT_NONINPUT_TOKENS_PER_CALL
+            ),
+            "estimated_total_tokens": estimated_total_tokens,
+            "max_tokens": PHASE_C_MARGINAL_MAX_TOKENS,
+            "fits": estimated_total_tokens
+            <= PHASE_C_MARGINAL_MAX_TOKENS,
+        },
         "screened": [
             screened[candidate_id]
             for candidate_id in selected_ids
@@ -10836,6 +10862,11 @@ def run_phase_c_marginal_verify(
     screen_report = dry_run_phase_c_marginal_screen(
         output_root=output_root, suite=suite
     )
+    if not screen_report["budget_preflight"]["fits"]:
+        raise TrueNorthError(
+            "Task-4c packet plan cannot fit the declared token budget; "
+            "stopped before provider calls"
+        )
     (
         episodes,
         composed,

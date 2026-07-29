@@ -98,3 +98,30 @@ verifier also produced no uncorroborated rejection requiring Spark.
 Task 4b has reached its explicit second-failure stop. Tasks 5–7 remain
 unstarted. The fully accounted result is frozen at SHA-256
 `4b4d46878652394b327315469f6ef3818d236daa83a4f013cdb10fd339d8915d`.
+
+## Task 4c Amendment 2a execution stop
+
+The amended deterministic preflight successfully screened all five named junk
+fixtures, including `dev_c094b91406c9222943a29eba` through its same-segment
+local paraphrase neighbor. It selected 222 of 243 retained candidates into six
+GLM packets. No gold, holdout, canonical, or production artifact was opened or
+mutated during screening.
+
+The first GLM packet completed and passed schema and scope validation, but its
+provider receipt reported 47,323 total tokens: 33,319 input, 1,795 output, and
+12,209 reasoning tokens. The second call was interrupted before it produced a
+receipt. Task 4c therefore consumed exactly one paid call and 47,323 tokens.
+
+Measured against the first receipt, the six frozen packets project to roughly
+283,519 total tokens. The runner's original post-call-only budget check could
+have authorized a call that crossed the 150,000-token hard ceiling. Execution
+was stopped rather than violate that ceiling, and the harness now performs a
+conservative whole-run packet-budget preflight before any provider call.
+
+This is a **mechanical budget-preflight failure**, not a scored semantic Task 4c
+result. The 0/9 junk gate, false-reject count, and retained-value recall were
+not evaluated from the incomplete output. Suite verification remained clean
+at manifest SHA-256
+`f27c15b26388be7773d1457ced2ebd5cfc1c78c8edbecf86398213d7c0140bde`;
+the production source remained unchanged. No further Task 4c calls are
+authorized under the unchanged one-run, 150,000-token contract.

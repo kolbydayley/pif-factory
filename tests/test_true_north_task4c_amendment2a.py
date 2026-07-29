@@ -166,3 +166,13 @@ def test_packet_catalog_includes_low_jaccard_local_pair():
     assert packet["input"]["segment_context_catalog"][0][
         "context_id"
     ] == context_id
+
+
+def test_task4c_dry_run_reports_fail_closed_token_preflight():
+    report = true_north.dry_run_phase_c_marginal_screen()
+
+    preflight = report["budget_preflight"]
+    assert preflight["fits"] is False
+    assert preflight["estimated_total_tokens"] > preflight["max_tokens"]
+    assert len(preflight["packet_bytes"]) == report["packet_count"]
+    assert report["model_calls_made"] == 0
