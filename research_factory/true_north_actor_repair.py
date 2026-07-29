@@ -609,3 +609,149 @@ def compile_actor_repair(
         immutable=True,
     )
     return result
+
+
+def promote_actor_repair(
+    suite_root: str | Path,
+    *,
+    approval_receipt: str,
+) -> dict[str, Any]:
+    """Version and promote the approved actor-only gold and gate policy."""
+
+    if not approval_receipt.strip():
+        raise ActorRepairError("approval receipt is required")
+    root = Path(suite_root).expanduser().resolve()
+    repair_root = _repair_root(root)
+    result = _read(repair_root / "result-span-enforced.json")
+    proposed_gold = _read(Path(result["proposed_gold_path"]))
+    proposed_consensus = _read(Path(result["proposed_consensus_path"]))
+    canonical_root = root / "gold" / "development" / "final"
+    current_gold_path = canonical_root / "gold.private.json"
+    current_consensus_path = canonical_root / "consensus.private.json"
+    current_gold = _read(current_gold_path)
+    current_consensus = _read(current_consensus_path)
+    if (
+        proposed_gold["actor_repair"]["source_gold_sha256"]
+        != current_gold["gold_sha256"]
+        or proposed_consensus["actor_repair"]["source_gold_sha256"]
+        != current_gold["gold_sha256"]
+    ):
+        raise ActorRepairError(
+            "proposed actor repair is not based on current canonical gold"
+        )
+
+    history = (
+        root
+        / "gold"
+        / "development"
+        / "history"
+        / str(current_gold["gold_sha256"])
+    )
+    true_north._write_json(
+        history / "gold.private.json", current_gold, immutable=True
+    )
+    true_north._write_json(
+        history / "consensus.private.json",
+        current_consensus,
+        immutable=True,
+    )
+
+    promoted_gold = copy.deepcopy(proposed_gold)
+    promoted_gold.pop("gold_sha256", None)
+    promoted_gold["actor_repair"]["canonical_switch_approved"] = True
+    promoted_gold["actor_repair"]["approval_receipt"] = approval_receipt
+    promoted_gold["gold_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(promoted_gold)
+    )
+    promoted_consensus = copy.deepcopy(proposed_consensus)
+    promoted_consensus.pop("consensus_sha256", None)
+    promoted_consensus["source_gold_sha256"] = promoted_gold["gold_sha256"]
+    promoted_consensus["actor_repair"] = promoted_gold["actor_repair"]
+    promoted_consensus["consensus_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(promoted_consensus)
+    )
+
+    true_north._write_json(
+        current_gold_path, promoted_gold, immutable=False
+    )
+    true_north._write_json(
+        current_consensus_path, promoted_consensus, immutable=False
+    )
+
+    calibration_path = root / "diagnostics" / "gate-calibration.json"
+    calibration = _read(calibration_path)
+    gate_policy = {
+        "schema_version": true_north.APPROVED_GATE_POLICY_VERSION,
+        "suite_id": true_north.SUITE_ID,
+        "approval_receipt": approval_receipt,
+        "approval_scope": (
+            "faithfulness_0.75_actor_0.903182_actor_gold_promotion_phase_c"
+        ),
+        "rules": {
+            metric: {
+                "comparison": comparison,
+                "threshold": threshold,
+            }
+            for metric, (comparison, threshold) in sorted(
+                true_north.APPROVED_GATE_POLICY.items()
+            )
+        },
+        "faithfulness_calibration_sha256": calibration[
+            "calibration_sha256"
+        ],
+        "actor_repair_result_sha256": result["result_sha256"],
+        "promoted_gold_sha256": promoted_gold["gold_sha256"],
+        "previous_gold_sha256": current_gold["gold_sha256"],
+        "justification": (
+            "User approved the v2 checkpoint after zero-call floor, "
+            "inter-annotator ceiling calibration, and span-enforced "
+            "independent actor re-adjudication."
+        ),
+    }
+    gate_policy["gate_policy_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(gate_policy)
+    )
+    gate_policy_path = root / "diagnostics" / "gate-policy-v2.json"
+    true_north._write_json(
+        gate_policy_path, gate_policy, immutable=True
+    )
+
+    manifest_path = root / "manifest.json"
+    manifest = _read(manifest_path)
+    old_manifest_sha = str(manifest["manifest_sha256"])
+    true_north._write_json(
+        root / "history" / f"manifest-{old_manifest_sha}.json",
+        manifest,
+        immutable=True,
+    )
+    manifest.pop("manifest_sha256", None)
+    manifest["frozen_interfaces"]["gate_policy_version"] = (
+        true_north.APPROVED_GATE_POLICY_VERSION
+    )
+    manifest["frozen_interfaces"]["gate_policy_sha256"] = gate_policy[
+        "gate_policy_sha256"
+    ]
+    manifest["frozen_interfaces"]["development_gold_sha256"] = promoted_gold[
+        "gold_sha256"
+    ]
+    manifest["frozen_interfaces"][
+        "development_consensus_sha256"
+    ] = promoted_consensus["consensus_sha256"]
+    manifest["manifest_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(manifest)
+    )
+    true_north._write_json(manifest_path, manifest, immutable=False)
+    return {
+        "ok": True,
+        "approval_receipt": approval_receipt,
+        "previous_gold_sha256": current_gold["gold_sha256"],
+        "promoted_gold_sha256": promoted_gold["gold_sha256"],
+        "promoted_consensus_sha256": promoted_consensus[
+            "consensus_sha256"
+        ],
+        "gate_policy_sha256": gate_policy["gate_policy_sha256"],
+        "previous_manifest_sha256": old_manifest_sha,
+        "manifest_sha256": manifest["manifest_sha256"],
+        "history_path": str(history),
+        "production_mutation": False,
+    }

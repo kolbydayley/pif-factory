@@ -99,6 +99,18 @@ MULTIPASS_DEFAULT_BUDGET = {
     "max_tokens": 4_000_000,
     "max_wall_seconds": 6 * 60 * 60,
 }
+APPROVED_GATE_POLICY_VERSION = "pif_true_north_gate_policy_v2"
+APPROVED_GATE_POLICY = {
+    "consensus_candidate_state_macro_f1": (">=", 0.90),
+    "retained_value_recall": (">=", 0.90),
+    "consensus_junk_escape_rate": ("<=", 0.02),
+    "acceptable_atomic_count_rate": (">=", 0.90),
+    "claim_text_faithfulness_proxy": (">=", 0.75),
+    "speaker_exactness": (">=", 0.97),
+    "reported_actor_exactness": (">=", 0.903182),
+    "hallucination_rate_proxy": ("<=", 0.02),
+    "schema_parse_success_rate": (">=", 0.99),
+}
 MULTIPASS_OPEN_DEVELOPMENT_EPISODES = (
     "ep_90c3b5c995bce501c9aef55c",
     "ep_7ec9f808a3955c720aeb94ff",
@@ -1313,8 +1325,41 @@ def verify_suite(
             errors.append(
                 f"episode context hash mismatch: {record['episode_id']}"
             )
-    if manifest.get("frozen_interfaces") != _interface_fingerprints():
+    actual_interfaces = manifest.get("frozen_interfaces", {})
+    expected_interfaces = _interface_fingerprints()
+    if any(
+        actual_interfaces.get(key) != value
+        for key, value in expected_interfaces.items()
+    ):
         errors.append("prompt, schema, model, or router interface drift")
+    if actual_interfaces.get("gate_policy_version"):
+        gate_policy_path = (
+            suite_root / "diagnostics" / "gate-policy-v2.json"
+        )
+        gold_path = (
+            suite_root / "gold" / "development" / "final" / "gold.private.json"
+        )
+        consensus_path = (
+            suite_root
+            / "gold"
+            / "development"
+            / "final"
+            / "consensus.private.json"
+        )
+        if (
+            actual_interfaces.get("gate_policy_version")
+            != APPROVED_GATE_POLICY_VERSION
+            or not gate_policy_path.is_file()
+            or _read_json(gate_policy_path).get("gate_policy_sha256")
+            != actual_interfaces.get("gate_policy_sha256")
+            or not gold_path.is_file()
+            or _read_json(gold_path).get("gold_sha256")
+            != actual_interfaces.get("development_gold_sha256")
+            or not consensus_path.is_file()
+            or _read_json(consensus_path).get("consensus_sha256")
+            != actual_interfaces.get("development_consensus_sha256")
+        ):
+            errors.append("approved gate or gold revision binding drift")
     if not _source_unchanged(manifest):
         errors.append("authoritative source database changed since suite freeze")
     if shadow_path.is_file():
@@ -8318,17 +8363,7 @@ def score_multipass_run(
     score["aggregate"].update(
         {str(row["metric"]): row["value"] for row in core}
     )
-    gates = {
-        "consensus_candidate_state_macro_f1": (">=", 0.90),
-        "retained_value_recall": (">=", 0.90),
-        "consensus_junk_escape_rate": ("<=", 0.02),
-        "acceptable_atomic_count_rate": (">=", 0.90),
-        "claim_text_faithfulness_proxy": (">=", 0.90),
-        "speaker_exactness": (">=", 0.97),
-        "reported_actor_exactness": (">=", 0.95),
-        "hallucination_rate_proxy": ("<=", 0.02),
-        "schema_parse_success_rate": (">=", 0.99),
-    }
+    gates = dict(APPROVED_GATE_POLICY)
     checks = {
         metric: (
             float(score["aggregate"][metric]) >= threshold

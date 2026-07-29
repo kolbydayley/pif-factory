@@ -22,17 +22,7 @@ from .true_north_semantic_scoring import normalize_enum_field, score_campaign
 SCHEMA_VERSION = "pif_true_north_prior_adoption_v1"
 DEFAULT_VARIANT_ID = "stack-03-all-compatible"
 _ABSENT_TEXT = {"", "none", "null", "n/a", "na", "unknown", "unspecified"}
-_GATE_RULES = {
-    "consensus_candidate_state_macro_f1": (">=", 0.90),
-    "retained_value_recall": (">=", 0.90),
-    "consensus_junk_escape_rate": ("<=", 0.02),
-    "acceptable_atomic_count_rate": (">=", 0.90),
-    "claim_text_faithfulness_proxy": (">=", 0.90),
-    "speaker_exactness": (">=", 0.97),
-    "reported_actor_exactness": (">=", 0.95),
-    "hallucination_rate_proxy": ("<=", 0.02),
-    "schema_parse_success_rate": (">=", 0.99),
-}
+_GATE_RULES = true_north.APPROVED_GATE_POLICY
 
 
 class PriorAdoptionError(RuntimeError):
@@ -395,6 +385,98 @@ def run_prior_adoption_floor(
     )
     report_path = output_root / "score.private.json"
     true_north._write_json(report_path, report, immutable=True)
+    return report
+
+
+def rescore_prior_adoption_floor(
+    suite_root: str | Path,
+    prediction_path: str | Path,
+    output_dir: str | Path,
+) -> dict[str, Any]:
+    """Re-score the immutable prior predictions after an approved gold revision."""
+
+    root = Path(suite_root).expanduser().resolve()
+    predictions_path = Path(prediction_path).expanduser().resolve()
+    predictions = _read(predictions_path)
+    manifest = _read(root / "manifest.json")
+    candidate_by_id: dict[str, dict[str, Any]] = {}
+    speaker_maps: dict[str, Any] = {}
+    for bundle_row in manifest["bundles"]:
+        if bundle_row["partition"] != "development":
+            continue
+        bundle = _read(Path(bundle_row["bundle_path"]))
+        for candidate in bundle["candidates"]:
+            candidate_id = str(candidate["candidate_id"])
+            candidate_by_id[candidate_id] = {
+                **candidate,
+                "_source_episode_id": str(bundle_row["episode_id"]),
+            }
+            speaker_maps[candidate_id] = bundle["episode_context"].get(
+                "speaker_map", []
+            )
+    prediction_ids = {
+        str(item["candidate_id"]) for item in predictions["items"]
+    }
+    if not prediction_ids <= set(candidate_by_id):
+        raise PriorAdoptionError(
+            "prior predictions are outside the current development manifest"
+        )
+    consensus_document = _read(
+        root / "gold" / "development" / "final" / "consensus.private.json"
+    )
+    preferred_document = _read(
+        root / "gold" / "development" / "final" / "gold.private.json"
+    )
+    if (
+        consensus_document["source_gold_sha256"]
+        != preferred_document["gold_sha256"]
+    ):
+        raise PriorAdoptionError(
+            "approved consensus is not bound to approved gold"
+        )
+    by_episode: dict[str, list[dict[str, Any]]] = {}
+    for item in predictions["items"]:
+        candidate_id = str(item["candidate_id"])
+        episode_id = str(
+            candidate_by_id[candidate_id]["_source_episode_id"]
+        )
+        by_episode.setdefault(episode_id, []).append(item)
+    scopes = {
+        episode_id: _score_scope(
+            items,
+            consensus_document=consensus_document,
+            preferred_document=preferred_document,
+            speaker_maps=speaker_maps,
+        )
+        for episode_id, items in sorted(by_episode.items())
+    }
+    scopes["comparison_cohort"] = _score_scope(
+        predictions["items"],
+        consensus_document=consensus_document,
+        preferred_document=preferred_document,
+        speaker_maps=speaker_maps,
+    )
+    report = {
+        "schema_version": SCHEMA_VERSION,
+        "experiment": "approved_policy_prior_floor_rescore",
+        "model_calls": 0,
+        "prediction_path": str(predictions_path),
+        "prediction_sha256": true_north._sha256_file(predictions_path),
+        "manifest_sha256": manifest["manifest_sha256"],
+        "gold_sha256": preferred_document["gold_sha256"],
+        "consensus_sha256": consensus_document["consensus_sha256"],
+        "gate_policy_version": true_north.APPROVED_GATE_POLICY_VERSION,
+        "candidate_count": len(predictions["items"]),
+        "scopes": scopes,
+    }
+    report["report_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(report)
+    )
+    destination = Path(output_dir).expanduser().resolve()
+    destination.mkdir(parents=True, exist_ok=True)
+    true_north._write_json(
+        destination / "score.private.json", report, immutable=True
+    )
     return report
 
 

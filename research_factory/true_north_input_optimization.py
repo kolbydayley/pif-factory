@@ -2070,17 +2070,7 @@ def score_campaign(
             "item_details_withheld": True,
             "gold_withheld": True,
         }
-    gate_rules = {
-        "consensus_candidate_state_macro_f1": (">=", 0.90),
-        "retained_value_recall": (">=", 0.90),
-        "consensus_junk_escape_rate": ("<=", 0.02),
-        "acceptable_atomic_count_rate": (">=", 0.90),
-        "claim_text_faithfulness_proxy": (">=", 0.90),
-        "speaker_exactness": (">=", 0.97),
-        "reported_actor_exactness": (">=", 0.95),
-        "hallucination_rate_proxy": ("<=", 0.02),
-        "schema_parse_success_rate": (">=", 0.99),
-    }
+    gate_rules = dict(true_north.APPROVED_GATE_POLICY)
     eligible: list[str] = []
     gate_records: dict[str, Any] = {}
     for variant_id, value in private["variants"].items():

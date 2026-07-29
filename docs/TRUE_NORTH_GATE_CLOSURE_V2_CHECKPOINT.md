@@ -2,10 +2,14 @@
 
 Date: 2026-07-28
 
-Status: **Awaiting explicit approval**
+Status: **Approved and activated**
 
-No live gate, canonical gold artifact, production database, release ledger, or
-holdout artifact has been changed.
+Approval receipt: `user-approved-2026-07-28-gate-closure-v2`
+
+The approved actor-only gold and two calibrated gates are now active in the
+isolated suite. The predecessor gold and manifest are preserved in immutable
+history. The production database, release ledger, and holdout artifacts remain
+unchanged.
 
 ## Phase A: zero-call prior floor
 
@@ -101,7 +105,20 @@ Every other gate remains unchanged. Approval would authorize only:
 4. re-scoring the zero-call floor under the final gates; and
 5. beginning Phase C's bounded model calls.
 
-Without approval, none of those actions will occur.
+The approved switch produced:
+
+- gate-policy SHA-256:
+  `18e234221d0b18ae98db2cc7644097bc21c20bd69ac413bea9b381dbf475c1ea`;
+- promoted gold SHA-256:
+  `02c06a87f8e36d6414c6723f051683da48e0b75f54dcf3fa903b2e97b97e6221`;
+- promoted consensus SHA-256:
+  `c75a2d143484fab1c0502d6ab87de3da8a7e8d4aca293c8b9aa411008df6b793`;
+- suite manifest SHA-256:
+  `f27c15b26388be7773d1457ced2ebd5cfc1c78c8edbecf86398213d7c0140bde`.
+
+The zero-call floor was then re-scored against the promoted gold and approved
+policy. It remains at 3 of 9 gates. In particular, repaired-field prior actor
+exactness is 0.142857, so Phase C Task 6 cannot be skipped.
 
 ## Reproducibility
 

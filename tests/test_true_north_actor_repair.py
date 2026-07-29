@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 
 import pytest
 
@@ -140,3 +141,95 @@ def test_actor_output_enforces_evidence_span_and_direct_speaker_rule() -> None:
 
     assert output["items"][0]["reported_actor"] == "Anthropic"
     assert output["items"][1]["reported_actor"] is None
+
+
+def test_approved_promotion_versions_predecessor_and_bumps_manifest(
+    tmp_path,
+) -> None:
+    root = tmp_path / "ai-safety-v1"
+    canonical = root / "gold" / "development" / "final"
+    proposed = (
+        root
+        / "gold"
+        / "development"
+        / "actor-repair"
+        / "final-span-enforced"
+    )
+    diagnostics = root / "diagnostics"
+    canonical.mkdir(parents=True)
+    proposed.mkdir(parents=True)
+    diagnostics.mkdir(parents=True)
+    source_gold = gold_fixture()
+    source_gold["gold_sha256"] = "source-gold"
+    source_consensus = {
+        "source_gold_sha256": "source-gold",
+        "consensus_sha256": "source-consensus",
+    }
+    repaired_gold = copy.deepcopy(source_gold)
+    repaired_gold["items"][0]["atomic_claims"][0]["reported_actor"] = None
+    repaired_gold["actor_repair"] = {
+        "source_gold_sha256": "source-gold",
+        "canonical_switch_approved": False,
+    }
+    repaired_gold["gold_sha256"] = "proposed-gold"
+    repaired_consensus = {
+        "source_gold_sha256": "proposed-gold",
+        "consensus_sha256": "proposed-consensus",
+        "actor_repair": {
+            "source_gold_sha256": "source-gold",
+            "canonical_switch_approved": False,
+        },
+    }
+    (canonical / "gold.private.json").write_text(json.dumps(source_gold))
+    (canonical / "consensus.private.json").write_text(
+        json.dumps(source_consensus)
+    )
+    (proposed / "gold.private.json").write_text(json.dumps(repaired_gold))
+    (proposed / "consensus.private.json").write_text(
+        json.dumps(repaired_consensus)
+    )
+    repair_root = root / "gold" / "development" / "actor-repair"
+    (repair_root / "result-span-enforced.json").write_text(
+        json.dumps(
+            {
+                "proposed_gold_path": str(proposed / "gold.private.json"),
+                "proposed_consensus_path": str(
+                    proposed / "consensus.private.json"
+                ),
+                "result_sha256": "actor-result",
+            }
+        )
+    )
+    (diagnostics / "gate-calibration.json").write_text(
+        json.dumps({"calibration_sha256": "calibration"})
+    )
+    manifest = {
+        "suite_id": "ai-safety-v1",
+        "frozen_interfaces": {},
+        "manifest_sha256": "old-manifest",
+    }
+    (root / "manifest.json").write_text(json.dumps(manifest))
+
+    result = actor_repair.promote_actor_repair(
+        root, approval_receipt="user-approved-test"
+    )
+
+    promoted = json.loads(
+        (canonical / "gold.private.json").read_text()
+    )
+    assert promoted["items"][0]["atomic_claims"][0]["reported_actor"] is None
+    assert promoted["actor_repair"]["canonical_switch_approved"] is True
+    assert (
+        root
+        / "gold"
+        / "development"
+        / "history"
+        / "source-gold"
+        / "gold.private.json"
+    ).is_file()
+    assert result["previous_manifest_sha256"] == "old-manifest"
+    updated_manifest = json.loads((root / "manifest.json").read_text())
+    assert (
+        updated_manifest["frozen_interfaces"]["gate_policy_version"]
+        == "pif_true_north_gate_policy_v2"
+    )
