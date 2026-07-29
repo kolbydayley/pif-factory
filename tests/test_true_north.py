@@ -1372,5 +1372,126 @@ class TrueNorthTest(unittest.TestCase):
         self.assertEqual(output["packet_sha256"], "a" * 64)
 
 
+def test_phase_c_disposition_prompt_contains_both_mirror_rules() -> None:
+    prompt = " ".join(
+        true_north.MULTIPASS_SYSTEM_PROMPTS["disposition"].split()
+    )
+    assert (
+        "A question, fragment, or repeated construction is junk only when "
+        "the evidence provides no recoverable asserted proposition"
+    ) in prompt
+    assert "candidate wording cannot create evidence" in prompt
+    assert (
+        "Treat an explicit interrogative hypothesis, risk, analogy, or "
+        "uncertainty as a substantive stance"
+    ) in prompt
+    assert (
+        "a term gloss, definition, or existence mention without a "
+        "consequence, evaluation, forecast, or contested position as junk"
+    ) in prompt
+
+
+def test_phase_c_disposition_acceptance_requires_zero_junk_escapes() -> None:
+    consensus = {
+        "items": [
+            {
+                "candidate_id": "value",
+                "strictly_scoreable": True,
+                "consensus_state": "consensus_value",
+            },
+            {
+                "candidate_id": "junk",
+                "strictly_scoreable": True,
+                "consensus_state": "consensus_junk",
+            },
+        ]
+    }
+    predictions = {
+        "value": {"candidate_id": "value", "disposition": "retain"},
+        "junk": {"candidate_id": "junk", "disposition": "retain"},
+    }
+
+    result = true_north._score_phase_c_dispositions(
+        consensus, predictions
+    )
+
+    assert result["junk_escape_count"] == 1
+    assert result["false_reject_count"] == 0
+    assert result["acceptance"]["junk_escapes_zero"] is False
+    assert result["passed"] is False
+
+
+def test_phase_c_conflict_selection_is_gold_blind_and_bounded() -> None:
+    first = {
+        "stable_reject": {
+            "candidate_id": "stable_reject",
+            "disposition": "reject",
+            "junk_reason": "fragment",
+        },
+        "risky_flip": {
+            "candidate_id": "risky_flip",
+            "disposition": "reject",
+            "junk_reason": "question_or_setup",
+        },
+        "safe_flip": {
+            "candidate_id": "safe_flip",
+            "disposition": "reject",
+            "junk_reason": "question_or_setup",
+        },
+    }
+    second = {
+        "stable_reject": {
+            "candidate_id": "stable_reject",
+            "disposition": "reject",
+            "junk_reason": "fragment",
+        },
+        "risky_flip": {
+            "candidate_id": "risky_flip",
+            "disposition": "retain",
+            "junk_reason": None,
+        },
+        "safe_flip": {
+            "candidate_id": "safe_flip",
+            "disposition": "retain",
+            "junk_reason": None,
+        },
+    }
+    candidates = {
+        "stable_reject": {"flags": {"quality": []}},
+        "risky_flip": {
+            "flags": {"quality": ["question_frame_not_asserted_claim"]}
+        },
+        "safe_flip": {"flags": {"quality": []}},
+    }
+
+    selected = true_north.select_phase_c_disposition_conflicts(
+        first, second, candidates
+    )
+
+    assert selected == ["risky_flip", "stable_reject"]
+
+
+def test_combine_phase_c_disposition_votes_uses_spark_only_as_tiebreaker():
+    first = {
+        "agree": {"candidate_id": "agree", "disposition": "reject"},
+        "split": {"candidate_id": "split", "disposition": "reject"},
+    }
+    second = {
+        "agree": {"candidate_id": "agree", "disposition": "reject"},
+        "split": {"candidate_id": "split", "disposition": "retain"},
+    }
+    escalated = {
+        "agree": {"candidate_id": "agree", "disposition": "retain"},
+        "split": {"candidate_id": "split", "disposition": "revise"},
+    }
+
+    combined = true_north.combine_phase_c_disposition_votes(
+        first, second, escalated
+    )
+
+    assert combined["agree"]["disposition"] == "reject"
+    assert combined["split"]["disposition"] == "revise"
+
+
 if __name__ == "__main__":
     unittest.main()

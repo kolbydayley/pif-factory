@@ -161,8 +161,19 @@ substantive assertion merely because it is uncertain, conditional,
 hypothetical, summarized, or phrased as a headline. Use hold only when the
 evidence supports multiple incompatible readings whose resolution would change
 the proposition or its speaker; never for low confidence or low value. Do not
-decompose, rewrite, or attribute claims — a later stage does that. Return only
-the exact schema-valid JSON requested by the packet.""",
+decompose, rewrite, or attribute claims — a later stage does that. A question, fragment, or
+repeated construction is junk only when the evidence provides no recoverable
+asserted proposition; a rhetorical or self-answered question, a fragment whose
+assertion is completed within its own evidence, a repeated but substantive
+assertion, and an explicit forecast or skeptical stance are all value.
+Conversely, when the exact evidence is only setup, a bare mention, metadata,
+banter, or an unsupported fragment, reject it even if the candidate claim_text
+rewrites it to sound factual; candidate wording cannot create evidence.
+Treat an explicit interrogative hypothesis, risk, analogy, or uncertainty as a
+substantive stance, but treat a term gloss, definition, or existence mention
+without a consequence, evaluation, forecast, or contested position as junk
+even when it is grammatically factual. Return
+only the exact schema-valid JSON requested by the packet.""",
     "decomposition": """You are an atomic-claim decomposer for a private podcast research corpus. Do
 not use tools. Every candidate you receive has already been accepted as
 containing substantive research content; do not re-judge acceptance and do not
@@ -8396,6 +8407,474 @@ def score_multipass_run(
     }
 
 
+def _score_phase_c_dispositions(
+    consensus_document: Mapping[str, Any],
+    predictions: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    consensus = {
+        str(row["candidate_id"]): row
+        for row in consensus_document["items"]
+        if str(row["candidate_id"]) in predictions
+    }
+    if set(consensus) != set(predictions):
+        raise TrueNorthError(
+            "phase-C disposition predictions lack consensus coverage"
+        )
+    strict = {
+        key: row
+        for key, row in consensus.items()
+        if bool(row["strictly_scoreable"])
+    }
+    gold_states = {
+        key: str(row["consensus_state"]).removeprefix("consensus_")
+        for key, row in strict.items()
+    }
+    predicted_states = {
+        key: _gold_value_state(str(predictions[key]["disposition"]))
+        for key in strict
+    }
+    macro_f1, detail = _macro_f1(
+        gold_states, predicted_states, ("value", "junk", "hold")
+    )
+    gold_value = {
+        key for key, value in gold_states.items() if value == "value"
+    }
+    gold_junk = {
+        key for key, value in gold_states.items() if value == "junk"
+    }
+    false_rejects = sorted(
+        key
+        for key in gold_value
+        if predicted_states[key] != "value"
+    )
+    junk_escapes = sorted(
+        key
+        for key in gold_junk
+        if predicted_states[key] == "value"
+    )
+    retained_value_recall = (
+        (len(gold_value) - len(false_rejects)) / len(gold_value)
+        if gold_value
+        else 1.0
+    )
+    junk_escape_rate = (
+        len(junk_escapes) / len(gold_junk) if gold_junk else 0.0
+    )
+    acceptance = {
+        "junk_escapes_zero": len(junk_escapes) == 0,
+        "false_rejects_at_most_10": len(false_rejects) <= 10,
+        "retained_value_recall_at_least_0_95": (
+            retained_value_recall >= 0.95
+        ),
+    }
+    return {
+        "candidate_count": len(predictions),
+        "strict_candidate_count": len(strict),
+        "consensus_candidate_state_macro_f1": macro_f1,
+        "retained_value_recall": retained_value_recall,
+        "consensus_junk_escape_rate": junk_escape_rate,
+        "false_reject_count": len(false_rejects),
+        "junk_escape_count": len(junk_escapes),
+        "false_reject_candidate_ids": false_rejects,
+        "junk_escape_candidate_ids": junk_escapes,
+        "classification_detail": detail,
+        "acceptance": acceptance,
+        "passed": all(acceptance.values()),
+    }
+
+
+def run_phase_c_disposition(
+    *,
+    output_root: str | Path | None = None,
+    suite: str = SUITE_ID,
+    workers: int = 4,
+    timeout_seconds: int = 900,
+    opencode_binary: str = "/opt/homebrew/bin/opencode",
+    run_id: str | None = None,
+    runner: Any | None = None,
+) -> dict[str, Any]:
+    """Run only the approved Phase-C disposition stage on the Search fold."""
+
+    if workers < 1 or workers > 4:
+        raise TrueNorthError("phase-C workers must be between 1 and 4")
+    suite_root = _suite_root(output_root, suite)
+    verification = verify_suite(output_root=output_root, suite=suite)
+    if not verification["ok"]:
+        raise TrueNorthError("suite verification failed before Phase C")
+    manifest = _read_json(suite_root / "manifest.json")
+    episode_ids = (
+        "ep_90c3b5c995bce501c9aef55c",
+        "ep_7ec9f808a3955c720aeb94ff",
+    )
+    development = {
+        str(row["episode_id"]): row
+        for row in manifest["bundles"]
+        if row["partition"] == "development"
+    }
+    consensus = _read_json(
+        suite_root
+        / "gold"
+        / "development"
+        / "final"
+        / "consensus.private.json"
+    )
+    budget = {
+        "max_calls": 25,
+        "max_tokens": 800_000,
+        "max_wall_seconds": 3600,
+    }
+    configuration = {
+        "schema_version": MULTIPASS_SCHEMA_VERSION,
+        "phase": "phase_c_disposition",
+        "suite_id": suite,
+        "suite_manifest_sha256": manifest["manifest_sha256"],
+        "consensus_sha256": consensus["consensus_sha256"],
+        "episode_ids": list(episode_ids),
+        "model": MULTIPASS_MODEL,
+        "system_prompt_sha256": sha256_text(
+            MULTIPASS_SYSTEM_PROMPTS["disposition"]
+        ),
+        "gate_policy_version": APPROVED_GATE_POLICY_VERSION,
+        "budget": budget,
+        "holdout_access_allowed": False,
+        "production_database_open_allowed": False,
+    }
+    configuration["configuration_sha256"] = sha256_text(
+        dumps_json(configuration)
+    )
+    resolved_run_id = run_id or (
+        "phase-c-disposition-"
+        + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        + "-"
+        + configuration["configuration_sha256"][:8]
+    )
+    run_root = suite_root / "phase-c" / "runs" / resolved_run_id
+    config_path = run_root / "configuration.json"
+    if config_path.is_file():
+        if _read_json(config_path) != configuration:
+            raise TrueNorthError(
+                "phase-C disposition resume configuration differs"
+            )
+    else:
+        _write_json(config_path, configuration, immutable=True)
+    state_path = run_root / "state.json"
+    if state_path.is_file():
+        state = _read_json(state_path)
+    else:
+        state = {
+            "schema_version": MULTIPASS_SCHEMA_VERSION,
+            "run_id": resolved_run_id,
+            "configuration_sha256": configuration[
+                "configuration_sha256"
+            ],
+            "budget": budget,
+            "completed": [],
+            "usage": {"calls": 0, "tokens": 0, "wall_seconds": 0.0},
+        }
+        _multipass_state_write(state_path, state)
+    jobs: list[tuple[str, str, dict[str, Any]]] = []
+    for episode_id in episode_ids:
+        bundle = _read_json(Path(development[episode_id]["bundle_path"]))
+        for base_job in _segment_jobs(bundle, gold=False):
+            segment_id = str(
+                base_job["input"]["segment"]["segment_id"]
+            )
+            jobs.append(
+                (
+                    episode_id,
+                    segment_id,
+                    build_multipass_disposition_packet(base_job),
+                )
+            )
+    if len(jobs) > budget["max_calls"]:
+        raise TrueNorthError(
+            "phase-C disposition packet count exceeds declared budget"
+        )
+    outputs = _multipass_execute_stage(
+        run_root=run_root,
+        stage="disposition",
+        jobs=jobs,
+        state=state,
+        workers=workers,
+        timeout_seconds=timeout_seconds,
+        opencode_binary=opencode_binary,
+        runner=runner,
+    )
+    predictions: dict[str, dict[str, Any]] = {}
+    for output in outputs.values():
+        for item in output["items"]:
+            candidate_id = str(item["candidate_id"])
+            if candidate_id in predictions:
+                raise TrueNorthError(
+                    f"duplicate Phase-C disposition: {candidate_id}"
+                )
+            predictions[candidate_id] = dict(item)
+    score = _score_phase_c_dispositions(consensus, predictions)
+    state = _read_json(state_path)
+    state["complete"] = True
+    state["candidate_count"] = len(predictions)
+    state["packet_count"] = len(jobs)
+    _multipass_state_write(state_path, state)
+    document = {
+        "schema_version": MULTIPASS_SCHEMA_VERSION,
+        "phase": "phase_c_disposition",
+        "run_id": resolved_run_id,
+        "configuration_sha256": configuration["configuration_sha256"],
+        "score": score,
+        "usage": state["usage"],
+        "packet_count": len(jobs),
+        "production_mutation": False,
+        "holdout_opened": False,
+    }
+    document["score_sha256"] = sha256_text(dumps_json(document))
+    score_path = run_root / "score.private.json"
+    _write_json(score_path, document, immutable=False)
+    return {
+        **document,
+        "score_path": str(score_path),
+    }
+
+
+def _phase_c_disposition_outputs(run_root: Path) -> dict[str, dict[str, Any]]:
+    predictions: dict[str, dict[str, Any]] = {}
+    for path in sorted(
+        (run_root / "outputs" / "disposition").glob(
+            "*/*/validated.private.json"
+        )
+    ):
+        for item in _read_json(path)["items"]:
+            candidate_id = str(item["candidate_id"])
+            if candidate_id in predictions:
+                raise TrueNorthError(
+                    f"duplicate disposition output: {candidate_id}"
+                )
+            predictions[candidate_id] = dict(item)
+    return predictions
+
+
+def select_phase_c_disposition_conflicts(
+    first: Mapping[str, Mapping[str, Any]],
+    second: Mapping[str, Mapping[str, Any]],
+    candidates: Mapping[str, Mapping[str, Any]],
+) -> list[str]:
+    """Select a bounded, gold-blind Spark conflict set."""
+
+    if set(first) != set(second) or set(second) != set(candidates):
+        raise TrueNorthError(
+            "disposition escalation inputs have different candidate scopes"
+        )
+    selected = {
+        candidate_id
+        for candidate_id, decision in second.items()
+        if str(decision["disposition"]) in {"reject", "hold"}
+    }
+    risk_flags = {
+        "question_frame_not_asserted_claim",
+        "intro_framing",
+    }
+    for candidate_id in sorted(second):
+        earlier = first[candidate_id]
+        current = second[candidate_id]
+        if not (
+            str(earlier["disposition"]) == "reject"
+            and str(current["disposition"]) in {"retain", "revise"}
+        ):
+            continue
+        candidate_flags = set(
+            candidates[candidate_id].get("flags", {}).get("quality", [])
+        )
+        if (
+            candidate_flags & risk_flags
+            or str(earlier.get("junk_reason")) == "banter"
+        ):
+            selected.add(candidate_id)
+    ordered = sorted(selected)
+    if len(ordered) > 25:
+        raise TrueNorthError(
+            "gold-blind disposition conflict set exceeds Spark budget"
+        )
+    return ordered
+
+
+def combine_phase_c_disposition_votes(
+    first: Mapping[str, Mapping[str, Any]],
+    second: Mapping[str, Mapping[str, Any]],
+    escalated: Mapping[str, Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Combine two GLM passes with Spark as a true disagreement tiebreaker."""
+
+    if set(first) != set(second):
+        raise TrueNorthError(
+            "disposition vote inputs have different candidate scopes"
+        )
+    if not set(escalated).issubset(second):
+        raise TrueNorthError(
+            "escalated dispositions contain an out-of-scope candidate"
+        )
+    combined: dict[str, dict[str, Any]] = {}
+    for candidate_id in sorted(second):
+        earlier = first[candidate_id]
+        current = second[candidate_id]
+        earlier_state = _gold_value_state(
+            str(earlier["disposition"])
+        )
+        current_state = _gold_value_state(
+            str(current["disposition"])
+        )
+        if earlier_state == current_state:
+            # Two independent passes already form a majority. Preserve the
+            # newer pass so its schema-valid reason text remains intact.
+            combined[candidate_id] = dict(current)
+            continue
+        # Only frozen-risk disagreements enter the bounded escalation set.
+        # For other disagreements, the approved second GLM pass remains the
+        # decision instead of silently broadening Spark's scope.
+        combined[candidate_id] = dict(
+            escalated.get(candidate_id, current)
+        )
+    return combined
+
+
+def run_phase_c_disposition_escalation(
+    *,
+    first_run_id: str,
+    second_run_id: str,
+    output_root: str | Path | None = None,
+    suite: str = SUITE_ID,
+    timeout_seconds: int = 900,
+    opencode_binary: str = "/opt/homebrew/bin/opencode",
+    runner: Any | None = None,
+) -> dict[str, Any]:
+    """Use one bounded Spark call to adjudicate detected GLM conflicts."""
+
+    suite_root = _suite_root(output_root, suite)
+    if not verify_suite(output_root=output_root, suite=suite)["ok"]:
+        raise TrueNorthError("suite verification failed before escalation")
+    phase_root = suite_root / "phase-c" / "runs"
+    first = _phase_c_disposition_outputs(phase_root / first_run_id)
+    second = _phase_c_disposition_outputs(phase_root / second_run_id)
+    manifest = _read_json(suite_root / "manifest.json")
+    candidate_by_id: dict[str, dict[str, Any]] = {}
+    for bundle_row in manifest["bundles"]:
+        if str(bundle_row["episode_id"]) not in {
+            "ep_90c3b5c995bce501c9aef55c",
+            "ep_7ec9f808a3955c720aeb94ff",
+        }:
+            continue
+        bundle = _read_json(Path(bundle_row["bundle_path"]))
+        for candidate in bundle["candidates"]:
+            candidate_by_id[str(candidate["candidate_id"])] = dict(
+                candidate
+            )
+    selected = select_phase_c_disposition_conflicts(
+        first, second, candidate_by_id
+    )
+    packet = {
+        "schema_version": MULTIPASS_SCHEMA_VERSION,
+        "suite_id": suite,
+        "multipass_stage": "disposition",
+        "task": (
+            "Resolve bounded disposition conflicts from two independent GLM "
+            "passes without changing any non-disposition field."
+        ),
+        "instructions": [
+            "Read the exact evidence; neither GLM decision nor candidate wording is authoritative.",
+            "Return one disposition for every selected candidate and no others.",
+            "Apply the same substantive-assertion versus junk boundary as the approved disposition prompt.",
+        ],
+        "output_schema": multipass_disposition_schema(selected),
+        "input": {
+            "candidates": [
+                candidate_by_id[candidate_id]
+                for candidate_id in selected
+            ],
+            "first_pass": [
+                first[candidate_id] for candidate_id in selected
+            ],
+            "second_pass": [
+                second[candidate_id] for candidate_id in selected
+            ],
+        },
+    }
+    selection = {
+        "schema_version": MULTIPASS_SCHEMA_VERSION,
+        "selection_contract": (
+            "all_second_pass_nonvalue_plus_changed_to_value_with_frozen_"
+            "question_frame_intro_or_banter_risk"
+        ),
+        "gold_accessed": False,
+        "first_run_id": first_run_id,
+        "second_run_id": second_run_id,
+        "selected_candidate_ids": selected,
+        "selected_count": len(selected),
+        "max_spark_calls": 25,
+        "planned_spark_calls": 1,
+    }
+    selection["selection_sha256"] = sha256_text(dumps_json(selection))
+    run_id = f"{second_run_id}-spark-conflicts-v1"
+    run_root = phase_root / run_id
+    packet_path = run_root / "packets" / "disposition.private.json"
+    _write_json(packet_path, packet, immutable=True)
+    _write_json(
+        run_root / "selection.json", selection, immutable=True
+    )
+    actual_runner = runner or _run_opencode_packet
+    kwargs = {
+        "packet_path": packet_path,
+        "output_dir": run_root / "outputs" / "disposition",
+        "models": ("openai/gpt-5.3-codex-spark",),
+        "stage": "phase-c-disposition-escalation",
+        "timeout_seconds": timeout_seconds,
+        "opencode_binary": opencode_binary,
+        "system_prompt": (
+            "You are the final disposition conflict adjudicator for a private "
+            "podcast research corpus. Do not use tools. Read only exact evidence. "
+            + MULTIPASS_SYSTEM_PROMPTS["disposition"]
+        ),
+        "validator": validate_multipass_disposition,
+    }
+    if runner is None:
+        kwargs["_semantic_retry_remaining"] = 0
+    output, receipts, model = actual_runner(**kwargs)
+    validate_multipass_disposition(output, packet)
+    escalated = {
+        str(item["candidate_id"]): dict(item)
+        for item in output["items"]
+    }
+    combined = combine_phase_c_disposition_votes(
+        first, second, escalated
+    )
+    consensus = _read_json(
+        suite_root
+        / "gold"
+        / "development"
+        / "final"
+        / "consensus.private.json"
+    )
+    score = _score_phase_c_dispositions(consensus, combined)
+    usage = _multipass_usage(receipts)
+    result = {
+        "schema_version": MULTIPASS_SCHEMA_VERSION,
+        "phase": "phase_c_disposition_escalation",
+        "run_id": run_id,
+        "selection_sha256": selection["selection_sha256"],
+        "provider_model": model,
+        "score": score,
+        "usage": usage,
+        "spark_call_ceiling": 25,
+        "production_mutation": False,
+        "holdout_opened": False,
+    }
+    result["result_sha256"] = sha256_text(dumps_json(result))
+    _write_json(run_root / "result.private.json", result, immutable=True)
+    _write_json(
+        run_root / "outputs" / "combined.private.json",
+        {"items": [combined[key] for key in sorted(combined)]},
+        immutable=True,
+    )
+    return result
+
+
 def score_run(
     *,
     run_id: str,
@@ -9330,6 +9809,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Score a completed multipass extraction run.",
     )
     multipass_score.add_argument("--run-id", required=True)
+    phase_c_disposition = sub.add_parser(
+        "phase-c-disposition",
+        help="Run the approved bounded Search-fold disposition stage.",
+    )
+    phase_c_disposition.add_argument("--workers", type=int, default=4)
+    phase_c_disposition.add_argument(
+        "--timeout-seconds", type=int, default=900
+    )
+    phase_c_disposition.add_argument(
+        "--opencode-binary", default="/opt/homebrew/bin/opencode"
+    )
+    phase_c_disposition.add_argument("--run-id")
     report = sub.add_parser("report", help="Render sanitized JSON and HTML reports.")
     report.add_argument("--run-id", required=True)
     for command_parser in (
@@ -9341,6 +9832,7 @@ def build_parser() -> argparse.ArgumentParser:
         prompt_optimize,
         multipass,
         multipass_score,
+        phase_c_disposition,
         report,
     ):
         command_parser.add_argument(
@@ -9441,6 +9933,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         elif args.command == "multipass-score":
             result = score_multipass_run(
+                run_id=args.run_id,
+                **common,
+            )
+        elif args.command == "phase-c-disposition":
+            result = run_phase_c_disposition(
+                workers=args.workers,
+                timeout_seconds=args.timeout_seconds,
+                opencode_binary=args.opencode_binary,
                 run_id=args.run_id,
                 **common,
             )
