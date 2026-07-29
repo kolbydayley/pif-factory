@@ -99,6 +99,67 @@
         "actor_value_selection_on_157_atomic_residual",
         "sealed_transfer_execution"
       ]
+    },
+    {
+      "decision_id": "owner-delegated-post-certification-program-20260729-v1",
+      "owner": "Kolby Dayley",
+      "recorded_at": "2026-07-29",
+      "source_kind": "review_thread_directive_in_active_codex_thread",
+      "delegation": {
+        "delegated_by": "Kolby Dayley",
+        "delegated_to": "true_north_review_loop",
+        "explicit": true,
+        "scope": "post_certification_program_phases_a_through_f",
+        "standing_objective": "reach_the_benchmark_goals"
+      },
+      "provenance": {
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Kolby fully delegated the post-certification program to the review loop, authorized phases A through F in order, and retained per-phase budgets, review rulings, privacy boundaries, stop conditions, and sealed-holdout progression."
+      },
+      "certification_baseline": {
+        "commit": "f3344bb7258e5c97ee74158d4b37b860b137f606",
+        "tag": "v7-certified",
+        "status": "development_fold_only_hybrid_certification_stands"
+      },
+      "authorizes": {
+        "phase_a": {
+          "name": "consolidation",
+          "max_calls": 0
+        },
+        "phase_b": {
+          "name": "candidate_state_macro_f1_calibration",
+          "max_calls": 0
+        },
+        "phase_c": {
+          "name": "ab_c_cheap_consensus_decomposition",
+          "max_calls": 40,
+          "max_tokens": 900000
+        },
+        "phase_d": {
+          "name": "conditional_actor_value_selection",
+          "dispatch_condition": "hallucination_or_reported_actor_blocks_after_phase_c",
+          "max_calls": 25,
+          "max_tokens": 350000
+        },
+        "phase_e": {
+          "name": "three_episode_isolated_production_shadow",
+          "max_calls": 60,
+          "max_tokens": 1500000,
+          "production_access": "read_only",
+          "writes": "isolated_shadow_store_only"
+        },
+        "phase_f": {
+          "name": "two_identical_config_development_pass_progression",
+          "sealed_holdouts": "closed_until_explicit_review_loop_order"
+        }
+      },
+      "unchanged_controls": {
+        "per_phase_ceiling_declared_before_first_call": true,
+        "cumulative_spend_reported_with_every_result": true,
+        "gate_gold_or_scorer_changes_require_review_loop_ruling": true,
+        "stop_conditions_honored": true,
+        "headless_lane_collision_stops_work": true
+      }
     }
   ],
   "cumulative_before_new_authorization": {
