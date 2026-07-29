@@ -892,7 +892,7 @@ def _default_stage_handlers(
         }
 
     def validate(context: DailyStageContext) -> Mapping[str, Any]:
-        validation = _validate_current_accepted_release(conn, at=_now())
+        validation = _validate_current_accepted_release(conn, at=now())
         return {
             "status": "completed" if validation["ok"] else "failed",
             # This is one deterministic corpus-wide validation pass.  Claims
