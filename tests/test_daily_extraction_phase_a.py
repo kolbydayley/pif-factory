@@ -159,6 +159,71 @@ def test_validation_stage_is_healthy_no_work_before_first_release(
         conn.close()
 
 
+def test_reconciliation_backlog_is_not_daily_blocker_after_quality_floor(
+    tmp_path: Path,
+) -> None:
+    conn = db.connect(tmp_path / "factory.sqlite")
+    try:
+        db.init_db(conn)
+        ensure_daily_schema(conn)
+        handlers = _default_stage_handlers(
+            conn,
+            source_list=None,
+            since=None,
+            execute_ingestion=False,
+            execute_normalize=False,
+            execute_extraction=False,
+            apply_reconcile=True,
+            record_exception_contracts=False,
+            publish_observer=False,
+            snapshot_output=None,
+            observer_url=None,
+            observer_token=None,
+            lane="podcast",
+            label_pack="ai_discourse_v3_1",
+            model="gpt-5.5",
+            pilot_id=None,
+            now=lambda: NOW,
+        )
+        context = DailyStageContext(
+            conn=conn,
+            run_id="current-run",
+            run_date="2026-07-29",
+            stage_name="identity_and_semantic_reconciliation",
+            stage_index=6,
+            max_items=5,
+            remaining_seconds=300.0,
+            deadline_monotonic=300.0,
+            artifact_dir=tmp_path / "receipts",
+        )
+        reconciliation = {
+            "ok": True,
+            "processed": 5,
+            "targets": [{"planned_items": 5}],
+        }
+        with patch(
+            "research_factory.daily_cycle._current_release_for_scale_gate",
+            return_value={"id": "crel_test", "item_count": 25},
+        ), patch(
+            "research_factory.daily_cycle._quality_gate",
+            return_value={"passed": True, "counts": {}, "thresholds_met": {}},
+        ), patch(
+            "research_factory.production_ops.reconcile_all",
+            return_value=reconciliation,
+        ) as reconcile_all:
+            result = handlers["identity_and_semantic_reconciliation"](context)
+
+        assert result["status"] == "completed"
+        assert result["work_due"] is True
+        assert result["work_satisfied"] is True
+        assert result["healthy_no_work"] is False
+        assert result["reconciliation_backlog_due"] is True
+        assert result["reason"] == "quality_minimums_satisfied_reconciliation_backlog_deferred"
+        assert reconcile_all.call_args.kwargs["apply"] is False
+    finally:
+        conn.close()
+
+
 def test_execute_extraction_enables_real_bounded_baseline_and_honest_counts(tmp_path: Path) -> None:
     conn = db.connect(tmp_path / "factory.sqlite")
     try:

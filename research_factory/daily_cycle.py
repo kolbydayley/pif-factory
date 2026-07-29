@@ -932,9 +932,23 @@ def _default_stage_handlers(
     def reconcile(context: DailyStageContext) -> Mapping[str, Any]:
         from .production_ops import reconcile_all
 
+        release = _current_release_for_scale_gate(conn)
+        quality = (
+            _quality_gate(
+                conn,
+                release_id=str(release["id"]),
+                cohort_item_count=int(release["item_count"]),
+            )
+            if release is not None
+            else {"passed": False, "counts": {}, "thresholds_met": {}}
+        )
+        quality_satisfied = bool(quality.get("passed"))
         result = reconcile_all(
             conn,
-            apply=apply_reconcile,
+            # Once the accepted release clears the explicit quality floor,
+            # remaining reconciliation is backlog telemetry rather than a
+            # reason to prepare fresh packets on every daily run.
+            apply=bool(apply_reconcile and not quality_satisfied),
             release_id=None,
             model=model,
             limit=context.max_items,
@@ -945,21 +959,28 @@ def _default_stage_handlers(
             if isinstance(item, Mapping)
         )
         work_due = planned > 0 or int(result.get("processed", 0) or 0) > 0
-        # The daily orchestrator may prepare bounded packets, but a packet is
-        # not a completed LLM judgment.  An external managed-auth worker must
-        # finish due reconciliation before this stage is healthy.
-        work_satisfied = not work_due
+        # Before the release quality floor is met, a prepared packet is not a
+        # completed LLM judgment.  After the floor is met, the remaining
+        # bounded reconciliation inventory is an explicit backlog, not a
+        # permanent daily-cycle blocker.
+        work_satisfied = not work_due or quality_satisfied
         return {
             "status": "completed" if result.get("ok") and work_satisfied else "skipped",
             "processed": int(result.get("processed", 0)),
-            "reason": None if work_satisfied else (
-                "managed_app_server_reconciliation_required"
+            "reason": (
+                "quality_minimums_satisfied_reconciliation_backlog_deferred"
+                if quality_satisfied and work_due
+                else None
+                if work_satisfied
+                else "managed_app_server_reconciliation_required"
                 if apply_reconcile
                 else "reconciliation_not_explicitly_enabled"
             ),
             "planned_items": planned,
+            "reconciliation_backlog_due": work_due,
+            "quality_floor": quality,
             "work_due": work_due,
-            "required_work_enabled": bool(apply_reconcile),
+            "required_work_enabled": bool(apply_reconcile or quality_satisfied),
             "healthy_no_work": not work_due,
             "work_satisfied": work_satisfied,
             "result": result,
