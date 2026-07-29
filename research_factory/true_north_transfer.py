@@ -701,12 +701,21 @@ def _gold_usage(root: Path) -> dict[str, int]:
             for inner in receipt["receipts"]:
                 usage = inner.get("usage", {})
                 calls += 1
-                tokens += int(usage.get("total_tokens") or 0)
+                tokens += _usage_tokens(usage)
         elif receipt.get("ok"):
             usage = receipt.get("usage", {})
             calls += 0 if receipt.get("idempotent_replay") else 1
-            tokens += int(usage.get("total_tokens") or 0)
+            tokens += _usage_tokens(usage)
     return {"calls": calls, "tokens": tokens}
+
+
+def _usage_tokens(usage: Mapping[str, Any]) -> int:
+    total = usage.get("total_tokens")
+    if isinstance(total, (int, float)):
+        return int(total)
+    return int(usage.get("input_tokens") or 0) + int(
+        usage.get("output_tokens") or 0
+    )
 
 
 def _total_usage(root: Path) -> dict[str, int]:
