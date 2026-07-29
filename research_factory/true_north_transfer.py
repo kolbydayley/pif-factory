@@ -106,7 +106,7 @@ def _ledger_preflight() -> tuple[dict[str, Any], str]:
     ledger = true_north._read_json(LEDGER_PATH)
     rows = {
         row["experiment_id"]: row
-        for row in ledger["post_certification_phase_results"]
+        for row in ledger["declared_experiments"]
         if "experiment_id" in row
     }
     row = rows.get(EXPERIMENT_ID)
