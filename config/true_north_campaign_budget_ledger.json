@@ -399,6 +399,35 @@
         "provider_calls_authorized": 0,
         "sealed_holdouts_forbidden": true
       }
+    },
+    {
+      "decision_id": "review-loop-ruling-8-sealed-transfer-authorization-20260729-v1",
+      "owner": "true_north_review_loop",
+      "recorded_at": "2026-07-29",
+      "source_kind": "review_thread_directive_in_active_codex_thread",
+      "delegation": {
+        "delegated_by": "Kolby Dayley",
+        "delegated_to": "true_north_review_loop",
+        "explicit": true
+      },
+      "provenance": {
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Override the pre-measurement 120-call and 3M-token estimate gate and authorize the complete blind smaller-episode sealed-transfer protocol at its measured floor plus bounded headroom."
+      },
+      "ruling": {
+        "authorized_episode_id": "ep_97a45100ce0d305f58d7dd69",
+        "forbidden_episode_id": "ep_044f1d2d020e021cfaf99e90",
+        "max_calls": 150,
+        "max_tokens": 4800000,
+        "required_order": [
+          "freeze_blind_certified_glm_outputs",
+          "build_atomic_a_b_c_gold_and_actor_repair",
+          "score_without_tuning"
+        ],
+        "protocol_trimming_forbidden": true,
+        "post_result_tuning_forbidden": true,
+        "second_holdout_opening_forbidden": true
+      }
     }
   ],
   "post_certification_phase_results": [
@@ -1414,6 +1443,43 @@
         "holdout_opened": false,
         "cumulative_calls_after": 309,
         "known_cumulative_tokens_after": 3583991
+      }
+    },
+    {
+      "experiment_id": "ruling8-sealed-transfer-smaller-episode-20260729-v1",
+      "sequence": 18,
+      "architecture": "certified_glm_only_then_atomic_gold_actor_repair_blind_transfer",
+      "episode_count": 1,
+      "max_calls": 150,
+      "max_tokens": 4800000,
+      "status": "declared_before_first_call",
+      "cumulative_before": {
+        "calls": 309,
+        "known_tokens": 3583991
+      },
+      "provenance": {
+        "source_kind": "review_thread_directive_in_active_codex_thread",
+        "directive_received_at": "2026-07-29",
+        "ruling_id": "review-loop-ruling-8-sealed-transfer-authorization-20260729-v1"
+      },
+      "scope": {
+        "authorized_episode_id": "ep_97a45100ce0d305f58d7dd69",
+        "forbidden_episode_id": "ep_044f1d2d020e021cfaf99e90",
+        "gold_phase": "atomic_plus_span_enforced_actor_repair",
+        "canonical_relation_utility_gold_excluded": true,
+        "production_mutation": false
+      },
+      "preflight": {
+        "estimated_calls": 132,
+        "estimated_tokens": 3730661,
+        "blind_outputs_must_precede_gold": true,
+        "gold_may_not_enter_extraction_packets": true
+      },
+      "actual": {
+        "calls": 0,
+        "tokens": 0,
+        "holdout_opened": false,
+        "status": "not_started"
       }
     }
   ]
