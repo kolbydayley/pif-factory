@@ -8564,6 +8564,8 @@ def _multipass_execute_stage(
     model: str = MULTIPASS_MODEL,
     artifact_stage: str | None = None,
     reserved_tokens_per_call: int = 32_000,
+    validator_override: Any | None = None,
+    system_prompt_override: str | None = None,
 ) -> dict[tuple[str, str], dict[str, Any]]:
     if stage not in MULTIPASS_ALL_STAGES:
         raise TrueNorthError(f"unknown multipass stage: {stage}")
@@ -8573,7 +8575,10 @@ def _multipass_execute_stage(
         "adjudication": validate_multipass_adjudication,
         "attribution": validate_multipass_attribution,
     }
-    validate = validators[stage]
+    validate = validator_override or validators[stage]
+    selected_system_prompt = (
+        system_prompt_override or MULTIPASS_SYSTEM_PROMPTS[stage]
+    )
     artifact_key = artifact_stage or stage
     outputs: dict[tuple[str, str], dict[str, Any]] = {}
     pending: list[tuple[str, str, Path, Path]] = []
@@ -8647,7 +8652,7 @@ def _multipass_execute_stage(
             "stage": f"multipass-{artifact_key}",
             "timeout_seconds": timeout_seconds,
             "opencode_binary": opencode_binary,
-            "system_prompt": MULTIPASS_SYSTEM_PROMPTS[stage],
+            "system_prompt": selected_system_prompt,
             "validator": validate,
         }
         if runner is None:
@@ -8695,7 +8700,7 @@ def _multipass_execute_stage(
             "segment_id": segment_id,
             "provider_model": model,
             "system_prompt_sha256": sha256_text(
-                MULTIPASS_SYSTEM_PROMPTS[stage]
+                selected_system_prompt
             ),
             "output_sha256": sha256_text(dumps_json(output)),
             "usage": usage,
