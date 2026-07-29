@@ -5,7 +5,7 @@
   <key>Label</key>
   <string>com.kolby.pif.sdk-pipeline-controller</string>
   <key>Disabled</key>
-  <true/>
+  <false/>
   <key>ProgramArguments</key>
   <array>
     <string>/Users/kolbydayley/.codex/venvs/pif-sdk-pipeline-controller/bin/python</string>
