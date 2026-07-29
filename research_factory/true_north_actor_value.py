@@ -487,18 +487,239 @@ def run_actor_value_measurement(
 def _load_predictions(
     run_root: Path,
     episode_ids: Sequence[str],
+    *,
+    output_stage: str = "composed",
 ) -> list[dict[str, Any]]:
     predictions: list[dict[str, Any]] = []
     for episode_id in episode_ids:
         for path in sorted(
             (
-                run_root / "outputs" / "composed" / episode_id
+                run_root / "outputs" / output_stage / episode_id
             ).glob("*/validated.private.json")
         ):
             predictions.extend(
                 true_north._read_json(path)["items"]
             )
     return predictions
+
+
+def finalize_partial_actor_value_measurement(
+    *,
+    suite_root: str | Path,
+    run_id: str,
+) -> dict[str, Any]:
+    """Freeze and score a budget-terminal actor run without claiming completion."""
+
+    from .true_north_semantic_scoring import score_campaign
+
+    root = Path(suite_root).expanduser().resolve()
+    run_root = root / "multipass" / "runs" / run_id
+    configuration = true_north._read_json(run_root / "configuration.json")
+    state = true_north._read_json(run_root / "state.json")
+    if configuration.get("schema_version") != SCHEMA_VERSION:
+        raise ActorValueError("run is not an actor-value measurement")
+    if state.get("complete") is True:
+        raise ActorValueError("complete actor runs use the normal scorer")
+    if int(state["usage"]["calls"]) != int(state["budget"]["max_calls"]):
+        raise ActorValueError("partial actor run is not call-budget terminal")
+
+    source_root, source_outputs, _source = _load_source_predictions(
+        root, configuration["source"]["run_id"]
+    )
+    decisions: dict[tuple[str, int], str | None] = {}
+    validated_batches: list[str] = []
+    for path in sorted(
+        (run_root / "outputs" / "actor-value" / "search").glob(
+            "*/validated.private.json"
+        )
+    ):
+        validated_batches.append(path.parent.name)
+        output = true_north._read_json(path)
+        packet = true_north._read_json(
+            run_root
+            / "packets"
+            / "actor-value"
+            / "search"
+            / f"{path.parent.name}.private.json"
+        )
+        validate_actor_value_output(output, packet)
+        for row in output["items"]:
+            decisions[(str(row["candidate_id"]), int(row["claim_index"]))] = (
+                row["reported_actor"]
+            )
+    expected: set[tuple[str, int]] = set()
+    for path in sorted(
+        (run_root / "packets" / "actor-value" / "search").glob(
+            "*.private.json"
+        )
+    ):
+        packet = true_north._read_json(path)
+        expected.update(
+            (str(row["candidate_id"]), int(row["claim_index"]))
+            for row in packet["input"]["claims"]
+        )
+    missing = sorted(expected - set(decisions))
+    if not missing:
+        raise ActorValueError("partial actor finalizer found complete coverage")
+
+    complete_candidates = {
+        candidate_id
+        for candidate_id, _claim_index in expected
+        if all(
+            ref in decisions
+            for ref in expected
+            if ref[0] == candidate_id
+        )
+    }
+    fallback_predictions: list[dict[str, Any]] = []
+    for key, source in source_outputs.items():
+        output = copy.deepcopy(source)
+        for item in output["items"]:
+            candidate_id = str(item["candidate_id"])
+            for claim_index, atomic in enumerate(item["atomic_claims"]):
+                ref = (candidate_id, claim_index)
+                if ref in decisions:
+                    atomic["reported_actor"] = decisions[ref]
+        fallback_predictions.extend(output["items"])
+        true_north._write_json(
+            run_root
+            / "outputs"
+            / "composed-partial-fallback"
+            / key[0]
+            / key[1]
+            / "validated.private.json",
+            output,
+            immutable=False,
+        )
+
+    consensus_document = true_north._read_json(
+        root / "gold" / "development" / "final" / "consensus.private.json"
+    )
+    preferred_document = true_north._read_json(
+        root / "gold" / "development" / "final" / "gold.private.json"
+    )
+    prediction_ids = {
+        str(row["candidate_id"]) for row in fallback_predictions
+    }
+    consensus = [
+        row for row in consensus_document["items"]
+        if str(row["candidate_id"]) in prediction_ids
+    ]
+    preferred = [
+        row for row in preferred_document["items"]
+        if str(row["candidate_id"]) in prediction_ids
+    ]
+    manifest = true_north._read_json(root / "manifest.json")
+    speaker_maps: dict[str, Any] = {}
+    for bundle_row in manifest["bundles"]:
+        if str(bundle_row["episode_id"]) not in configuration["episode_ids"]:
+            continue
+        bundle = true_north._read_json(Path(bundle_row["bundle_path"]))
+        for candidate in bundle["candidates"]:
+            speaker_maps[str(candidate["candidate_id"])] = (
+                bundle["episode_context"].get("speaker_map", [])
+            )
+    fallback_score = score_campaign(
+        fallback_predictions,
+        consensus,
+        preferred,
+        speaker_maps_by_candidate=speaker_maps,
+    )
+    baseline_predictions = _load_predictions(
+        source_root, configuration["episode_ids"]
+    )
+    baseline_score = score_campaign(
+        baseline_predictions,
+        consensus,
+        preferred,
+        speaker_maps_by_candidate=speaker_maps,
+    )
+    fully_measured_predictions = [
+        row for row in fallback_predictions
+        if str(row["candidate_id"]) in complete_candidates
+    ]
+    fully_measured_score = score_campaign(
+        fully_measured_predictions,
+        consensus,
+        preferred,
+        subset_candidate_ids=complete_candidates,
+        speaker_maps_by_candidate=speaker_maps,
+    )
+    fully_measured_map = {
+        str(row["candidate_id"]): row
+        for row in fully_measured_predictions
+    }
+    preferred_map = {
+        str(row["candidate_id"]): row
+        for row in preferred
+        if str(row["candidate_id"]) in complete_candidates
+    }
+    diagnostics = _actor_diagnostics(
+        candidate_scores=fully_measured_score["candidates"],
+        predictions=fully_measured_map,
+        preferred=preferred_map,
+    )
+    aggregate = fallback_score["aggregate"]
+    baseline_aggregate = baseline_score["aggregate"]
+    document = {
+        "schema_version": SCHEMA_VERSION,
+        "run_id": run_id,
+        "complete": False,
+        "acceptance_eligible": False,
+        "terminal_reason": "campaign_call_ceiling_with_invalid_literal_span_batch",
+        "coverage": {
+            "validated_batch_count": len(validated_batches),
+            "expected_batch_count": len(validated_batches) + 1,
+            "validated_atomic_decision_count": len(decisions),
+            "expected_atomic_decision_count": len(expected),
+            "coverage_rate": len(decisions) / len(expected),
+            "missing_atomic_decision_count": len(missing),
+            "fully_measured_candidate_count": len(complete_candidates),
+        },
+        "fully_measured_subset": {
+            **diagnostics,
+            "composite_reported_actor_exactness": fully_measured_score[
+                "aggregate"
+            ]["reported_actor_exactness"],
+            "hallucination_proxy": fully_measured_score["aggregate"][
+                "hallucination_rate_proxy"
+            ],
+        },
+        "partial_fallback_composition": {
+            "definition": (
+                "validated actor decisions where available; frozen source "
+                "priors for the missing batch"
+            ),
+            "composite_reported_actor_exactness": aggregate[
+                "reported_actor_exactness"
+            ],
+            "reported_actor_gate": 0.903182,
+            "gate_passed": False,
+            "hallucination_proxy": {
+                "before": baseline_aggregate["hallucination_rate_proxy"],
+                "after": aggregate["hallucination_rate_proxy"],
+                "absolute_change": round(
+                    float(aggregate["hallucination_rate_proxy"])
+                    - float(baseline_aggregate["hallucination_rate_proxy"]),
+                    6,
+                ),
+            },
+        },
+        "usage": state["usage"],
+        "campaign_calls_after_run": (
+            int(configuration["campaign_calls_before_run"])
+            + int(state["usage"]["calls"])
+        ),
+        "campaign_call_ceiling": CAMPAIGN_CALL_CEILING,
+        "holdout_opened": False,
+        "production_mutation": False,
+    }
+    document["result_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(document)
+    )
+    path = run_root / "terminal-partial-result.private.json"
+    true_north._write_json(path, document, immutable=False)
+    return {**document, "result_path": str(path)}
 
 
 def _actor_diagnostics(
@@ -511,6 +732,21 @@ def _actor_diagnostics(
     emission_denominator = 0
     value_correct = 0
     gold_non_null = 0
+
+    def alignment_index(
+        pair: Mapping[str, Any],
+        *,
+        integer_key: str,
+        reference_key: str,
+    ) -> int:
+        if integer_key in pair:
+            return int(pair[integer_key])
+        reference = str(pair[reference_key])
+        prefix, separator, ordinal = reference.partition(":")
+        if not separator or prefix not in {"pred", "gold"}:
+            raise ActorValueError("unrecognized semantic alignment reference")
+        return int(ordinal) - 1
+
     for score in candidate_scores:
         if not score["strictly_scoreable"]:
             continue
@@ -522,8 +758,16 @@ def _actor_diagnostics(
         )
         matched_gold: set[int] = set()
         for pair in score["alignment"]:
-            predicted_index = int(pair["predicted_index"])
-            gold_index = int(pair["gold_index"])
+            predicted_index = alignment_index(
+                pair,
+                integer_key="predicted_index",
+                reference_key="predicted_ref",
+            )
+            gold_index = alignment_index(
+                pair,
+                integer_key="gold_index",
+                reference_key="gold_ref",
+            )
             matched_gold.add(gold_index)
             predicted_actor = predicted_claims[predicted_index].get(
                 "reported_actor"

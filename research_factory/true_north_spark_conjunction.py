@@ -586,3 +586,355 @@ def score_spark_conjunction_measurement(
     path = run_root / "spark-conjunction-score.private.json"
     true_north._write_json(path, document, immutable=False)
     return {**document, "score_path": str(path)}
+
+
+def finalize_partial_spark_conjunction_measurement(
+    *,
+    suite_root: str | Path,
+    run_id: str,
+) -> dict[str, Any]:
+    """Score validated Spark coverage and a labeled GLM-fallback composition."""
+
+    from .true_north_semantic_scoring import score_campaign
+
+    root = Path(suite_root).expanduser().resolve()
+    run_root = root / "multipass" / "runs" / run_id
+    configuration = true_north._read_json(run_root / "configuration.json")
+    state = true_north._read_json(run_root / "state.json")
+    if configuration.get("schema_version") != SCHEMA_VERSION:
+        raise SparkConjunctionError(
+            "run is not a Spark conjunction measurement"
+        )
+    if state.get("complete") is True:
+        raise SparkConjunctionError("complete Spark runs use the normal scorer")
+    if int(state["usage"]["calls"]) != int(state["budget"]["max_calls"]):
+        raise SparkConjunctionError("partial Spark run is not budget terminal")
+
+    manifest = true_north._read_json(root / "manifest.json")
+    base_jobs, dispositions, candidates = _load_search_context(root, manifest)
+    (
+        _reference_root,
+        reference_packets,
+        reference_outputs,
+        _reference_provenance,
+    ) = _reference_artifacts(root)
+    spark_outputs: dict[tuple[str, str], dict[str, Any]] = {}
+    validated_batches: list[str] = []
+    for path in sorted(
+        (run_root / "outputs" / "spark-conjunction" / "search").glob(
+            "*/validated.private.json"
+        )
+    ):
+        batch_id = path.parent.name
+        packet = true_north._read_json(
+            run_root
+            / "packets"
+            / "spark-conjunction"
+            / "search"
+            / f"{batch_id}.private.json"
+        )
+        output = true_north._read_json(path)
+        validate_conjunction_output(output, packet)
+        validated_batches.append(batch_id)
+        spark_outputs[("search", batch_id)] = output
+    spark_by_candidate = _spark_items(spark_outputs)
+    selected = set(configuration["selector"]["candidate_ids"])
+    missing = sorted(selected - set(spark_by_candidate))
+    if not missing:
+        raise SparkConjunctionError("partial Spark finalizer found full coverage")
+
+    disposition_by_candidate = {
+        str(row["candidate_id"]): row
+        for output in dispositions.values()
+        for row in output["items"]
+    }
+    eligible = {
+        candidate_id
+        for candidate_id in selected
+        if str(disposition_by_candidate[candidate_id]["disposition"])
+        in {"retain", "revise"}
+    }
+    final_adjudication: dict[tuple[str, str], dict[str, Any]] = {}
+    for key, reference in reference_outputs.items():
+        items = []
+        for row in reference["items"]:
+            candidate_id = str(row["candidate_id"])
+            items.append(
+                copy.deepcopy(
+                    spark_by_candidate[candidate_id]
+                    if candidate_id in eligible
+                    and candidate_id in spark_by_candidate
+                    else row
+                )
+            )
+        output = {
+            "schema_version": true_north.MULTIPASS_SCHEMA_VERSION,
+            "items": items,
+        }
+        true_north.validate_multipass_adjudication(
+            output, reference_packets[key]
+        )
+        final_adjudication[key] = output
+
+    fallback_predictions: list[dict[str, Any]] = []
+    for key in sorted(base_jobs):
+        output = true_north.compose_multipass_output(
+            base_jobs[key],
+            dispositions[key],
+            final_adjudication.get(key),
+            None,
+            stage_b_mode="adjudication",
+        )
+        fallback_predictions.extend(output["items"])
+        true_north._write_json(
+            run_root
+            / "outputs"
+            / "composed-partial-fallback"
+            / key[0]
+            / key[1]
+            / "validated.private.json",
+            output,
+            immutable=False,
+        )
+
+    consensus_document = true_north._read_json(
+        root / "gold" / "development" / "final" / "consensus.private.json"
+    )
+    preferred_document = true_north._read_json(
+        root / "gold" / "development" / "final" / "gold.private.json"
+    )
+    prediction_ids = {
+        str(row["candidate_id"]) for row in fallback_predictions
+    }
+    consensus = [
+        row for row in consensus_document["items"]
+        if str(row["candidate_id"]) in prediction_ids
+    ]
+    preferred = [
+        row for row in preferred_document["items"]
+        if str(row["candidate_id"]) in prediction_ids
+    ]
+    speaker_maps: dict[str, Any] = {}
+    for bundle_row in manifest["bundles"]:
+        if str(bundle_row["episode_id"]) not in configuration["episode_ids"]:
+            continue
+        bundle = true_north._read_json(Path(bundle_row["bundle_path"]))
+        for candidate in bundle["candidates"]:
+            speaker_maps[str(candidate["candidate_id"])] = (
+                bundle["episode_context"].get("speaker_map", [])
+            )
+    fallback_score = score_campaign(
+        fallback_predictions,
+        consensus,
+        preferred,
+        speaker_maps_by_candidate=speaker_maps,
+    )
+    fallback_core = true_north._consensus_atomic_metrics(
+        {
+            **consensus_document,
+            "items": consensus,
+        },
+        {
+            str(row["candidate_id"]): row
+            for row in fallback_predictions
+        },
+        require_complete_scope=True,
+    )
+    fallback_metrics = {
+        str(row["metric"]): row["value"] for row in fallback_core
+    }
+    validated_selected = set(spark_by_candidate)
+    scored_spark_by_candidate = {
+        candidate_id: {
+            "disposition": disposition_by_candidate[candidate_id][
+                "disposition"
+            ],
+            **row,
+        }
+        for candidate_id, row in spark_by_candidate.items()
+    }
+    subset_core = true_north._consensus_atomic_metrics(
+        {
+            **consensus_document,
+            "items": [
+                row for row in consensus_document["items"]
+                if str(row["candidate_id"]) in validated_selected
+            ],
+        },
+        scored_spark_by_candidate,
+        require_complete_scope=True,
+    )
+    subset_metrics = {
+        str(row["metric"]): row["value"] for row in subset_core
+    }
+    validated_eligible = validated_selected & eligible
+    eligible_subset_core = true_north._consensus_atomic_metrics(
+        {
+            **consensus_document,
+            "items": [
+                row for row in consensus_document["items"]
+                if str(row["candidate_id"]) in validated_eligible
+            ],
+        },
+        {
+            candidate_id: scored_spark_by_candidate[candidate_id]
+            for candidate_id in validated_eligible
+        },
+        require_complete_scope=True,
+    )
+    eligible_subset_metrics = {
+        str(row["metric"]): row["value"] for row in eligible_subset_core
+    }
+    reference_by_candidate = {
+        str(row["candidate_id"]): row
+        for output in reference_outputs.values()
+        for row in output["items"]
+    }
+    reference_subset_core = true_north._consensus_atomic_metrics(
+        {
+            **consensus_document,
+            "items": [
+                row for row in consensus_document["items"]
+                if str(row["candidate_id"]) in validated_selected
+            ],
+        },
+        {
+            candidate_id: {
+                "disposition": disposition_by_candidate[candidate_id][
+                    "disposition"
+                ],
+                **reference_by_candidate.get(
+                    candidate_id,
+                    {
+                        "candidate_id": candidate_id,
+                        "atomic_claims": [],
+                    },
+                ),
+            }
+            for candidate_id in validated_selected
+        },
+        require_complete_scope=True,
+    )
+    reference_subset_metrics = {
+        str(row["metric"]): row["value"] for row in reference_subset_core
+    }
+    reference = true_north._read_json(
+        root
+        / "multipass"
+        / "runs"
+        / REFERENCE_RUN_ID
+        / "task5-score.private.json"
+    )
+    reference_usage = reference["usage"]
+    spark_usage = state["usage"]
+    total_calls = int(reference_usage["calls"]) + int(spark_usage["calls"])
+    total_tokens = int(reference_usage["tokens"]) + int(spark_usage["tokens"])
+    document = {
+        "schema_version": SCHEMA_VERSION,
+        "run_id": run_id,
+        "complete": False,
+        "acceptance_eligible": False,
+        "terminal_reason": "workstream_call_ceiling_with_invalid_frozen_contract_batch",
+        "coverage": {
+            "validated_batch_count": len(validated_batches),
+            "expected_batch_count": len(validated_batches) + 1,
+            "validated_selected_candidate_count": len(validated_selected),
+            "expected_selected_candidate_count": len(selected),
+            "validated_selected_eligible_candidate_count": len(
+                validated_selected & eligible
+            ),
+            "expected_selected_eligible_candidate_count": len(eligible),
+            "coverage_rate": len(validated_selected) / len(selected),
+            "missing_candidate_count": len(missing),
+        },
+        "validated_spark_subset": {
+            "acceptable_atomic_count_rate": subset_metrics[
+                "acceptable_atomic_count_rate"
+            ],
+            "eligible_only_acceptable_atomic_count_rate": (
+                eligible_subset_metrics["acceptable_atomic_count_rate"]
+            ),
+            "same_candidates_glm_acceptable_atomic_count_rate": (
+                reference_subset_metrics["acceptable_atomic_count_rate"]
+            ),
+        },
+        "partial_fallback_composition": {
+            "definition": (
+                "validated Spark outputs on the measured conjunction subset; "
+                "frozen single-pass GLM outputs for the invalid batch and "
+                "unselected candidates"
+            ),
+            "acceptable_atomic_count_rate": fallback_metrics[
+                "acceptable_atomic_count_rate"
+            ],
+            "speaker_exactness": fallback_score["aggregate"][
+                "speaker_exactness"
+            ],
+            "claim_text_faithfulness": fallback_score["aggregate"][
+                "claim_text_faithfulness_proxy"
+            ],
+        },
+        "single_pass_reference": {
+            "acceptable_atomic_count_rate": reference["search_fold"][
+                "atomic_count_accuracy"
+            ],
+            "speaker_exactness": reference["search_fold"]["aggregate"][
+                "speaker_exactness"
+            ],
+            "claim_text_faithfulness": reference["search_fold"][
+                "claim_text_faithfulness"
+            ],
+        },
+        "cost": {
+            "all_glm_baseline": {
+                "calls": int(reference_usage["calls"]),
+                "tokens": int(reference_usage["tokens"]),
+            },
+            "measured_mixed_route": {
+                "glm_calls": int(reference_usage["calls"]),
+                "glm_tokens": int(reference_usage["tokens"]),
+                "spark_calls": int(spark_usage["calls"]),
+                "spark_tokens": int(spark_usage["tokens"]),
+                "total_calls": total_calls,
+                "total_tokens": total_tokens,
+            },
+            "ratio_vs_all_glm": {
+                "call_ratio": round(
+                    total_calls / int(reference_usage["calls"]), 6
+                ),
+                "token_ratio": round(
+                    total_tokens / int(reference_usage["tokens"]), 6
+                ),
+            },
+            "all_spark_call_baseline": int(reference_usage["calls"]),
+            "ratio_vs_all_spark": {
+                "frontier_call_ratio": round(
+                    int(spark_usage["calls"])
+                    / int(reference_usage["calls"]),
+                    6,
+                ),
+                "total_call_ratio": round(
+                    total_calls / int(reference_usage["calls"]), 6
+                ),
+                "token_ratio_not_claimed": True,
+            },
+            "interpretation": (
+                "Calls and tokens are actual. No all-Spark token or dollar "
+                "ratio is claimed without an all-Spark run or metered prices."
+            ),
+        },
+        "usage": spark_usage,
+        "campaign_calls_after_run": (
+            int(configuration["campaign_calls_before_run"])
+            + int(spark_usage["calls"])
+        ),
+        "holdout_opened": False,
+        "production_mutation": False,
+        "prompt_tuned": False,
+    }
+    document["result_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(document)
+    )
+    path = run_root / "terminal-partial-result.private.json"
+    true_north._write_json(path, document, immutable=False)
+    return {**document, "result_path": str(path)}
