@@ -8544,6 +8544,9 @@ def _multipass_execute_stage(
     timeout_seconds: int,
     opencode_binary: str,
     runner: Any | None,
+    model: str = MULTIPASS_MODEL,
+    artifact_stage: str | None = None,
+    reserved_tokens_per_call: int = 32_000,
 ) -> dict[tuple[str, str], dict[str, Any]]:
     if stage not in MULTIPASS_ALL_STAGES:
         raise TrueNorthError(f"unknown multipass stage: {stage}")
@@ -8554,17 +8557,20 @@ def _multipass_execute_stage(
         "attribution": validate_multipass_attribution,
     }
     validate = validators[stage]
+    artifact_key = artifact_stage or stage
     outputs: dict[tuple[str, str], dict[str, Any]] = {}
     pending: list[tuple[str, str, Path, Path]] = []
     for episode_id, segment_id, packet in jobs:
         packet_path = (
             run_root
             / "packets"
-            / stage
+            / artifact_key
             / episode_id
             / f"{segment_id}.private.json"
         )
-        output_dir = run_root / "outputs" / stage / episode_id / segment_id
+        output_dir = (
+            run_root / "outputs" / artifact_key / episode_id / segment_id
+        )
         _write_json(packet_path, packet, immutable=True)
         validated = output_dir / "validated.private.json"
         if validated.is_file():
@@ -8592,7 +8598,7 @@ def _multipass_execute_stage(
             token_count = int(tokens) if isinstance(tokens, (int, float)) else 32_000
             accounting = {
                 "schema_version": MULTIPASS_SCHEMA_VERSION,
-                "stage": stage,
+                "stage": artifact_key,
                 "attempt_sha256": attempt_sha,
                 "usage": usage,
                 "conservative_tokens_used": token_count,
@@ -8605,8 +8611,13 @@ def _multipass_execute_stage(
         state["usage"]["calls"] += newly_accounted_failures
         state["usage"]["tokens"] += newly_accounted_tokens
         _multipass_state_write(run_root / "state.json", state)
-    _multipass_check_budget(state, pending_calls=len(pending))
+    _multipass_check_budget(
+        state,
+        pending_calls=len(pending),
+        reserved_tokens_per_call=reserved_tokens_per_call,
+    )
     actual_runner = runner or _run_opencode_packet
+    declared_model = model
 
     def execute(
         row: tuple[str, str, Path, Path],
@@ -8615,8 +8626,8 @@ def _multipass_execute_stage(
         kwargs = {
             "packet_path": packet_path,
             "output_dir": output_dir,
-            "models": (MULTIPASS_MODEL,),
-            "stage": f"multipass-{stage}",
+            "models": (model,),
+            "stage": f"multipass-{artifact_key}",
             "timeout_seconds": timeout_seconds,
             "opencode_binary": opencode_binary,
             "system_prompt": MULTIPASS_SYSTEM_PROMPTS[stage],
@@ -8627,11 +8638,11 @@ def _multipass_execute_stage(
             # performs one paid attempt per stage packet so 120 is a real hard
             # ceiling; a failed packet remains resumable and never advances.
             kwargs["_semantic_retry_remaining"] = 0
-        output, receipts, model = actual_runner(**kwargs)
-        if model != MULTIPASS_MODEL:
+        output, receipts, returned_model = actual_runner(**kwargs)
+        if returned_model != declared_model:
             raise TrueNorthError("multipass stage used an undeclared model")
         validate(output, _read_json(packet_path))
-        return episode_id, segment_id, output, receipts, model
+        return episode_id, segment_id, output, receipts, declared_model
 
     started = time.monotonic()
     results = []
@@ -8645,7 +8656,13 @@ def _multipass_execute_stage(
                 errors.append(exc)
     stage_wall = round(time.monotonic() - started, 3)
     for episode_id, segment_id, output, receipts, model in results:
-        output_dir = run_root / "outputs" / stage / episode_id / segment_id
+        output_dir = (
+            run_root
+            / "outputs"
+            / artifact_key
+            / episode_id
+            / segment_id
+        )
         _write_json(
             output_dir / "validated.private.json",
             output,
@@ -8654,7 +8671,7 @@ def _multipass_execute_stage(
         usage = _multipass_usage(receipts)
         record = {
             "schema_version": MULTIPASS_SCHEMA_VERSION,
-            "stage": stage,
+            "stage": artifact_key,
             "episode_id": episode_id,
             "segment_id": segment_id,
             "provider_model": model,
@@ -8668,7 +8685,9 @@ def _multipass_execute_stage(
         record["receipt_sha256"] = sha256_text(dumps_json(record))
         _write_json(output_dir / "receipt.json", record, immutable=True)
         outputs[(episode_id, segment_id)] = output
-        state["completed"].append(f"{stage}/{episode_id}/{segment_id}")
+        state["completed"].append(
+            f"{artifact_key}/{episode_id}/{segment_id}"
+        )
         state["usage"]["calls"] += int(usage["calls"])
         state["usage"]["tokens"] += int(usage["tokens"])
     state["completed"] = sorted(set(state["completed"]))
