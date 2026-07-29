@@ -857,6 +857,16 @@ def _default_stage_handlers(
             audit=True,
             concurrency=concurrency,
         )
+        pipeline_run_attribution = _record_daily_extraction_pipeline_run(
+            conn,
+            daily_run_id=context.run_id,
+            run_date=context.run_date,
+            lane=lane,
+            model=model,
+            lease_owner=lease_owner,
+            worker_result=worker_result,
+            headless_result=headless_result,
+        )
         recent_pending_after = _job_count_recent(conn, job_types, recent_since)
         worker_failed = int(worker_result.get("failed", 0) or 0)
         headless_failed = int(headless_result.get("failed", 0) or 0)
@@ -884,6 +894,7 @@ def _default_stage_handlers(
             "work_satisfied": work_satisfied,
             "worker_result": worker_result,
             "headless_result": headless_result,
+            "pipeline_run_attribution": pipeline_run_attribution,
             "dispatch_boundary": "managed_auth_app_server_local_sqlite_queue",
             "dispatch_contracts": [],
             "headless_exception_dispatch_created": False,
@@ -1809,6 +1820,139 @@ def _quality_gate(
         "minimums": dict(SCALE_GATE_MINIMUMS),
         "thresholds_met": thresholds_met,
         "current_release_only": True,
+    }
+
+
+def _record_daily_extraction_pipeline_run(
+    conn: sqlite3.Connection,
+    *,
+    daily_run_id: str,
+    run_date: str,
+    lane: str,
+    model: str,
+    lease_owner: str,
+    worker_result: Mapping[str, Any],
+    headless_result: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Bind actual subscription extraction work to the accepted release."""
+
+    release = _current_release_for_scale_gate(conn)
+    selected = int(headless_result.get("selected", 0) or 0)
+    if release is None:
+        return {
+            "recorded": False,
+            "reason": "no_current_accepted_release",
+            "selected": selected,
+        }
+    if selected == 0:
+        return {
+            "recorded": False,
+            "reason": "no_model_execution_selected",
+            "corpus_release_id": release["id"],
+            "selected": 0,
+        }
+
+    from . import intelligence
+
+    release_id = str(release["id"])
+    pipeline_run_id = stable_id(
+        "daily_extraction",
+        daily_run_id,
+        release_id,
+        prefix="pir_",
+    )
+    existing = conn.execute(
+        "SELECT id, status, corpus_release_id FROM pipeline_runs WHERE id = ?",
+        (pipeline_run_id,),
+    ).fetchone()
+    if existing is not None:
+        if str(existing["corpus_release_id"] or "") != release_id:
+            raise RuntimeError("daily extraction pipeline run release attribution conflict")
+        return {
+            "recorded": True,
+            "idempotent_replay": True,
+            "pipeline_run_id": pipeline_run_id,
+            "corpus_release_id": release_id,
+            "status": str(existing["status"]),
+            "selected": selected,
+        }
+
+    submitted = int(headless_result.get("submitted", 0) or 0)
+    headless_failed = int(headless_result.get("failed", 0) or 0)
+    worker_failed = int(worker_result.get("failed", 0) or 0)
+    terminal_status = (
+        "succeeded"
+        if bool(headless_result.get("ok")) and headless_failed == 0 and worker_failed == 0
+        else "failed"
+    )
+    receipt = {
+        "schema_version": "pif_daily_extraction_attribution_v1",
+        "daily_run_id": daily_run_id,
+        "run_date": run_date,
+        "lease_owner": lease_owner,
+        "lane": lane,
+        "model": model,
+        "provider_lane": "codex_subscription",
+        "managed_auth": True,
+        "paid_api": False,
+        "selected": selected,
+        "submitted": submitted,
+        "headless_failed": headless_failed,
+        "worker_failed": worker_failed,
+        "token_telemetry": "unavailable_from_codex_exec",
+    }
+    intelligence.create_pipeline_run(
+        conn,
+        run_id=pipeline_run_id,
+        run_type="daily_extraction",
+        run_schema="pif_daily_extraction_attribution",
+        run_schema_version="1",
+        corpus_release_id=release_id,
+        model=model,
+        model_version=model,
+        prompt_version="label_run_prompt_artifact",
+        status="running",
+        parameters={
+            "lane": lane,
+            "provider_lane": "codex_subscription",
+            "managed_auth": True,
+            "paid_api": False,
+            "daily_run_id": daily_run_id,
+        },
+        receipt=receipt,
+        input_count=selected,
+    )
+    intelligence.transition_pipeline_run(
+        conn,
+        pipeline_run_id,
+        status=terminal_status,
+        expected_status="running",
+        metrics={
+            "selected": selected,
+            "submitted": submitted,
+            "headless_failed": headless_failed,
+            "worker_failed": worker_failed,
+            "paid_api": False,
+        },
+        receipt=receipt,
+        input_count=selected,
+        output_count=submitted,
+        failure_count=headless_failed,
+        output_sha256=sha256_text(dumps_json(receipt)),
+        error=None if terminal_status == "succeeded" else "daily extraction execution failed",
+    )
+    conn.commit()
+    return {
+        "recorded": True,
+        "idempotent_replay": False,
+        "pipeline_run_id": pipeline_run_id,
+        "corpus_release_id": release_id,
+        "status": terminal_status,
+        "selected": selected,
+        "submitted": submitted,
+        "failed": headless_failed,
+        "provider_lane": "codex_subscription",
+        "paid_api": False,
     }
 
 

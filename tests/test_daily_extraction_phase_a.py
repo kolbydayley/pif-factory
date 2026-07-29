@@ -12,6 +12,7 @@ from research_factory.daily_cycle import (
     DailyStageContext,
     _default_stage_handlers,
     _job_count_recent,
+    _record_daily_extraction_pipeline_run,
     ensure_daily_schema,
 )
 from research_factory.headless_codex import execute_claimed_label_runs
@@ -199,6 +200,49 @@ def test_execute_extraction_enables_real_bounded_baseline_and_honest_counts(tmp_
         assert run_jobs.call_args.kwargs["limit"] == 5
         assert execute.call_args.kwargs["concurrency"] == 3
         assert execute.call_args.kwargs["limit"] == 2
+    finally:
+        conn.close()
+
+
+def test_daily_extraction_is_attributed_to_current_release_without_paid_api(
+    tmp_path: Path,
+) -> None:
+    conn = db.connect(tmp_path / "factory.sqlite")
+    try:
+        db.init_db(conn)
+        with patch(
+            "research_factory.daily_cycle._current_release_for_scale_gate",
+            return_value={"id": "crel_test", "item_count": 25},
+        ), patch(
+            "research_factory.intelligence.create_pipeline_run",
+        ) as create_run, patch(
+            "research_factory.intelligence.transition_pipeline_run",
+        ) as transition_run:
+            result = _record_daily_extraction_pipeline_run(
+                conn,
+                daily_run_id="pdr_test",
+                run_date="2026-07-29",
+                lane="podcast",
+                model="gpt-5.5",
+                lease_owner="daily-test",
+                worker_result={"failed": 0},
+                headless_result={
+                    "ok": True,
+                    "selected": 2,
+                    "submitted": 2,
+                    "failed": 0,
+                },
+            )
+
+        assert result["recorded"] is True
+        assert result["corpus_release_id"] == "crel_test"
+        assert result["status"] == "succeeded"
+        assert result["provider_lane"] == "codex_subscription"
+        assert result["paid_api"] is False
+        assert create_run.call_args.kwargs["corpus_release_id"] == "crel_test"
+        assert create_run.call_args.kwargs["parameters"]["paid_api"] is False
+        assert transition_run.call_args.kwargs["status"] == "succeeded"
+        assert transition_run.call_args.kwargs["metrics"]["paid_api"] is False
     finally:
         conn.close()
 
