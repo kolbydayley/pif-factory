@@ -107,6 +107,7 @@ def _ledger_preflight() -> tuple[dict[str, Any], str]:
     rows = {
         row["experiment_id"]: row
         for row in ledger["post_certification_phase_results"]
+        if "experiment_id" in row
     }
     row = rows.get(EXPERIMENT_ID)
     if (
