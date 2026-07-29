@@ -67,7 +67,8 @@ class SemanticReconciliationTest(unittest.TestCase):
                configuration_sha256, status, parameters_json, metrics_json,
                receipt_json, input_count, output_count, failure_count,
                started_at, completed_at, created_at, updated_at)
-            VALUES ('release_run_1', 'release_build', 'corpus_release_v1', '1',
+            VALUES ('release_run_1', 'release_build', 'corpus_release_build',
+                    'corpus_release_build_v1',
                     'release_1', ?, 'succeeded', '{}', '{}', '{}', 1, 1, 0,
                     ?, ?, ?, ?)
             """,
@@ -76,6 +77,16 @@ class SemanticReconciliationTest(unittest.TestCase):
         self.conn.commit()
 
     def _promote_release(self) -> None:
+        from research_factory.intelligence import accept_pipeline_run
+
+        accept_pipeline_run(
+            self.conn,
+            "release_run_1",
+            stage="release",
+            reviewed_by="fixture-reviewer",
+            rationale="Accept fixture release run.",
+            decided_at=TS,
+        )
         self.conn.execute(
             """
             INSERT INTO corpus_release_promotions
@@ -86,6 +97,59 @@ class SemanticReconciliationTest(unittest.TestCase):
             """,
             (TS,),
         )
+        self.conn.commit()
+
+    def _ensure_stage_run(
+        self,
+        *,
+        run_id: str,
+        run_type: str,
+        run_schema: str,
+        run_schema_version: str,
+        stage: str,
+    ) -> None:
+        from research_factory.intelligence import accept_pipeline_run
+
+        self.conn.execute(
+            """
+            INSERT OR IGNORE INTO pipeline_runs
+              (id, run_type, run_schema, run_schema_version, corpus_release_id,
+               configuration_sha256, status, parameters_json, metrics_json,
+               receipt_json, input_count, output_count, failure_count,
+               started_at, completed_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'release_1', ?, 'succeeded', '{}', '{}', '{}',
+                    1, 1, 0, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                run_type,
+                run_schema,
+                run_schema_version,
+                (run_id[0] * 64)[:64],
+                TS,
+                TS,
+                TS,
+                TS,
+            ),
+        )
+        if (
+            self.conn.execute(
+                """
+                SELECT COUNT(*) FROM pipeline_run_authority_decisions
+                WHERE pipeline_run_id = ? AND stage = ? AND decision = 'accepted'
+                """,
+                (run_id, stage),
+            ).fetchone()[0]
+            == 0
+        ):
+            accept_pipeline_run(
+                self.conn,
+                run_id,
+                stage=stage,
+                reviewed_by="fixture-reviewer",
+                rationale=f"Accept fixture {stage} run.",
+                decided_at=TS,
+            )
         self.conn.commit()
 
     def _add_episode(
@@ -191,6 +255,13 @@ class SemanticReconciliationTest(unittest.TestCase):
             ),
         )
         if person_id is not None:
+            self._ensure_stage_run(
+                run_id="identity_run_1",
+                run_type="semantic_reconcile_identities",
+                run_schema=reconcile.OUTPUT_SCHEMA_VERSION,
+                run_schema_version="1",
+                stage="identities",
+            )
             self.conn.execute(
                 """
                 INSERT OR IGNORE INTO canonical_people
@@ -207,12 +278,19 @@ class SemanticReconciliationTest(unittest.TestCase):
                    raw_mention_type, raw_mention_id, canonical_person_id, decision,
                    rationale, evidence_json, judge_model, judge_schema_version,
                    confidence, review_status, decided_at, created_at)
-                VALUES (?, ?, 1, 'release_1', 'release_run_1', 'speaker', ?, ?,
+                VALUES (?, ?, 1, 'release_1', 'identity_run_1', 'speaker', ?, ?,
                         'accepted', 'Exact fixture identity.', '{}', 'gpt-5.5', 'v1',
                         0.95, 'accepted', ?, ?)
                 """,
                 (f"identity_{suffix}", f"identity_lineage_{suffix}", mention_id, person_id, TS, TS),
             )
+        self._ensure_stage_run(
+            run_id="atomic_run_1",
+            run_type="atomic_claim_import",
+            run_schema="atomic_claim_v1",
+            run_schema_version="atomic_claim_import_v1",
+            stage="atomic_claims",
+        )
         self.conn.execute(
             """
             INSERT INTO atomic_claims
@@ -223,7 +301,7 @@ class SemanticReconciliationTest(unittest.TestCase):
                evidence_start, evidence_end, extractor_model, extractor_schema,
                extractor_schema_version, source_artifact_sha256, confidence,
                review_status, observed_at, created_at)
-            VALUES (?, ?, 1, 'release_1', 'release_run_1', ?, 'forecast', ?, ?,
+            VALUES (?, ?, 1, 'release_1', 'atomic_run_1', ?, 'forecast', ?, ?,
                     'supports', 'high', 'near_term', ?, ?, ?, ?, 'segment', ?, ?,
                     0, 24, 'gpt-5.5', 'ai_discourse_v3_1', '3.1', ?, 0.95,
                     'accepted', ?, ?)
@@ -640,6 +718,57 @@ class SemanticReconciliationTest(unittest.TestCase):
             Path(replay_receipt["packet_path"]).read_text(encoding="utf-8")
         )
         self.assertEqual(replay_packet["item_count"], 0)
+
+    def test_identity_import_reuses_existing_normalized_person_lineage(self) -> None:
+        self._promote_release()
+        self._seed_claim_occurrence("reuse_person", surface_name="Grouped Person")
+        self.conn.execute(
+            """
+            INSERT INTO canonical_people
+              (id, display_name, normalized_name, confidence, status,
+               canonical_version, evidence_json, created_at, updated_at)
+            VALUES ('existing_person', 'Grouped Person', 'grouped person', 0.5,
+                    'candidate', 1, '{}', ?, ?)
+            """,
+            (TS, TS),
+        )
+        self.conn.commit()
+        with patch.object(reconcile, "now_iso", return_value=TS):
+            receipt = reconcile.prepare_reconciliation_packet(
+                self.conn,
+                target="identities",
+                release_id="release_1",
+                output_dir=self.root / "identity-reuse",
+            )
+        packet = json.loads(Path(receipt["packet_path"]).read_text(encoding="utf-8"))
+        output_path = self._write_output(
+            "identity-reuse.json",
+            self._identity_output(packet),
+        )
+
+        imported = reconcile.import_reconciliation_output(
+            self.conn,
+            packet_path=receipt["packet_path"],
+            output_path=output_path,
+            accept=True,
+            reviewer="fixture-reviewer",
+        )
+
+        judgment = self.conn.execute(
+            """
+            SELECT canonical_person_id
+            FROM identity_resolution_judgments
+            WHERE pipeline_run_id = ?
+            """,
+            (imported["pipeline_run_id"],),
+        ).fetchone()
+        self.assertEqual(judgment["canonical_person_id"], "existing_person")
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT COUNT(*) FROM canonical_people WHERE normalized_name = 'grouped person'"
+            ).fetchone()[0],
+            1,
+        )
 
     def test_accepted_unknown_identity_expands_to_every_group_member(self) -> None:
         self._promote_release()

@@ -1169,12 +1169,21 @@ def _import_identities(
         effective_decision = (
             row["decision"] if common["review_status"] == "accepted" else "candidate"
         )
+        existing_person = conn.execute(
+            "SELECT id FROM canonical_people WHERE normalized_name = ?",
+            (row["normalized_name"],),
+        ).fetchone()
+        person_id = (
+            str(existing_person["id"])
+            if existing_person is not None
+            else stable_id(row["normalized_name"], prefix="cp_")
+        )
         value = record_person(
             conn,
             {
                 **row,
                 **common,
-                "person_id": stable_id(row["normalized_name"], prefix="cp_"),
+                "person_id": person_id,
                 "decision": effective_decision,
                 "decision_source": "managed_llm",
                 "reviewer": reviewer,
