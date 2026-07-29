@@ -2,11 +2,16 @@
 name = "podcast-intelligence-factory"
 version = "0.1.0"
 description = "Local-first podcast intelligence corpus factory with deterministic queues and Codex handoffs."
-requires-python = ">=3.11"
-dependencies = ["youtube-transcript-api>=1.2.4,<2"]
+requires-python = ">=3.9"
+dependencies = ["psycopg[binary]>=3.2,<4", "youtube-transcript-api>=1.2.4,<2"]
 
 [project.scripts]
+pif = "research_factory.pif_cli:main"
+research-radar = "research_factory.radar_cli:main"
 research-factory = "research_factory.cli:main"
+research-factory-mcp = "research_factory.mcp_server:main"
+pif-pipeline-babysitter = "research_factory.pipeline_babysitter:main"
+pif-pipeline-watchdog = "research_factory.pipeline_watchdog:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,38 @@
+{
+  "policy_id": "research-radar-budget-v1",
+  "schema_version": "1",
+  "status": "frozen_pilot",
+  "item": {
+    "max_input_tokens": 75000,
+    "max_wall_seconds": 900,
+    "max_coherent_windows": 4,
+    "max_schema_evidence_repairs": 1,
+    "max_transport_retries": 1
+  },
+  "cycle": {
+    "max_new_items": 25,
+    "max_wall_seconds": 7200,
+    "scheduler_interval_seconds": 3600,
+    "scheduler_enabled": false,
+    "manual_cycle_enabled": true
+  },
+  "sources": {
+    "max_active_during_pilot": 50,
+    "max_promotions_per_day": 3,
+    "probation_sample_items": 3,
+    "pause_after_consecutive_fetch_failures": 5,
+    "pause_after_irrelevant_days": 30
+  },
+  "notifications": {
+    "max_local_high_priority_per_day": 3,
+    "external_delivery_enabled": false
+  },
+  "execution": {
+    "model_configuration_mutable_during_pilot": false,
+    "automatic_prompt_changes": false,
+    "automatic_schema_changes": false,
+    "self_resuming_chats": false,
+    "overlapping_heartbeats": false,
+    "evaluator_epoch_succession": false
+  }
+}

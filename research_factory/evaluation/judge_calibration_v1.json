@@ -1,0 +1,444 @@
+{
+  "base_event": {
+    "actor": "Analyst",
+    "causal_mechanism": "",
+    "certainty": "high",
+    "claim": "The service handles routine requests.",
+    "event_type": "capability_claim",
+    "evidence": "The service handles routine requests.",
+    "metric": {
+      "comparator": "",
+      "direction": "not_applicable",
+      "raw_text": "",
+      "unit": "",
+      "value": ""
+    },
+    "reported_actor": "",
+    "source_kind": "direct_speaker_claim",
+    "speaker": "Analyst",
+    "stance": "neutral",
+    "target": "routine request handling",
+    "temporal_horizon": "present"
+  },
+  "cases": [
+    {
+      "a": {},
+      "b": {},
+      "case_id": "exact_identity",
+      "expected_mismatch_fields": [],
+      "expected_relation": "equivalent"
+    },
+    {
+      "a": {},
+      "b": {
+        "claim": "Routine requests can be handled by the service."
+      },
+      "case_id": "harmless_paraphrase",
+      "expected_mismatch_fields": [],
+      "expected_relation": "equivalent"
+    },
+    {
+      "a": {
+        "actor": "Dr. Lee"
+      },
+      "b": {
+        "actor": "Lee"
+      },
+      "case_id": "harmless_name_alias",
+      "expected_mismatch_fields": [],
+      "expected_relation": "equivalent"
+    },
+    {
+      "a": {},
+      "b": {
+        "actor": "Operator"
+      },
+      "case_id": "wrong_actor",
+      "expected_mismatch_fields": [
+        "actor"
+      ],
+      "expected_relation": "non_equivalent"
+    },
+    {
+      "a": {},
+      "b": {
+        "speaker": "Host"
+      },
+      "case_id": "wrong_speaker",
+      "expected_mismatch_fields": [
+        "speaker"
+      ],
+      "expected_relation": "non_equivalent"
+    },
+    {
+      "a": {
+        "reported_actor": "Research group",
+        "source_kind": "reported_claim"
+      },
+      "b": {
+        "reported_actor": "Vendor",
+        "source_kind": "reported_claim"
+      },
+      "case_id": "wrong_reported_actor",
+      "expected_mismatch_fields": [
+        "reported_actor"
+      ],
+      "expected_relation": "non_equivalent"
+    },
+    {
+      "a": {
+        "reported_actor": "Research group",
+        "source_kind": "reported_claim"
+      },
+      "b": {
+        "reported_actor": "",
+        "source_kind": "direct_speaker_claim"
+      },
+      "case_id": "wrong_attribution",
+      "expected_mismatch_fields": [
+        "attribution",
+        "reported_actor"
+      ],
+      "expected_relation": "non_equivalent"
+    },
+    {
+      "a": {
+        "stance": "supportive"
+      },
+      "b": {
+        "stance": "skeptical"
+      },
+      "case_id": "changed_stance",
+      "expected_mismatch_fields": [
+        "stance"
+      ],
+      "expected_relation": "non_equivalent"
+    },
+    {
+      "a": {
+        "certainty": "high"
+      },
+      "b": {
+        "certainty": "low"
+      },
+      "case_id": "changed_certainty",
+      "expected_mismatch_fields": [
+        "certainty"
+      ],
+      "expected_relation": "non_equivalent"
+    },
+    {
+      "a": {
+        "temporal_horizon": "present"
+      },
+      "b": {
+        "temporal_horizon": "long_future"
+      },
+      "case_id": "changed_temporal_horizon",
+      "expected_mismatch_fields": [
+        "temporal_horizon"
+      ],
+      "expected_relation": "non_equivalent"
+    },
+    {
+      "a": {
+        "claim": "The service reduced delay by 10 percent.",
+        "evidence": "The service reduced delay by 10 percent.",
+        "metric": {
+          "comparator": "by",
+          "direction": "decrease",
+          "raw_text": "10 percent",
+          "unit": "percent",
+          "value": "10"
+        }
+      },
+      "b": {
+        "claim": "The service reduced delay by 20 percent.",
+        "evidence": "The service reduced delay by 20 percent.",
+        "metric": {
+          "comparator": "by",
+          "direction": "decrease",
+          "raw_text": "20 percent",
+          "unit": "percent",
+          "value": "20"
+        }
+      },
+      "case_id": "changed_metric_value",
+      "expected_mismatch_fields": [
+        "metric"
+      ],
+      "expected_relation": "non_equivalent"
+    },
+    {
+      "a": {
+        "claim": "The service reduced delay by at least 10 percent.",
+        "evidence": "The service reduced delay by at least 10 percent.",
+        "metric": {
+          "comparator": "at least",
+          "direction": "decrease",
+          "raw_text": "at least 10 percent",
+          "unit": "percent",
+          "value": "10"
+        }
+      },
+      "b": {
+        "claim": "The service reduced delay by at most 10 percent.",
+        "evidence": "The service reduced delay by at most 10 percent.",
+        "metric": {
+          "comparator": "at most",
+          "direction": "decrease",
+          "raw_text": "at most 10 percent",
+          "unit": "percent",
+          "value": "10"
+        }
+      },
+      "case_id": "changed_metric_comparator",
+      "expected_mismatch_fields": [
+        "metric"
+      ],
+      "expected_relation": "non_equivalent"
+    },
+    {
+      "a": {
+        "claim": "The service handles routine requests.",
+        "evidence": "The service handles routine requests."
+      },
+      "b": {
+        "claim": "The service does not handle routine requests.",
+        "evidence": "The service does not handle routine requests."
+      },
+      "case_id": "changed_negation",
+      "expected_mismatch_fields": [
+        "negation"
+      ],
+      "expected_relation": "non_equivalent"
+    },
+    {
+      "a": {
+        "causal_mechanism": "Caching removes repeated reads.",
+        "claim": "Caching reduces delay by removing repeated reads.",
+        "event_type": "causal_mechanism",
+        "evidence": "Caching reduces delay by removing repeated reads."
+      },
+      "b": {
+        "causal_mechanism": "Parallel execution overlaps independent work.",
+        "claim": "Parallel execution reduces delay by overlapping independent work.",
+        "event_type": "causal_mechanism",
+        "evidence": "Parallel execution reduces delay by overlapping independent work."
+      },
+      "case_id": "changed_causal_mechanism",
+      "expected_mismatch_fields": [
+        "causal_mechanism"
+      ],
+      "expected_relation": "non_equivalent"
+    },
+    {
+      "a": {
+        "claim": "The service may reduce repetitive work.",
+        "certainty": "low",
+        "evidence": "The service may reduce repetitive work."
+      },
+      "b": {
+        "claim": "The service will eliminate every related job.",
+        "certainty": "high",
+        "evidence": "The service may reduce repetitive work."
+      },
+      "case_id": "unsupported_inference",
+      "expected_mismatch_fields": [
+        "certainty",
+        "unsupported_inference"
+      ],
+      "expected_relation": "non_equivalent"
+    },
+    {
+      "a": {},
+      "b": {
+        "evidence": "A sentence that does not occur in the source."
+      },
+      "case_id": "nonexact_evidence",
+      "expected_mismatch_fields": [
+        "evidence"
+      ],
+      "expected_relation": "non_equivalent",
+      "source_excerpt": "The service handles routine requests."
+    },
+    {
+      "a": {
+        "claim": "The service handles routine requests and reduces response time.",
+        "evidence": "The service handles routine requests and reduces response time.",
+        "target": "request handling and response time"
+      },
+      "b": {
+        "claim": "The service handles routine requests.",
+        "evidence": "The service handles routine requests and reduces response time."
+      },
+      "case_id": "merged_versus_atomic_boundary",
+      "expected_mismatch_fields": [
+        "event_boundary"
+      ],
+      "expected_relation": "partial"
+    },
+    {
+      "a": {
+        "claim": "The service handles routine requests.",
+        "evidence": "The service handles routine requests."
+      },
+      "b": {
+        "claim": "Routine requests are handled by the service.",
+        "evidence": "The service handles routine requests."
+      },
+      "case_id": "duplicate_paraphrase",
+      "expected_mismatch_fields": [],
+      "expected_relation": "equivalent"
+    },
+    {
+      "a": {
+        "claim": "The service can process requests.",
+        "event_type": "capability_claim",
+        "evidence": "The service can process requests, but operators warn that failures are difficult to detect.",
+        "stance": "neutral",
+        "target": "request processing"
+      },
+      "b": {
+        "claim": "Operators warn that service failures are difficult to detect.",
+        "event_type": "risk_signal",
+        "evidence": "The service can process requests, but operators warn that failures are difficult to detect.",
+        "stance": "warning",
+        "target": "failure detection"
+      },
+      "case_id": "legitimate_capability_and_risk_lenses",
+      "expected_mismatch_fields": [
+        "event_type",
+        "stance",
+        "target"
+      ],
+      "expected_relation": "non_equivalent"
+    },
+    {
+      "a": {
+        "claim": "The analyst supports current deployment.",
+        "event_type": "stance_position",
+        "evidence": "The analyst supports current deployment but expects adoption to slow next year.",
+        "stance": "supportive",
+        "target": "current deployment",
+        "temporal_horizon": "present"
+      },
+      "b": {
+        "claim": "The analyst expects adoption to slow next year.",
+        "event_type": "forecast",
+        "evidence": "The analyst supports current deployment but expects adoption to slow next year.",
+        "stance": "warning",
+        "target": "future adoption",
+        "temporal_horizon": "near_future"
+      },
+      "case_id": "legitimate_stance_and_forecast_lenses",
+      "expected_mismatch_fields": [
+        "event_type",
+        "stance",
+        "target",
+        "temporal_horizon"
+      ],
+      "expected_relation": "non_equivalent"
+    },
+    {
+      "a": {
+        "target": "routine request handling"
+      },
+      "b": {
+        "target": "billing decisions"
+      },
+      "case_id": "changed_target",
+      "expected_mismatch_fields": [
+        "target"
+      ],
+      "expected_relation": "non_equivalent"
+    },
+    {
+      "a": {
+        "event_type": "adoption_signal",
+        "claim": "Three teams use the service.",
+        "evidence": "Three teams use the service.",
+        "metric": {
+          "comparator": "",
+          "direction": "not_applicable",
+          "raw_text": "Three teams",
+          "unit": "teams",
+          "value": "three"
+        }
+      },
+      "b": {
+        "event_type": "adoption_signal",
+        "claim": "Teams use the service.",
+        "evidence": "Three teams use the service.",
+        "metric": {
+          "comparator": "",
+          "direction": "not_applicable",
+          "raw_text": "",
+          "unit": "",
+          "value": ""
+        }
+      },
+      "case_id": "omitted_material_metric",
+      "expected_mismatch_fields": [
+        "metric"
+      ],
+      "expected_relation": "partial"
+    },
+    {
+      "a": {
+        "claim": "The analyst says the service is reliable.",
+        "evidence": "The analyst says the service is reliable.",
+        "stance": "supportive"
+      },
+      "b": {
+        "claim": "The analyst says the service is reliable.",
+        "evidence": "Before a separate caveat, the analyst says the service is reliable. Afterward another topic begins.",
+        "stance": "supportive"
+      },
+      "case_id": "expanded_nonminimal_evidence",
+      "expected_mismatch_fields": [
+        "evidence",
+        "event_boundary"
+      ],
+      "expected_relation": "partial"
+    },
+    {
+      "a": {
+        "event_type": "forecast",
+        "claim": "The analyst expects adoption next year.",
+        "evidence": "The analyst expects adoption next year.",
+        "temporal_horizon": "near_future"
+      },
+      "b": {
+        "event_type": "stance_position",
+        "claim": "The analyst supports adoption.",
+        "evidence": "The analyst expects adoption next year.",
+        "temporal_horizon": "present"
+      },
+      "case_id": "forecast_versus_present_stance",
+      "expected_mismatch_fields": [
+        "event_type",
+        "temporal_horizon"
+      ],
+      "expected_relation": "non_equivalent"
+    }
+  ],
+  "mismatch_fields": [
+    "actor",
+    "attribution",
+    "causal_mechanism",
+    "certainty",
+    "event_boundary",
+    "event_type",
+    "evidence",
+    "metric",
+    "negation",
+    "reported_actor",
+    "speaker",
+    "stance",
+    "target",
+    "temporal_horizon",
+    "unsupported_inference"
+  ],
+  "schema_version": "judge_calibration_v1"
+}

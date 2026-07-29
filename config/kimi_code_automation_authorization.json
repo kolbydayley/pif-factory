@@ -1,0 +1,11 @@
+{
+  "schema_version": "pif_kimi_code_automation_authorization_v1",
+  "approved": true,
+  "receipt_id": "operator-attested-kimi-approval-2026-07-22",
+  "provider": "Kimi",
+  "scope": "local_codex_orchestrated_podcast_labeling",
+  "approved_at": "2026-07-22",
+  "authorization_basis": "moonshot_written_exception",
+  "basis": "Kolby reported that Kimi approved this specific local Codex-orchestrated use case.",
+  "production_enabled": false
+}

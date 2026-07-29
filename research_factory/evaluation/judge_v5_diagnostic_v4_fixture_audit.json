@@ -1,0 +1,87 @@
+{
+  "schema_version": "pif_judge_v5_diagnostic_v4_fixture_audit_v1",
+  "source_records": {
+    "runtime_lock_v9": {
+      "path": "work/app-server-development-v2/unattended-runtime-lock-v9.json",
+      "sha256": "2cc67a01ab893bc4a90bfef4d3f54774af84ef0b86a0b4894976ec9093cfe672",
+      "size_bytes": 10738
+    },
+    "launch_receipt_v9": {
+      "path": "work/app-server-development-v2/unattended-control-v9/launch-receipt-v9.json",
+      "sha256": "6c215b1b9c81cffb2e34bb2fbf9217eeedb6ef761c2ac5bdfc9ec059e34835e8",
+      "size_bytes": 3712
+    },
+    "terminal_receipt_v9": {
+      "path": "work/app-server-development-v2/unattended-control-v9/terminal-receipt-v9.json",
+      "sha256": "0a7f2a6957d6fc5e552d1766c42271bc30b67545dacdc0a22964583b46d33d8f",
+      "size_bytes": 9203
+    },
+    "diagnostic_v4_spec": {
+      "path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v4/diagnostic-spec.json",
+      "sha256": "4b3982cffcd056818801792c5d24df1abcdb10469d7508a82bb68c4c2b945b79",
+      "size_bytes": 6183
+    },
+    "diagnostic_v4_terminal": {
+      "path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v4/terminal.json",
+      "sha256": "f206f16d6ed3948c0efb7c4d0cc1cc317ab42675882a3089742344ccf4cf501e",
+      "size_bytes": 7040
+    },
+    "diagnostic_v4_score": {
+      "path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v4/diagnostic-score.json",
+      "sha256": "4478b35fe9b6d7e2945aef61c9fce7433222d53f14059296d2732c85e90d7629",
+      "size_bytes": 1624
+    },
+    "diagnostic_v4_disagreements": {
+      "path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v4/observable-disagreements.private.json",
+      "sha256": "90a9533a37477fc72bbe3711b254c562be4a6e73fa981eec624934cda4540ad1",
+      "size_bytes": 284
+    },
+    "diagnostic_v4_base": {
+      "path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v4/turns/neutral-alignment-base/output.private.json",
+      "sha256": "f1fd785dbc6ef22c28edd610b36e0c7e8f66168099c7e70c03efea58b8b087e6",
+      "size_bytes": 59821
+    },
+    "diagnostic_v4_canary": {
+      "path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v4/turns/neutral-alignment-canary/output.private.json",
+      "sha256": "132ea7307d6eda0fea3d54a2e5bc1bb0307e03d2650bc7343d361c1918ee52a9",
+      "size_bytes": 25079
+    },
+    "diagnostic_v4_adjudication": {
+      "path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v4/turns/disagreement-adjudication/output.private.json",
+      "sha256": "27353357dfa3d83bb5c765195243b596aa04b1ba3eeabd166e5c0e177d1b357d",
+      "size_bytes": 4601
+    },
+    "diagnostic_fixture_v2": {
+      "path": "research_factory/evaluation/judge_v5_diagnostic_v2.json",
+      "sha256": "9cf3b5d4b82694d7efa5d784ceca5bbc4dce0fbda7e48e24e8404d6f3ad59021",
+      "size_bytes": 17419
+    },
+    "diagnostic_fixture_patch_v3": {
+      "path": "research_factory/evaluation/judge_v5_diagnostic_v3.json",
+      "sha256": "b85cadac13336ea088bc34d95ff9be26fd0301615dbe00bb155ee10377a291d1",
+      "size_bytes": 1469
+    }
+  },
+  "finding": {
+    "case_key": "diag2_unsupported_inference",
+    "case_id": "jcase_e01e5170b7ab3271ca933d07",
+    "material_field": "event_type",
+    "event_a_value": "measurement_claim",
+    "event_b_value": "capability_claim",
+    "v2_truth_omitted_field": true,
+    "base_detected_field": true,
+    "canary_detected_field": false,
+    "adjudication_detected_field": true
+  },
+  "recovery_contract": {
+    "diagnostic_v4_replay_allowed": false,
+    "diagnostic_v4_output_reuse_allowed": false,
+    "all_next_diagnostic_turns_run_fresh": true,
+    "fixture_source_or_event_inputs_changed": false,
+    "fixture_truth_changed": true,
+    "semantic_truth_correction_count": 1,
+    "prompt_protocol_changed": false,
+    "gate_thresholds_changed": false,
+    "full_calibration_allowed_before_next_diagnostic_pass": false
+  }
+}

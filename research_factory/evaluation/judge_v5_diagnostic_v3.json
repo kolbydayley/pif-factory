@@ -1,0 +1,52 @@
+{
+  "schema_version": "pif_judge_v5_diagnostic_fixture_patch_v3",
+  "base_fixture": {
+    "path": "judge_v5_diagnostic_v2.json",
+    "sha256": "9cf3b5d4b82694d7efa5d784ceca5bbc4dce0fbda7e48e24e8404d6f3ad59021"
+  },
+  "effective_schema_version": "pif_judge_v5_diagnostic_fixture_v3",
+  "seed": "app-server-judge-v5-diagnostic-v3-truth-corrected",
+  "predecessor_case_content_reused": true,
+  "semantic_truth_correction_count": 1,
+  "corrections": [
+    {
+      "case_key": "diag2_unsupported_inference",
+      "field": "event_type",
+      "reason": "event_a is measurement_claim and event_b is capability_claim, so event_type is a direct material conflict in both truth projections",
+      "operations": [
+        {
+          "path": "expected.field_issues_b",
+          "old": [
+            "target",
+            "unsupported_inference"
+          ],
+          "new": [
+            "event_type",
+            "target",
+            "unsupported_inference"
+          ]
+        },
+        {
+          "path": "expected.mismatch_fields",
+          "old": [
+            "target",
+            "unsupported_inference"
+          ],
+          "new": [
+            "event_type",
+            "target",
+            "unsupported_inference"
+          ]
+        }
+      ]
+    }
+  ],
+  "unchanged_contract": {
+    "source_excerpt": true,
+    "event_inputs": true,
+    "case_membership": true,
+    "canary_membership": true,
+    "prompt_protocol": true,
+    "gate_thresholds": true
+  }
+}

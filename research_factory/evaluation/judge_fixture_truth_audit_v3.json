@@ -1,0 +1,114 @@
+{
+  "schema_version": "pif_judge_fixture_truth_audit_v3",
+  "status": "frozen_before_pipeline_v5_semantic_calls",
+  "source_fixture": {
+    "path": "research_factory/evaluation/judge_calibration_v2.json",
+    "sha256": "517e85cbaf0525786773b7f3911bfbe3f42c4b13248211c794a2ec68967f4323"
+  },
+  "pipeline_v4_evidence": {
+    "calibration_report_sha256": "ea482eb1a07508ce8d8ef7d5f2bed59cae0d275892e6866e7328dd894b5e374b",
+    "terminal_receipt_sha256": "d92e8544867ebf950497ac500a766cd0d7bc76b0d0b3988542e5bd3083413d1b",
+    "pipeline_terminal_sha256": "b02bd084cf98478e37086eadb989635442d925ec4d98c9b22fdd2b8844f80197"
+  },
+  "legacy_truth_classification": {
+    "legacy_support_label": "joint_source_support_and_material_field_correctness",
+    "admissible_as_pipeline_v5_proposition_support_truth": false,
+    "admissible_as_pipeline_v5_structured_field_truth": false,
+    "reason": "The legacy boolean conflates claim entailment with populated-field correctness and contains contradictory positive labels."
+  },
+  "truth_dimensions": {
+    "proposition_source_support": {
+      "definition": "Every material proposition expressed by claim_text is entailed by the supplied source excerpt. Harmless paraphrase and resolved coreference are allowed. Exact lexical overlap or an exact evidence span alone is insufficient.",
+      "labels": ["supported", "unsupported", "abstain"]
+    },
+    "structured_event_field_correctness": {
+      "definition": "Every populated structured semantic field is licensed by the source in the context of this event and no populated field contradicts the source. Missing or empty fields are not errors. This verdict is scored separately from claim_text proposition support.",
+      "labels": ["correct", "incorrect", "abstain"]
+    }
+  },
+  "v4_forensics": {
+    "support_false_positives_ab": 0,
+    "support_false_positives_ba": 0,
+    "support_false_negatives_ab": 11,
+    "support_false_negatives_ba": 22,
+    "support_specificity_ab": 1.0,
+    "support_specificity_ba": 1.0,
+    "support_sensitivity_ab": 0.934911,
+    "support_sensitivity_ba": 0.869822,
+    "material_field_error_false_negatives_ab": 7,
+    "language_tutor_false_negatives_ba": 12,
+    "language_tutor_orientation_changed_case_count": 6,
+    "expected_evidence_mismatches": 10,
+    "evidence_mismatches_found_ab": 0,
+    "evidence_mismatches_found_ba": 0,
+    "expected_event_boundary_mismatches": 10,
+    "event_boundary_mismatches_found_ab": 10,
+    "event_boundary_mismatches_found_ba": 10,
+    "expected_unsupported_inference_mismatches": 3,
+    "unsupported_inference_mismatches_found_ab": 1,
+    "unsupported_inference_mismatches_found_ba": 1
+  },
+  "material_field_error_reclassifications": [
+    {"case_id": "radiology__material_field_error", "changed_fields": ["actor"], "legacy_mutated_event_support": "supported", "proposition_source_support": "supported", "structured_event_field_correctness": "incorrect"},
+    {"case_id": "climate__material_field_error", "changed_fields": ["temporal_horizon"], "legacy_mutated_event_support": "supported", "proposition_source_support": "supported", "structured_event_field_correctness": "incorrect"},
+    {"case_id": "hiring__material_field_error", "changed_fields": ["reported_actor"], "legacy_mutated_event_support": "supported", "proposition_source_support": "supported", "structured_event_field_correctness": "incorrect"},
+    {"case_id": "language_tutor__material_field_error", "changed_fields": ["stance"], "legacy_mutated_event_support": "supported", "proposition_source_support": "supported", "structured_event_field_correctness": "incorrect"},
+    {"case_id": "logistics__material_field_error", "changed_fields": ["event_type"], "legacy_mutated_event_support": "supported", "proposition_source_support": "supported", "structured_event_field_correctness": "incorrect"},
+    {"case_id": "legal_search__material_field_error", "changed_fields": ["attribution", "reported_actor"], "legacy_mutated_event_support": "supported", "proposition_source_support": "supported", "structured_event_field_correctness": "incorrect"},
+    {"case_id": "manufacturing__material_field_error", "changed_fields": ["target"], "legacy_mutated_event_support": "supported", "proposition_source_support": "supported", "structured_event_field_correctness": "incorrect"},
+    {"case_id": "database__material_field_error", "changed_fields": ["metric", "unsupported_inference"], "legacy_mutated_event_support": "unsupported", "proposition_source_support": "unsupported", "structured_event_field_correctness": "incorrect"},
+    {"case_id": "audio_production__material_field_error", "changed_fields": ["negation", "stance", "unsupported_inference"], "legacy_mutated_event_support": "unsupported", "proposition_source_support": "unsupported", "structured_event_field_correctness": "incorrect"},
+    {"case_id": "cybersecurity__material_field_error", "changed_fields": ["causal_mechanism", "unsupported_inference"], "legacy_mutated_event_support": "unsupported", "proposition_source_support": "unsupported", "structured_event_field_correctness": "incorrect"}
+  ],
+  "language_tutor_structured_field_reclassifications": [
+    {"case_id": "language_tutor__identity_paraphrase", "incorrect_witness_positions": ["a:0", "b:0"], "incorrect_fields": ["actor", "speaker"]},
+    {"case_id": "language_tutor__material_field_error", "incorrect_witness_positions": ["a:0", "b:0"], "incorrect_fields": ["actor", "speaker", "stance"]},
+    {"case_id": "language_tutor__merged_split_boundary", "incorrect_witness_positions": ["a:0", "b:0"], "incorrect_fields": ["actor", "speaker"]},
+    {"case_id": "language_tutor__reversed_multi_lens", "incorrect_witness_positions": ["a:0", "b:1"], "incorrect_fields": ["actor", "speaker"]},
+    {"case_id": "language_tutor__supported_one_sided", "incorrect_witness_positions": ["a:0", "b:0"], "incorrect_fields": ["actor", "speaker"]},
+    {"case_id": "language_tutor__unsupported_one_sided", "incorrect_witness_positions": ["a:0", "b:0", "b:1"], "incorrect_fields": ["actor", "speaker"]}
+  ],
+  "mismatch_checklist": [
+    {"field": "actor", "definition": "The entity performing, experiencing, or principally responsible for the event.", "decision_rule": "different only when the events assign materially different actors; role-preserving aliases and resolved coreference are same."},
+    {"field": "attribution", "definition": "Whether and how the proposition is presented as a direct claim, reported claim, quotation, observation, or other source relation.", "decision_rule": "different when the attribution structure changes truth conditions or provenance of the claim."},
+    {"field": "causal_mechanism", "definition": "The asserted mechanism or causal link connecting an action, condition, and outcome.", "decision_rule": "different when one event asserts a materially different mechanism or adds one not present in the other."},
+    {"field": "certainty", "definition": "The modal strength, confidence, or epistemic commitment of the proposition.", "decision_rule": "different when certainty changes materially, such as may versus will or estimate versus fact."},
+    {"field": "event_boundary", "definition": "The semantic scope of the event, including whether source propositions are merged into one event or split into separate events.", "decision_rule": "different for merge/split scope changes; boundary difference alone normally implies partial relation."},
+    {"field": "event_type", "definition": "The semantic category of the event, such as forecast, capability, measurement, adoption, risk, stance, or causal claim.", "decision_rule": "different when categories impose different truth-conditional interpretations, not merely synonymous labels."},
+    {"field": "evidence", "definition": "The source proposition coverage represented by the evidence window, not superficial span wording.", "decision_rule": "different when evidence windows cover materially different source propositions; a merge/split evidence-window difference must accompany event_boundary."},
+    {"field": "metric", "definition": "The quantitative value, unit, comparator, direction, and measurement scope.", "decision_rule": "different when any material quantitative component changes."},
+    {"field": "negation", "definition": "The polarity of the proposition, including explicit denial or absence.", "decision_rule": "different when one event affirms what the other negates or removes a truth-conditional negation."},
+    {"field": "reported_actor", "definition": "The third party to whom a reported proposition is attributed.", "decision_rule": "different when the reported claimant changes or is removed where attribution is material."},
+    {"field": "speaker", "definition": "The person or role voicing the proposition in the supplied source context.", "decision_rule": "different when the events identify materially different speakers; resolved pronouns and aliases are same."},
+    {"field": "stance", "definition": "The evaluative position toward the target, such as supportive, skeptical, warning, opposed, or neutral.", "decision_rule": "different when evaluative polarity or position changes materially."},
+    {"field": "target", "definition": "The object, system, behavior, population, or concept to which the event applies.", "decision_rule": "different when the events apply to materially different targets or scopes."},
+    {"field": "temporal_horizon", "definition": "The time reference or horizon at which the proposition holds.", "decision_rule": "different when present, near-term, long-term, historical, or conditional timing changes truth conditions."},
+    {"field": "unsupported_inference", "definition": "A proposition or material assertion added by one event that is not entailed by the supplied source.", "decision_rule": "different when one event adds an ungrounded assertion; also mark the most specific root field responsible for that assertion."}
+  ],
+  "mismatch_precedence": [
+    "A direct material conflict in actor, attribution, causal_mechanism, certainty, event_type, metric, negation, reported_actor, speaker, stance, target, or temporal_horizon requires non_equivalent.",
+    "A merge/split-only difference requires partial and the minimal root fields event_boundary plus evidence.",
+    "An added ungrounded assertion requires unsupported_inference plus the minimal specific root field and normally non_equivalent.",
+    "Equivalent requires all checklist rows same. Any unresolved material row requires abstain.",
+    "Report minimal root fields only; do not add downstream or redundant consequences."
+  ],
+  "serialization_optimization": {
+    "rule": "Omit only model-facing object fields whose values are empty string, empty array, empty object, or null. Preserve false, zero, and not_applicable. Do not remove any non-empty semantic value.",
+    "pipeline_v4_prompt_count": 22,
+    "before_prompt_bytes": 401660,
+    "after_prompt_bytes": 241992,
+    "reduction_fraction": 0.3975,
+    "semantic_pruning_performed": false
+  },
+  "pipeline_v5_protocol_constraints": {
+    "support_is_side_free_pointwise": true,
+    "support_permutation_runs": 1,
+    "alignment_is_origin_neutral_pooled_ids": true,
+    "comparison_permutation_canary_only": true,
+    "full_side_labelled_ab_ba_support_allowed": false,
+    "verbal_confidence_allowed": false,
+    "majority_voting_allowed": false,
+    "generic_chain_of_thought_expansion_is_the_fix": false,
+    "observable_disagreement_adjudication_cap": 1
+  }
+}

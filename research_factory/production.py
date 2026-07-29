@@ -143,11 +143,22 @@ def railway_cost_guard(
     status_json_path: str | Path | None = None,
     project_name: str = "podcast-intelligence-observer",
     service_name: str = "observer-ui",
+    allowed_services: list[str] | None = None,
+    allowed_managed_storage_services: list[str] | None = None,
     max_replicas: int = 1,
 ) -> dict[str, Any]:
     status = status_json or _load_railway_status(status_json_path)
     issues: list[dict[str, str]] = []
     warnings: list[dict[str, str]] = []
+    allowed_service_names = set(allowed_services or [service_name])
+    managed_storage_services = set(allowed_managed_storage_services or ["Postgres"])
+    managed_storage_services.update(name for name in allowed_service_names if name.lower() in {"postgres", "postgresql"})
+    allowed_deployment_names = allowed_service_names | managed_storage_services
+    module_start_wrapper = "sh -lc '/app/.venv/bin/python -m ${PIF_RAILWAY_MODULE:-research_factory.ui_server}'"
+    allowed_start_commands = {
+        service_name: {"python3 -m research_factory.ui_server", module_start_wrapper},
+        "mcp-broker": {"python3 -m research_factory.mcp_server", module_start_wrapper},
+    }
 
     if status.get("name") != project_name:
         issues.append({"severity": "critical", "message": f"Wrong Railway project: {status.get('name')!r}"})
@@ -156,7 +167,7 @@ def railway_cost_guard(
 
     services = _service_nodes(status)
     service_names = sorted({item.get("serviceName") or item.get("name") for item in services if item})
-    unexpected_services = [name for name in service_names if name != service_name]
+    unexpected_services = [name for name in service_names if name not in allowed_deployment_names]
     if unexpected_services:
         issues.append({"severity": "critical", "message": "Unexpected Railway services: " + ", ".join(unexpected_services)})
     if service_name not in service_names:
@@ -166,7 +177,7 @@ def railway_cost_guard(
         current_name = service.get("serviceName") or service.get("name")
         if service.get("nextCronRunAt"):
             issues.append({"severity": "critical", "message": f"{current_name} has a cron schedule."})
-        if _edge_count(service.get("volumeInstances")):
+        if _edge_count(service.get("volumeInstances")) and current_name not in managed_storage_services:
             issues.append({"severity": "critical", "message": f"{current_name} has Railway volume instances."})
         latest = service.get("latestDeployment") or {}
         meta = latest.get("meta") or {}
@@ -179,13 +190,14 @@ def railway_cost_guard(
             if replicas > max_replicas:
                 issues.append({"severity": "critical", "message": f"{current_name} uses {replicas} replicas; max allowed is {max_replicas}."})
             start_command = str(deploy.get("startCommand") or "")
-            if start_command and start_command != "python3 -m research_factory.ui_server":
-                issues.append({"severity": "critical", "message": f"{current_name} start command is not observer-only: {start_command}"})
+            allowed_commands = allowed_start_commands.get(current_name, set())
+            if start_command and start_command not in allowed_commands:
+                issues.append({"severity": "critical", "message": f"{current_name} start command is not approved: {start_command}"})
             if deploy.get("preDeployCommand"):
                 issues.append({"severity": "critical", "message": f"{current_name} has a preDeployCommand."})
             if deploy.get("sleepApplication") is False:
                 warnings.append({"severity": "info", "message": f"{current_name} sleepApplication is false; acceptable only while live observer availability is preferred over minimum idle cost."})
-        if meta.get("volumeMounts"):
+        if meta.get("volumeMounts") and current_name not in managed_storage_services:
             issues.append({"severity": "critical", "message": f"{current_name} deployment has volume mounts."})
 
     return {
@@ -196,10 +208,12 @@ def railway_cost_guard(
         "issues": issues,
         "warnings": warnings,
         "policy": {
-            "railway_role": "sanitized_observer_storage_only",
+            "railway_role": "sanitized_observer_and_mcp_broker_only",
             "compute_allowed": False,
             "max_replicas": max_replicas,
-            "allowed_service": service_name,
+            "allowed_services": sorted(allowed_service_names),
+            "allowed_managed_storage_services": sorted(managed_storage_services),
+            "allowed_start_commands": {name: sorted(commands) for name, commands in allowed_start_commands.items() if name in allowed_service_names},
         },
     }
 

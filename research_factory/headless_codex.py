@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -82,6 +83,7 @@ def execute_claimed_label_runs(
                 [
                     "codex",
                     "exec",
+                    "--ephemeral",
                     "-m",
                     model,
                     "-C",
@@ -165,7 +167,9 @@ def execute_pending_reviewer_audits(
     limit: int,
     model: str,
     timeout_seconds: int = 1200,
+    concurrency: int = 1,
 ) -> dict[str, Any]:
+    concurrency = max(1, int(concurrency or 1))
     params: list[Any] = [model]
     patch_sql = ""
     if patch_tag:
@@ -186,8 +190,24 @@ def execute_pending_reviewer_audits(
     ).fetchall()
     log_dir = runs_dir() / "headless_logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    results: list[dict[str, Any]] = []
+    claimed_rows = []
     for row in rows:
+        ts = now_iso()
+        updated = conn.execute(
+            """
+            UPDATE reviewer_audits
+            SET status = 'claimed',
+                updated_at = ?
+            WHERE id = ?
+              AND status = 'pending'
+            """,
+            (ts, row["id"]),
+        ).rowcount
+        if updated:
+            claimed_rows.append(dict(row))
+    conn.commit()
+
+    def _execute_one(row: dict[str, Any]) -> dict[str, Any]:
         audit_id = row["id"]
         prompt_path = Path(row["prompt_path"]).expanduser().resolve()
         output_path = Path(row["output_path"]).expanduser().resolve()
@@ -199,16 +219,18 @@ def execute_pending_reviewer_audits(
             f"Write the final JSON object, and only the JSON object, to {output_path}. "
             "Do not edit any other file. Do not include markdown fences or commentary."
         )
-        current = conn.execute("SELECT status FROM reviewer_audits WHERE id = ?", (audit_id,)).fetchone()
-        if not current or current["status"] != "pending":
-            results.append({"audit_id": audit_id, "status": "stale_audit_skipped"})
-            continue
+        worker_conn = db.connect()
+        current = worker_conn.execute("SELECT status FROM reviewer_audits WHERE id = ?", (audit_id,)).fetchone()
+        if not current or current["status"] != "claimed":
+            worker_conn.close()
+            return {"audit_id": audit_id, "status": "stale_audit_skipped"}
         started_at = now_iso()
         with log_path.open("w", encoding="utf-8") as log_file:
             completed = subprocess.run(
                 [
                     "codex",
                     "exec",
+                    "--ephemeral",
                     "-m",
                     model,
                     "-C",
@@ -235,21 +257,41 @@ def execute_pending_reviewer_audits(
             "completed_at": now_iso(),
         }
         if completed.returncode != 0:
+            worker_conn.execute(
+                "UPDATE reviewer_audits SET status = 'failed', updated_at = ? WHERE id = ?",
+                (now_iso(), audit_id),
+            )
+            worker_conn.commit()
+            worker_conn.close()
             item["status"] = "codex_exec_failed"
-            results.append(item)
-            continue
+            return item
         try:
-            item["submission"] = submit_reviewer_audit(conn, audit_id=audit_id, output_json_path=str(output_path))
+            item["submission"] = submit_reviewer_audit(worker_conn, audit_id=audit_id, output_json_path=str(output_path))
             item["status"] = "submitted"
         except Exception as exc:
+            worker_conn.execute(
+                "UPDATE reviewer_audits SET status = 'failed', updated_at = ? WHERE id = ?",
+                (now_iso(), audit_id),
+            )
+            worker_conn.commit()
             item["status"] = "submission_failed"
             item["error"] = str(exc)
-        results.append(item)
+        worker_conn.close()
+        return item
+
+    results: list[dict[str, Any]] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
+        futures = [executor.submit(_execute_one, row) for row in claimed_rows]
+        for future in concurrent.futures.as_completed(futures):
+            results.append(future.result())
+    results.sort(key=lambda item: item.get("started_at", ""))
     return {
         "ok": all(item.get("status") in {"submitted", "stale_audit_skipped"} for item in results),
         "model": model,
         "patch_tag": patch_tag,
         "selected": len(rows),
+        "claimed": len(claimed_rows),
+        "concurrency": concurrency,
         "processed": len(results),
         "submitted": sum(1 for item in results if item.get("status") == "submitted"),
         "skipped": sum(1 for item in results if item.get("status") == "stale_audit_skipped"),

@@ -1,38 +1,66 @@
-# Research Intelligence Factory
+# Research Radar
 
-Local-first research factory for building a private, extensible technology discourse corpus. Podcasts are the first production adapter; the queue and content model are designed to extend to blogs, Substacks, YouTube captions, papers, release notes, docs, and newsletters.
+Private, local, event-driven research intelligence. The first workspace is
+**AI & Technology Radar**. Its product unit is an evidence-linked briefing when
+something materially changes—not an evaluator receipt, per-source summary, or
+scheduled digest.
 
-It is designed for high-volume Codex usage without turning the result into loose summaries:
+The v1 implementation provides:
 
-- SQLite queue with idempotent jobs and leases
-- portable queue envelopes for local headless Codex workers and a future Railway MCP/ChatGPT worker seam
-- content abstractions for sources, items, artifacts, spans, context packages, and extraction runs
-- 57 verified podcast feeds across AI, engineering, venture, markets, security, and tech strategy
-- creator RSS or official public transcript ingestion by default
-- local raw transcript storage
-- strict versioned label-pack schemas
-- Codex app prompt/output handoffs for subscription-backed labeling
-- sanitized Railway observer UI snapshots
-- repeatable exports for trends and graphs
+- an isolated SQLite authority store outside Documents/FileProvider storage;
+- explicit provisional, verified, amended, retracted, and dismissed states;
+- exact evidence offsets and release lineage for every semantic record;
+- bounded source probation, queue leases, retries, item budgets, and cycle budgets;
+- graph-backed brief, timeline, entity-position, source-ledger, and operations queries;
+- a loopback-only local dashboard and JSON API with briefing feedback;
+- frozen product, schema, benchmark, workspace, and budget contracts; and
+- a deterministic five-item product slice that contains no copied source text.
 
-Active roadmap: [docs/ROADMAP.md](docs/ROADMAP.md). The next graph layer turns v3.1 discourse events into governed canonical identity, expert influence, agreement/disagreement, and authority-score surfaces. Raw mentions stay separate from canonical entities, and high-impact merges require GPT-5.5 judge rationale plus deterministic validation.
+The prior Podcast Intelligence Factory ingestion and transcript backbone remains
+available for recovery and future adapters, but its evaluator epochs and pending
+label queue are not Research Radar authority.
+
+See [the frozen v1 contract](docs/RESEARCH_RADAR_V1.md) for product boundaries,
+acceptance gates, and explicit deferrals.
+
+The isolated post-extraction podcast benchmark is documented in
+[AI-Safety True-North Downstream Benchmark](docs/TRUE_NORTH_BENCHMARK.md). It
+uses hash-pinned candidates, OpenCode workhorses, Codex-owned gold, and
+shadow-only transactional commits. Its consensus-aware contract preserves
+independent-gold disagreement, accepts valid atomic-count ranges, and makes
+research utility the primary certification gate.
 
 ## Quickstart
 
 ```bash
 cd /Users/kolbydayley/Documents/Codex/podcast-intelligence-factory
-python3 -m research_factory init
-python3 -m research_factory preflight --model gpt-5.4
-python3 -m research_factory enqueue --lane podcast --since 2026-06-01 --source-list config/sources.yaml
-python3 -m research_factory queue sync-envelopes
-python3 -m research_factory queue status --by lane,content_type,role,status
-python3 -m research_factory railway-cost-guard
-python3 -m research_factory transcript-candidates --lane podcast --limit 8
-python3 -m research_factory run --lane podcast --limit 20 --model gpt-5.4
-python3 -m research_factory snapshot
+python3 -m research_factory.radar_cli validate-contract
+python3 -m research_factory.radar_cli init
+python3 -m research_factory.radar_cli seed-demo
+python3 -m research_factory.radar_cli serve --host 127.0.0.1 --port 8767
 ```
 
-If feeds do not expose `<podcast:transcript>` links, use the candidate list as a bounded Codex research queue. Attach only verified official transcript pages or public creator-channel captions:
+The default database is
+`~/Library/Application Support/Research Radar/research-radar.sqlite3`. Put
+`--db /absolute/test.sqlite3` before a subcommand to use an isolated database.
+The equivalent installed entry point is `pif radar ...`.
+
+The demo produces five provisional briefings so the inbox, timeline, evidence,
+position history, source controls, and feedback can be inspected. It does not
+verify sample claims. Verification always requires an explicit acceptance event
+and the configured source-evidence rule.
+
+The scheduler and model transport are intentionally disabled. They remain gated
+on the frozen 30-item benchmark and accepted seven-day live shadow.
+
+## Legacy recovery surfaces
+
+The commands below document the preserved ingestion/evidence backbone. They are
+not the Research Radar production path, and frozen evaluator epochs must not be
+resumed or imported into the new authority store.
+
+If a public feed does not expose a transcript link, attach only verified official
+transcript pages or public creator-channel captions:
 
 ```bash
 python3 -m research_factory attach-transcript \

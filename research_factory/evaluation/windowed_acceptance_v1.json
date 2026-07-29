@@ -1,0 +1,109 @@
+{
+  "architecture_status": "frozen_candidate_not_for_production",
+  "baseline": {
+    "model": "gpt-5.5",
+    "reasoning_effort": "high",
+    "representation": "full_ai_discourse_v3_1"
+  },
+  "bootstrap": {
+    "confidence": 0.95,
+    "iterations": 10000,
+    "seed": "windowed-paired-bootstrap-v1"
+  },
+  "cache_and_context_policy": {
+    "cached_tokens_count_toward_raw_total": true,
+    "episode_context": "shared_existing_context_excluded_symmetrically",
+    "prospective_context": "measure_once_and_amortize_equally_per_episode",
+    "session_policy": "ephemeral_codex_exec",
+    "static_prefix_cache": "natural_subscription_cache_recorded_not_subtracted"
+  },
+  "candidate": {
+    "core_model": "gpt-5.6-sol",
+    "core_reasoning_effort": "low",
+    "enrichment_paths": [
+      {
+        "model": "gpt-5.3-codex-spark",
+        "reasoning_effort": "low",
+        "fallback": null,
+        "name": "spark_only"
+      },
+      {
+        "model": "gpt-5.4-mini",
+        "reasoning_effort": "low",
+        "fallback": null,
+        "name": "mini_only"
+      }
+    ],
+    "max_events": 25,
+    "representation": "global_event_array_with_owner_window"
+  },
+  "failure_repair": {
+    "generic_confidence_routing": false,
+    "max_repair_calls_per_segment": 1,
+    "model": "gpt-5.6-sol",
+    "observable_triggers": [
+      "global_event_cap_hit",
+      "nonempty_window_without_owned_event",
+      "nonexact_evidence",
+      "malformed_enrichment",
+      "validator_pruning",
+      "attribution_conflict",
+      "quota_failure"
+    ],
+    "promotion_requires_incremental_gate_gain": true,
+    "reasoning_effort": "medium"
+  },
+  "gates": {
+    "exact_evidence_rate_min": 1.0,
+    "max_equal_concurrency_wall_ratio": 0.25,
+    "max_macro_f1_drop": 0.05,
+    "max_no_signal_false_positive_rate": 0.05,
+    "max_paired_f1_drop": 0.03,
+    "max_total_token_ratio": 0.25,
+    "min_schema_status_success": 0.95,
+    "minimum_subgroup_size": 5,
+    "paired_f1_ci_rule": "lower_bound_of_candidate_minus_baseline_must_be_at_least_negative_margin"
+  },
+  "judge_calibration_gates": {
+    "equivalent_sensitivity_min": 0.9,
+    "equivalent_specificity_min": 0.9,
+    "field_order_bias_max": 0.05,
+    "field_diagnostic_f1_min": 0.8,
+    "order_bias_max": 0.05,
+    "relation_accuracy_min": 0.85
+  },
+  "paired_run": {
+    "concurrency": 4,
+    "density_strata": {
+      "dense": {
+        "golden_event_min": 16,
+        "minimum_segments": 15
+      },
+      "low": {
+        "golden_event_max": 4,
+        "golden_event_min": 1,
+        "minimum_segments": 15
+      },
+      "medium": {
+        "golden_event_max": 15,
+        "golden_event_min": 5,
+        "minimum_segments": 15
+      },
+      "no_signal": {
+        "golden_event_max": 0,
+        "minimum_segments": 15
+      }
+    },
+    "minimum_segments": 60,
+    "minimum_sources": 20,
+    "multiple_segments_per_source_required": true,
+    "quota_policy": "same_local_measurement_window_failed_calls_and_waits_included",
+    "retry_policy": "one_same_model_retry_failed_usage_and_wall_included"
+  },
+  "promotion": {
+    "prospective_shadow_required": true,
+    "production_switch_allowed": false,
+    "result_if_ci_crosses_margin": "inconclusive"
+  },
+  "schema_version": "windowed_acceptance_v1"
+}

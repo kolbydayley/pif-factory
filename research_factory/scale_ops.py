@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .claim_canonicalizer import canonicalize_claims
 from . import db
 from .paths import corpus_dir, runs_dir
 from .util import dumps_json, now_iso, read_text, stable_id, write_text_atomic
@@ -311,16 +312,31 @@ def reviewer_findings(conn, *, pilot_id: str, severities: list[str] | None = Non
     if not severity_filter:
         severity_filter = {"P0", "P1", "P2"}
     sql = """
-        SELECT id, episode_id, status, review_json
-        FROM reviewer_audits
-        WHERE pilot_id = ?
-          AND status = 'completed'
+        WITH ranked AS (
+          SELECT
+            id,
+            episode_id,
+            status,
+            review_json,
+            ROW_NUMBER() OVER (
+              PARTITION BY episode_id
+              ORDER BY COALESCE(completed_at, updated_at, created_at) DESC, id DESC
+            ) AS rn
+          FROM reviewer_audits
+          WHERE pilot_id = ?
+            AND status = 'completed'
     """
     params: list[Any] = [pilot_id]
     if patch_tag:
         sql += " AND patch_tag = ?"
         params.append(patch_tag)
-    sql += " ORDER BY completed_at, id"
+    sql += """
+        )
+        SELECT id, episode_id, status, review_json
+        FROM ranked
+        WHERE rn = 1
+        ORDER BY episode_id, id
+    """
     rows = conn.execute(sql, params).fetchall()
     event_segments = _event_segment_map(conn, pilot_id=pilot_id)
     findings: list[dict[str, Any]] = []
@@ -555,10 +571,20 @@ def submit_reviewer_audit(conn, *, audit_id: str, output_json_path: str | Path) 
 def reviewer_audit_summary(conn, *, pilot_id: str, review_mode: str = "full") -> dict[str, Any]:
     rows = conn.execute(
         """
+        WITH ranked AS (
+          SELECT
+            status,
+            ROW_NUMBER() OVER (
+              PARTITION BY episode_id
+              ORDER BY COALESCE(completed_at, updated_at, created_at) DESC, id DESC
+            ) AS rn
+          FROM reviewer_audits
+          WHERE pilot_id = ?
+            AND review_mode = ?
+        )
         SELECT status, COUNT(*) AS count
-        FROM reviewer_audits
-        WHERE pilot_id = ?
-          AND review_mode = ?
+        FROM ranked
+        WHERE rn = 1
         GROUP BY status
         """,
         (pilot_id, review_mode),
@@ -566,6 +592,22 @@ def reviewer_audit_summary(conn, *, pilot_id: str, review_mode: str = "full") ->
     counts = {row["status"]: int(row["count"] or 0) for row in rows}
     score = conn.execute(
         """
+        WITH latest_completed AS (
+          SELECT *
+          FROM (
+            SELECT
+              reviewer_audits.*,
+              ROW_NUMBER() OVER (
+                PARTITION BY episode_id
+                ORDER BY COALESCE(completed_at, updated_at, created_at) DESC, id DESC
+              ) AS rn
+            FROM reviewer_audits
+            WHERE pilot_id = ?
+              AND review_mode = ?
+              AND status = 'completed'
+          )
+          WHERE rn = 1
+        )
         SELECT
           AVG(overall_score) AS overall,
           AVG(coverage_score) AS coverage,
@@ -576,10 +618,7 @@ def reviewer_audit_summary(conn, *, pilot_id: str, review_mode: str = "full") ->
           SUM(p0_issue_count) AS p0_issues,
           SUM(false_or_weak_events_count) AS false_or_weak_events,
           SUM(missed_signals_count) AS missed_signals
-        FROM reviewer_audits
-        WHERE pilot_id = ?
-          AND review_mode = ?
-          AND status = 'completed'
+        FROM latest_completed
         """,
         (pilot_id, review_mode),
     ).fetchone()
@@ -674,7 +713,11 @@ def _select_reviewer_episodes(conn, *, pilot_id: str, limit: int, mode: str = "f
 def _render_reviewer_prompt(conn, *, pilot_id: str, row: dict[str, Any]) -> str:
     episode_context = episode_context_for_episode(conn, row["episode_id"])
     events = _episode_events(conn, pilot_id=pilot_id, episode_id=row["episode_id"])
-    identities = _episode_identity_mentions(conn, episode_id=row["episode_id"])
+    identities = _episode_identity_mentions(
+        conn,
+        episode_id=row["episode_id"],
+        embedded_event_ids={str(event["discourse_event_id"]) for event in events if event.get("discourse_event_id")},
+    )
     return "\n\n".join(
         [
             "You are a GPT-5.5 semantic reviewer auditing ai_discourse_v3_1 extraction quality.",
@@ -849,7 +892,7 @@ def _token_overlap(left: set[str], right: set[str]) -> float:
     return len(left.intersection(right)) / min(len(left), len(right))
 
 
-def _episode_identity_mentions(conn, *, episode_id: str) -> dict[str, list[dict[str, Any]]]:
+def _episode_identity_mentions(conn, *, episode_id: str, embedded_event_ids: set[str]) -> dict[str, Any]:
     episode_person_ids = [
         row["canonical_entity_id"]
         for row in conn.execute(
@@ -864,6 +907,118 @@ def _episode_identity_mentions(conn, *, episode_id: str) -> dict[str, list[dict[
             (episode_id,),
         ).fetchall()
         if row["canonical_entity_id"]
+    ]
+    speaker_summary = [
+        dict(row)
+        for row in conn.execute(
+            """
+            SELECT
+              canonical_people.display_name AS canonical_person,
+              GROUP_CONCAT(DISTINCT raw_speaker_mentions.surface_name) AS surface_names,
+              GROUP_CONCAT(DISTINCT raw_speaker_mentions.role) AS roles,
+              COUNT(*) AS mentions,
+              ROUND(AVG(raw_speaker_mentions.confidence), 3) AS confidence
+            FROM raw_speaker_mentions
+            JOIN canonical_people
+              ON canonical_people.id = raw_speaker_mentions.canonical_person_id
+            WHERE raw_speaker_mentions.episode_id = ?
+              AND raw_speaker_mentions.resolution_status = 'candidate_match'
+            GROUP BY raw_speaker_mentions.canonical_person_id
+            ORDER BY mentions DESC, confidence DESC
+            LIMIT 40
+            """,
+            (episode_id,),
+        ).fetchall()
+    ]
+    resolved_actor_entities = [
+        dict(row)
+        for row in conn.execute(
+            """
+            SELECT
+              raw_actor_mentions.canonical_entity_type,
+              raw_actor_mentions.canonical_entity_id,
+              COALESCE(canonical_people.display_name, canonical_orgs.display_name, canonical_products.display_name, canonical_models.display_name) AS canonical_entity,
+              GROUP_CONCAT(DISTINCT raw_actor_mentions.surface_name) AS surface_names,
+              COUNT(*) AS mentions,
+              ROUND(AVG(raw_actor_mentions.confidence), 3) AS confidence
+            FROM raw_actor_mentions
+            LEFT JOIN canonical_people
+              ON raw_actor_mentions.canonical_entity_type = 'person'
+             AND canonical_people.id = raw_actor_mentions.canonical_entity_id
+            LEFT JOIN canonical_orgs
+              ON raw_actor_mentions.canonical_entity_type = 'org'
+             AND canonical_orgs.id = raw_actor_mentions.canonical_entity_id
+            LEFT JOIN canonical_products
+              ON raw_actor_mentions.canonical_entity_type = 'product'
+             AND canonical_products.id = raw_actor_mentions.canonical_entity_id
+            LEFT JOIN canonical_models
+              ON raw_actor_mentions.canonical_entity_type = 'model'
+             AND canonical_models.id = raw_actor_mentions.canonical_entity_id
+            WHERE raw_actor_mentions.episode_id = ?
+              AND raw_actor_mentions.resolution_status = 'candidate_match'
+              AND raw_actor_mentions.canonical_entity_id IS NOT NULL
+            GROUP BY raw_actor_mentions.canonical_entity_type, raw_actor_mentions.canonical_entity_id
+            ORDER BY mentions DESC, confidence DESC
+            LIMIT 60
+            """,
+            (episode_id,),
+        ).fetchall()
+    ]
+    unresolved_actor_surfaces = [
+        dict(row)
+        for row in conn.execute(
+            """
+            SELECT
+              raw_actor_mentions.surface_name,
+              raw_actor_mentions.mention_type,
+              GROUP_CONCAT(DISTINCT raw_actor_mentions.role_context) AS role_contexts,
+              COUNT(*) AS mentions,
+              ROUND(AVG(raw_actor_mentions.confidence), 3) AS confidence
+            FROM raw_actor_mentions
+            WHERE raw_actor_mentions.episode_id = ?
+              AND raw_actor_mentions.resolution_status = 'unresolved'
+            GROUP BY raw_actor_mentions.surface_name, raw_actor_mentions.mention_type
+            ORDER BY mentions DESC, confidence DESC
+            LIMIT 40
+            """,
+            (episode_id,),
+        ).fetchall()
+    ]
+    affiliation_edges = [
+        dict(row)
+        for row in conn.execute(
+            """
+            SELECT
+              canonical_people.display_name AS canonical_person,
+              canonical_orgs.display_name AS canonical_org,
+              person_org_affiliations.role,
+              person_org_affiliations.status,
+              person_org_affiliations.confidence
+            FROM person_org_affiliations
+            JOIN canonical_people
+              ON canonical_people.id = person_org_affiliations.canonical_person_id
+            JOIN canonical_orgs
+              ON canonical_orgs.id = person_org_affiliations.canonical_org_id
+            WHERE EXISTS (
+              SELECT 1
+              FROM raw_speaker_mentions
+              WHERE raw_speaker_mentions.episode_id = ?
+                AND raw_speaker_mentions.canonical_person_id = person_org_affiliations.canonical_person_id
+                AND raw_speaker_mentions.resolution_status = 'candidate_match'
+            )
+               OR EXISTS (
+              SELECT 1
+              FROM raw_actor_mentions
+              WHERE raw_actor_mentions.episode_id = ?
+                AND raw_actor_mentions.canonical_entity_type = 'person'
+                AND raw_actor_mentions.canonical_entity_id = person_org_affiliations.canonical_person_id
+                AND raw_actor_mentions.resolution_status = 'candidate_match'
+            )
+            ORDER BY person_org_affiliations.confidence DESC, canonical_people.display_name, canonical_orgs.display_name
+            LIMIT 60
+            """,
+            (episode_id, episode_id),
+        ).fetchall()
     ]
     person_mentions = [
         dict(row)
@@ -890,6 +1045,7 @@ def _episode_identity_mentions(conn, *, episode_id: str) -> dict[str, list[dict[
             (episode_id,),
         ).fetchall()
     ]
+    _mark_embedded_event_refs(person_mentions, embedded_event_ids)
     concept_edges = [
         dict(row)
         for row in conn.execute(
@@ -915,73 +1071,81 @@ def _episode_identity_mentions(conn, *, episode_id: str) -> dict[str, list[dict[
             (episode_id,),
         ).fetchall()
     ]
+    speakers = [
+        dict(row)
+        for row in conn.execute(
+            """
+            SELECT
+              raw_speaker_mentions.id,
+              raw_speaker_mentions.segment_id,
+              raw_speaker_mentions.discourse_event_id,
+              raw_speaker_mentions.surface_name,
+              raw_speaker_mentions.role,
+              raw_speaker_mentions.affiliation_surface,
+              raw_speaker_mentions.confidence,
+              raw_speaker_mentions.resolution_status,
+              raw_speaker_mentions.canonical_person_id,
+              canonical_people.display_name AS canonical_person
+            FROM raw_speaker_mentions
+            LEFT JOIN canonical_people
+              ON canonical_people.id = raw_speaker_mentions.canonical_person_id
+            WHERE raw_speaker_mentions.episode_id = ?
+              AND raw_speaker_mentions.resolution_status != 'ignored_low_value'
+            ORDER BY raw_speaker_mentions.created_at DESC
+            LIMIT 100
+            """,
+            (episode_id,),
+        ).fetchall()
+    ]
+    _mark_embedded_event_refs(speakers, embedded_event_ids)
+    actors = [
+        dict(row)
+        for row in conn.execute(
+            """
+            SELECT
+              raw_actor_mentions.id,
+              raw_actor_mentions.segment_id,
+              raw_actor_mentions.discourse_event_id,
+              raw_actor_mentions.mention_type,
+              raw_actor_mentions.surface_name,
+              raw_actor_mentions.speaker_surface,
+              raw_actor_mentions.reported_actor_surface,
+              raw_actor_mentions.role_context,
+              raw_actor_mentions.canonical_entity_type,
+              raw_actor_mentions.canonical_entity_id,
+              COALESCE(canonical_people.display_name, canonical_orgs.display_name, canonical_products.display_name, canonical_models.display_name) AS canonical_entity,
+              raw_actor_mentions.confidence,
+              raw_actor_mentions.resolution_status,
+              raw_actor_mentions.why_matters
+            FROM raw_actor_mentions
+            LEFT JOIN canonical_people
+              ON raw_actor_mentions.canonical_entity_type = 'person'
+             AND canonical_people.id = raw_actor_mentions.canonical_entity_id
+            LEFT JOIN canonical_orgs
+              ON raw_actor_mentions.canonical_entity_type = 'org'
+             AND canonical_orgs.id = raw_actor_mentions.canonical_entity_id
+            LEFT JOIN canonical_products
+              ON raw_actor_mentions.canonical_entity_type = 'product'
+             AND canonical_products.id = raw_actor_mentions.canonical_entity_id
+            LEFT JOIN canonical_models
+              ON raw_actor_mentions.canonical_entity_type = 'model'
+             AND canonical_models.id = raw_actor_mentions.canonical_entity_id
+            WHERE raw_actor_mentions.episode_id = ?
+              AND raw_actor_mentions.resolution_status != 'ignored_low_value'
+            ORDER BY raw_actor_mentions.created_at DESC
+            LIMIT 100
+            """,
+            (episode_id,),
+        ).fetchall()
+    ]
+    _mark_embedded_event_refs(actors, embedded_event_ids)
     return {
-        "speakers": [
-            dict(row)
-            for row in conn.execute(
-                """
-                SELECT
-                  raw_speaker_mentions.id,
-                  raw_speaker_mentions.segment_id,
-                  raw_speaker_mentions.discourse_event_id,
-                  raw_speaker_mentions.surface_name,
-                  raw_speaker_mentions.role,
-                  raw_speaker_mentions.affiliation_surface,
-                  raw_speaker_mentions.confidence,
-                  raw_speaker_mentions.resolution_status,
-                  raw_speaker_mentions.canonical_person_id,
-                  canonical_people.display_name AS canonical_person
-                FROM raw_speaker_mentions
-                LEFT JOIN canonical_people
-                  ON canonical_people.id = raw_speaker_mentions.canonical_person_id
-                WHERE raw_speaker_mentions.episode_id = ?
-                  AND raw_speaker_mentions.resolution_status != 'ignored_low_value'
-                ORDER BY raw_speaker_mentions.created_at DESC
-                LIMIT 100
-                """,
-                (episode_id,),
-            ).fetchall()
-        ],
-        "actors": [
-            dict(row)
-            for row in conn.execute(
-                """
-                SELECT
-                  raw_actor_mentions.id,
-                  raw_actor_mentions.segment_id,
-                  raw_actor_mentions.discourse_event_id,
-                  raw_actor_mentions.mention_type,
-                  raw_actor_mentions.surface_name,
-                  raw_actor_mentions.speaker_surface,
-                  raw_actor_mentions.reported_actor_surface,
-                  raw_actor_mentions.role_context,
-                  raw_actor_mentions.canonical_entity_type,
-                  raw_actor_mentions.canonical_entity_id,
-                  COALESCE(canonical_people.display_name, canonical_orgs.display_name, canonical_products.display_name, canonical_models.display_name) AS canonical_entity,
-                  raw_actor_mentions.confidence,
-                  raw_actor_mentions.resolution_status,
-                  raw_actor_mentions.why_matters
-                FROM raw_actor_mentions
-                LEFT JOIN canonical_people
-                  ON raw_actor_mentions.canonical_entity_type = 'person'
-                 AND canonical_people.id = raw_actor_mentions.canonical_entity_id
-                LEFT JOIN canonical_orgs
-                  ON raw_actor_mentions.canonical_entity_type = 'org'
-                 AND canonical_orgs.id = raw_actor_mentions.canonical_entity_id
-                LEFT JOIN canonical_products
-                  ON raw_actor_mentions.canonical_entity_type = 'product'
-                 AND canonical_products.id = raw_actor_mentions.canonical_entity_id
-                LEFT JOIN canonical_models
-                  ON raw_actor_mentions.canonical_entity_type = 'model'
-                 AND canonical_models.id = raw_actor_mentions.canonical_entity_id
-                WHERE raw_actor_mentions.episode_id = ?
-                  AND raw_actor_mentions.resolution_status != 'ignored_low_value'
-                ORDER BY raw_actor_mentions.created_at DESC
-                LIMIT 100
-                """,
-                (episode_id,),
-            ).fetchall()
-        ],
+        "resolved_speaker_summary": speaker_summary,
+        "resolved_actor_entity_summary": resolved_actor_entities,
+        "unresolved_actor_surface_summary": unresolved_actor_surfaces,
+        "person_org_affiliation_edges": affiliation_edges,
+        "speakers": speakers,
+        "actors": actors,
         "guest_edges": [
             dict(row)
             for row in conn.execute(
@@ -1011,6 +1175,18 @@ def _episode_identity_mentions(conn, *, episode_id: str) -> dict[str, list[dict[
         "person_person_mentions": person_mentions,
         "person_concept_edges": concept_edges,
     }
+
+
+def _mark_embedded_event_refs(rows: list[dict[str, Any]], embedded_event_ids: set[str]) -> None:
+    for row in rows:
+        event_id = row.get("discourse_event_id")
+        if not event_id:
+            row["embedded_reviewer_event_ref"] = False
+        elif str(event_id) in embedded_event_ids:
+            row["embedded_reviewer_event_ref"] = True
+        else:
+            row["discourse_event_id"] = None
+            row["embedded_reviewer_event_ref"] = False
 
 
 def _validate_reviewer_output(payload: dict[str, Any], *, expected_pilot_id: str, expected_episode_id: str) -> dict[str, Any]:
@@ -1159,45 +1335,10 @@ def _reviewed_episode_segment_ids(conn, *, pilot_id: str) -> list[str]:
 
 
 def cluster_claims(conn, *, pilot_id: str | None, model: str, limit: int | None = None) -> dict[str, Any]:
-    claims = _claim_rows(conn, pilot_id=pilot_id, limit=limit)
-    groups: dict[str, list[dict[str, Any]]] = {}
-    for claim in claims:
-        key = _claim_cluster_key(claim)
-        groups.setdefault(key, []).append(claim)
-    ts = now_iso()
-    upserted = 0
-    for key, items in groups.items():
-        canonical = _canonical_claim_text(items)
-        evidence = {
-            "pilot_id": pilot_id,
-            "status_note": "candidate cluster pending GPT-5.5 semantic review",
-            "claim_ids": [item["claim_id"] for item in items],
-            "episode_ids": sorted({item["episode_id"] for item in items}),
-            "segment_ids": sorted({item["segment_id"] for item in items}),
-        }
-        conn.execute(
-            """
-            INSERT INTO claim_clusters
-              (id, canonical_claim_text, concept_id, status, judge_model, confidence, evidence_json, created_at, updated_at)
-            VALUES (?, ?, NULL, 'candidate_pending_gpt55_judge', ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-              canonical_claim_text = excluded.canonical_claim_text,
-              evidence_json = excluded.evidence_json,
-              updated_at = excluded.updated_at
-            """,
-            (
-                stable_id("claim_cluster", pilot_id or "all", key, prefix="ccl_"),
-                canonical,
-                model,
-                0.55 if len(items) == 1 else 0.65,
-                dumps_json(evidence),
-                ts,
-                ts,
-            ),
-        )
-        upserted += 1
-    conn.commit()
-    return {"ok": True, "pilot_id": pilot_id, "model": model, "claims_seen": len(claims), "clusters_upserted": upserted}
+    result = canonicalize_claims(conn, pilot_id=pilot_id, scope="all", model=model, limit=limit)
+    result["pilot_id"] = pilot_id
+    result["compat_command"] = "cluster_claims"
+    return result
 
 
 def judge_claim_edges(conn, *, pilot_id: str | None, model: str, limit: int = 100) -> dict[str, Any]:

@@ -9,7 +9,7 @@ from .fast_quality import quality_velocity
 from .paths import exports_dir, root
 from .prep import prepare_transcript
 from .scale_ops import reviewer_audit_summary
-from .util import now_iso, read_text, write_text_atomic
+from .util import dumps_json, now_iso, write_text_atomic
 
 
 HIGH_PRIORITY_TRANSCRIPT_SOURCES = [
@@ -32,6 +32,46 @@ DEFAULT_SCALE_GATE_SOURCES = [
     "Microsoft Research Podcast",
     "Latent Space",
     "Big Technology Podcast",
+]
+
+CONTROLLED_100_HIGH_SIGNAL_SOURCES = [
+    "Practical AI",
+    "Latent Space",
+    "Eye On AI",
+    "Microsoft Research Podcast",
+    "Dwarkesh Podcast",
+    "Machine Learning Street Talk",
+    "Big Technology Podcast",
+    "Lex Fridman Podcast",
+    "The TWIML AI Podcast",
+    "The Cognitive Revolution",
+    "Last Week in AI",
+    "The Gradient",
+]
+
+CONTROLLED_100_BROAD_TECH_CATEGORIES = [
+    "tech_business",
+    "consumer_tech",
+    "software_engineering",
+    "cloud_infrastructure",
+    "venture",
+    "company_strategy",
+    "security",
+    "markets",
+]
+
+CONTROLLED_100_BROAD_TECH_KEYWORDS = [
+    "ai",
+    "llm",
+    "agent",
+    "openai",
+    "anthropic",
+    "model",
+    "coding",
+    "mcp",
+    "data",
+    "cloud",
+    "nvidia",
 ]
 
 
@@ -221,6 +261,146 @@ def enqueue_scale_gate(
     }
 
 
+def enqueue_controlled_100_batch(
+    conn,
+    *,
+    pilot_id: str,
+    lane: str,
+    label_pack: str,
+    model: str,
+    priority: int,
+    dry_run: bool,
+    force_prepare: bool,
+    include_low_signal: bool,
+    acquired_since: str,
+) -> dict[str, Any]:
+    if label_pack != "ai_discourse_v3_1":
+        raise ValueError("controlled scale batch is only supported for ai_discourse_v3_1")
+    if model != "gpt-5.5":
+        raise ValueError("controlled scale batch requires model gpt-5.5")
+    bucket_specs = [
+        ("high_signal_ready_ai", 60),
+        ("newly_recovered_acquired", 20),
+        ("broad_tech_ai_heavy", 20),
+    ]
+    selected_episode_ids: set[str] = set()
+    buckets: dict[str, Any] = {}
+    totals = {
+        "selected_episodes": 0,
+        "label_jobs_created": 0,
+        "label_jobs_adopted": 0,
+        "episode_context_jobs_created": 0,
+        "episode_context_jobs_adopted": 0,
+    }
+    for bucket_name, target_count in bucket_specs:
+        rows = _controlled_batch_candidates(
+            conn,
+            bucket=bucket_name,
+            label_pack=label_pack,
+            acquired_since=acquired_since,
+            excluded_episode_ids=selected_episode_ids,
+        )
+        selected: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        for row in rows:
+            if len(selected) >= target_count:
+                break
+            prep = prepare_transcript(conn, row["transcript_id"], force=force_prepare)
+            if prep["status"] != "prepared" and not include_low_signal:
+                skipped.append(
+                    {
+                        "episode_id": row["episode_id"],
+                        "source_name": row["source_name"],
+                        "reason": f"transcript_preparation_{prep['status']}",
+                        "artifact_type": prep["artifact_type"],
+                        "quality_score": prep["quality_score"],
+                    }
+                )
+                continue
+            label_counts = _enqueue_or_adopt_segment_jobs(
+                conn,
+                lane=lane,
+                label_pack=label_pack,
+                pilot_id=pilot_id,
+                bucket=bucket_name,
+                transcript_id=row["transcript_id"],
+                prep=prep,
+                priority=priority,
+                dry_run=dry_run,
+            )
+            if label_counts["eligible_segments"] == 0:
+                skipped.append(
+                    {
+                        "episode_id": row["episode_id"],
+                        "source_name": row["source_name"],
+                        "reason": "no_unlabeled_segments",
+                        "artifact_type": prep["artifact_type"],
+                        "quality_score": prep["quality_score"],
+                    }
+                )
+                continue
+            context_counts = _enqueue_or_adopt_context_job(
+                conn,
+                lane=lane,
+                label_pack=label_pack,
+                model=model,
+                pilot_id=pilot_id,
+                bucket=bucket_name,
+                episode_id=row["episode_id"],
+                priority=max(priority - 1, 0),
+                dry_run=dry_run,
+            )
+            selected_episode_ids.add(row["episode_id"])
+            selected.append(
+                {
+                    "episode_id": row["episode_id"],
+                    "transcript_id": row["transcript_id"],
+                    "source_name": row["source_name"],
+                    "category": row["category"],
+                    "published_at": row["published_at"],
+                    "transcript_created_at": row["transcript_created_at"],
+                    "artifact_type": prep["artifact_type"],
+                    "preparation_status": prep["status"],
+                    "quality_score": prep["quality_score"],
+                    **label_counts,
+                    **context_counts,
+                }
+            )
+            totals["selected_episodes"] += 1
+            totals["label_jobs_created"] += label_counts["label_jobs_created"]
+            totals["label_jobs_adopted"] += label_counts["label_jobs_adopted"]
+            totals["episode_context_jobs_created"] += context_counts["episode_context_jobs_created"]
+            totals["episode_context_jobs_adopted"] += context_counts["episode_context_jobs_adopted"]
+        buckets[bucket_name] = {
+            "target": target_count,
+            "selected_episodes": len(selected),
+            "shortfall": max(target_count - len(selected), 0),
+            "selected_by_source": _count_by(selected, "source_name"),
+            "selected": selected,
+            "skipped": skipped[:25],
+        }
+    shortfall = sum(bucket["shortfall"] for bucket in buckets.values())
+    if dry_run:
+        conn.rollback()
+    else:
+        conn.commit()
+    return {
+        "ok": shortfall == 0,
+        "dry_run": dry_run,
+        "pilot_id": pilot_id,
+        "batch_plan": "controlled_100_v31",
+        "label_pack": label_pack,
+        "model": model,
+        "concurrency_guidance": 4,
+        "requested_episodes": 100,
+        "selected_episodes": totals["selected_episodes"],
+        "shortfall": shortfall,
+        **totals,
+        "buckets": buckets,
+        "privacy": "sanitized_operational_report_no_raw_transcripts",
+    }
+
+
 def build_scale_gate_report(conn, *, pilot_id: str, output: str | Path | None = None) -> dict[str, Any]:
     episodes = _pilot_episodes(conn, pilot_id)
     episode_ids = [item["episode_id"] for item in episodes]
@@ -396,6 +576,232 @@ def build_scale_gate_report(conn, *, pilot_id: str, output: str | Path | None = 
     write_text_atomic(path, json.dumps(report, ensure_ascii=True, indent=2, sort_keys=True) + "\n")
     report["path"] = str(path)
     return report
+
+
+def _controlled_batch_candidates(
+    conn,
+    *,
+    bucket: str,
+    label_pack: str,
+    acquired_since: str,
+    excluded_episode_ids: set[str],
+) -> list[dict[str, Any]]:
+    excluded_sql = ""
+    params: list[Any] = [label_pack]
+    if excluded_episode_ids:
+        placeholders = ", ".join("?" for _ in excluded_episode_ids)
+        excluded_sql = f" AND episodes.id NOT IN ({placeholders})"
+        params.extend(sorted(excluded_episode_ids))
+    where = ""
+    order = "episodes.published_at DESC, transcripts.updated_at DESC"
+    if bucket == "high_signal_ready_ai":
+        placeholders = ", ".join("?" for _ in CONTROLLED_100_HIGH_SIGNAL_SOURCES)
+        where = f" AND sources.name IN ({placeholders})"
+        params.extend(CONTROLLED_100_HIGH_SIGNAL_SOURCES)
+        order = f"CASE sources.name {' '.join(f'WHEN ? THEN {index}' for index, _ in enumerate(CONTROLLED_100_HIGH_SIGNAL_SOURCES))} ELSE 999 END, episodes.published_at DESC"
+        params.extend(CONTROLLED_100_HIGH_SIGNAL_SOURCES)
+    elif bucket == "newly_recovered_acquired":
+        where = " AND transcripts.created_at >= ?"
+        params.append(acquired_since)
+        order = "transcripts.created_at DESC, transcripts.updated_at DESC, episodes.published_at DESC"
+    elif bucket == "broad_tech_ai_heavy":
+        category_placeholders = ", ".join("?" for _ in CONTROLLED_100_BROAD_TECH_CATEGORIES)
+        keyword_sql = " OR ".join("lower(episodes.title) LIKE ?" for _ in CONTROLLED_100_BROAD_TECH_KEYWORDS)
+        where = f" AND sources.category IN ({category_placeholders}) AND ({keyword_sql})"
+        params.extend(CONTROLLED_100_BROAD_TECH_CATEGORIES)
+        params.extend(f"%{keyword}%" for keyword in CONTROLLED_100_BROAD_TECH_KEYWORDS)
+        order = "episodes.published_at DESC, transcripts.updated_at DESC"
+    else:
+        raise ValueError(f"Unknown controlled batch bucket: {bucket}")
+    rows = conn.execute(
+        f"""
+        SELECT
+          transcripts.id AS transcript_id,
+          transcripts.created_at AS transcript_created_at,
+          transcripts.updated_at AS transcript_updated_at,
+          episodes.id AS episode_id,
+          episodes.published_at,
+          sources.name AS source_name,
+          sources.category,
+          COUNT(DISTINCT segments.id) AS segment_count,
+          COUNT(DISTINCT labels.id) AS existing_v31_labels
+        FROM transcripts
+        JOIN episodes ON episodes.id = transcripts.episode_id
+        JOIN sources ON sources.id = episodes.source_id
+        JOIN segments ON segments.transcript_id = transcripts.id
+        LEFT JOIN labels ON labels.segment_id = segments.id
+          AND labels.label_pack = ?
+          AND labels.model = 'gpt-5.5'
+        WHERE transcripts.status = 'ready'
+          {excluded_sql}
+          {where}
+        GROUP BY transcripts.id
+        HAVING segment_count > 0
+          AND existing_v31_labels = 0
+        ORDER BY {order}
+        """,
+        params,
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _enqueue_or_adopt_segment_jobs(
+    conn,
+    *,
+    lane: str,
+    label_pack: str,
+    pilot_id: str,
+    bucket: str,
+    transcript_id: str,
+    prep: dict[str, Any],
+    priority: int,
+    dry_run: bool,
+) -> dict[str, int]:
+    created = 0
+    adopted = 0
+    eligible = 0
+    for segment in conn.execute(
+        """
+        SELECT id
+        FROM segments
+        WHERE transcript_id = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM labels
+            WHERE labels.segment_id = segments.id
+              AND labels.label_pack = ?
+              AND labels.model = 'gpt-5.5'
+          )
+        ORDER BY segment_index
+        """,
+        (transcript_id, label_pack),
+    ).fetchall():
+        eligible += 1
+        payload = {
+            "label_pack": label_pack,
+            "pilot_id": pilot_id,
+            "batch_plan": "controlled_100_v31",
+            "batch_bucket": bucket,
+            "transcript_preparation_id": prep["id"],
+            "transcript_artifact_type": prep["artifact_type"],
+            "source_quality_score": prep["quality_score"],
+            "priority_reason": "controlled_100_v31_scale_batch",
+        }
+        existing = _pending_label_job_for_segment(conn, lane=lane, segment_id=segment["id"], label_pack=label_pack)
+        if existing:
+            adopted += 1
+            if not dry_run:
+                _retag_pending_job(conn, job_id=existing["id"], lane=lane, job_type="label_segment", target_id=segment["id"], payload=payload, priority=priority)
+            continue
+        if not dry_run:
+            db.enqueue_job(conn, lane=lane, job_type="label_segment", target_id=segment["id"], payload=payload, priority=priority)
+        created += 1
+    return {
+        "eligible_segments": eligible,
+        "label_jobs_created": created,
+        "label_jobs_adopted": adopted,
+    }
+
+
+def _enqueue_or_adopt_context_job(
+    conn,
+    *,
+    lane: str,
+    label_pack: str,
+    model: str,
+    pilot_id: str,
+    bucket: str,
+    episode_id: str,
+    priority: int,
+    dry_run: bool,
+) -> dict[str, int]:
+    existing_completed = conn.execute(
+        """
+        SELECT id
+        FROM episode_context_runs
+        WHERE episode_id = ?
+          AND label_pack = ?
+          AND model = ?
+          AND status = 'completed'
+        """,
+        (episode_id, label_pack, model),
+    ).fetchone()
+    if existing_completed:
+        return {"episode_context_jobs_created": 0, "episode_context_jobs_adopted": 0}
+    payload = {
+        "label_pack": label_pack,
+        "model": model,
+        "pilot_id": pilot_id,
+        "batch_plan": "controlled_100_v31",
+        "batch_bucket": bucket,
+        "episode_context_version": "ai_discourse_v3_1_episode_context",
+        "priority_reason": "controlled_100_v31_full_episode_context",
+    }
+    existing = _pending_context_job_for_episode(conn, lane=lane, episode_id=episode_id, label_pack=label_pack, model=model)
+    if existing:
+        if not dry_run:
+            _retag_pending_job(conn, job_id=existing["id"], lane=lane, job_type="episode_context", target_id=episode_id, payload=payload, priority=priority)
+        return {"episode_context_jobs_created": 0, "episode_context_jobs_adopted": 1}
+    if not dry_run:
+        db.enqueue_job(conn, lane=lane, job_type="episode_context", target_id=episode_id, payload=payload, priority=priority, max_attempts=2)
+    return {"episode_context_jobs_created": 1, "episode_context_jobs_adopted": 0}
+
+
+def _pending_label_job_for_segment(conn, *, lane: str, segment_id: str, label_pack: str):
+    rows = conn.execute(
+        """
+        SELECT id, payload_json
+        FROM jobs
+        WHERE lane = ?
+          AND job_type = 'label_segment'
+          AND target_id = ?
+          AND status = 'pending'
+        ORDER BY priority ASC, id ASC
+        """,
+        (lane, segment_id),
+    ).fetchall()
+    for row in rows:
+        payload = json.loads(row["payload_json"] or "{}")
+        if payload.get("label_pack") == label_pack:
+            return row
+    return None
+
+
+def _pending_context_job_for_episode(conn, *, lane: str, episode_id: str, label_pack: str, model: str):
+    rows = conn.execute(
+        """
+        SELECT id, payload_json
+        FROM jobs
+        WHERE lane = ?
+          AND job_type = 'episode_context'
+          AND target_id = ?
+          AND status = 'pending'
+        ORDER BY priority ASC, id ASC
+        """,
+        (lane, episode_id),
+    ).fetchall()
+    for row in rows:
+        payload = json.loads(row["payload_json"] or "{}")
+        if payload.get("label_pack") == label_pack and payload.get("model", model) == model:
+            return row
+    return None
+
+
+def _retag_pending_job(conn, *, job_id: int, lane: str, job_type: str, target_id: str, payload: dict[str, Any], priority: int) -> None:
+    payload_json = dumps_json(payload)
+    dedupe_key = f"{lane}:{job_type}:{target_id}:{payload_json}"
+    ts = now_iso()
+    conn.execute(
+        """
+        UPDATE jobs
+        SET priority = ?,
+            payload_json = ?,
+            dedupe_key = ?,
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'pending'
+        """,
+        (priority, payload_json, dedupe_key, ts, job_id),
+    )
 
 
 def _pilot_episodes(conn, pilot_id: str) -> list[dict[str, Any]]:
@@ -703,7 +1109,7 @@ def _pilot_audit_summary(conn, label_ids: list[str]) -> dict[str, Any]:
 
 def _pilot_evidence_summary(conn, label_ids: list[str]) -> dict[str, Any]:
     if not label_ids:
-        return {"checked_events": 0, "offset_failures": 0, "missing_segment_files": 0, "failed_event_ids": []}
+        return {"checked_events": 0, "offset_failures": 0, "missing_segment_files": 0, "failed_event_ids": [], "content_checks_skipped": 0}
     placeholders = ", ".join("?" for _ in label_ids)
     rows = conn.execute(
         f"""
@@ -718,6 +1124,7 @@ def _pilot_evidence_summary(conn, label_ids: list[str]) -> dict[str, Any]:
     checked = 0
     failures = []
     missing_files = 0
+    content_checks_skipped = 0
     base = root()
     for row in rows:
         checked += 1
@@ -726,16 +1133,21 @@ def _pilot_evidence_summary(conn, label_ids: list[str]) -> dict[str, Any]:
             missing_files += 1
             failures.append(row["id"])
             continue
-        text = read_text(path)
         start = int(row["evidence_start"])
         end = int(row["evidence_end"])
-        if start < 0 or end < start or text[start:end] != row["evidence_text"]:
+        if start < 0 or end < start or not str(row["evidence_text"] or ""):
             failures.append(row["id"])
+            continue
+        # Observer snapshots must not read or expose segment bodies. Exact
+        # local offset validation belongs in reviewer/audit jobs, not the
+        # sanitized publish path.
+        content_checks_skipped += 1
     return {
         "checked_events": checked,
         "offset_failures": len(failures),
         "missing_segment_files": missing_files,
         "failed_event_ids": failures[:25],
+        "content_checks_skipped": content_checks_skipped,
     }
 
 

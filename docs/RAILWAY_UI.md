@@ -27,7 +27,7 @@ The service has already been created and linked locally. Before deploying, verif
 ```bash
 railway status --json
 railway service list --json
-python3 -m research_factory railway-cost-guard
+python3 -m research_factory railway-cost-guard --allowed-service mcp-broker --allowed-service Postgres
 ```
 
 Railway service filesystem state is ephemeral across deploys. After every redeploy, republish the latest local snapshot.
@@ -46,5 +46,5 @@ python3 -m research_factory publish-snapshot \
 - The service never receives raw transcripts.
 - The ingest endpoint rejects snapshots missing the privacy marker.
 - The token should be kept in local shell/automation env, not committed.
-- The service should have exactly one Railway service, no cron, no volume, no buckets, no worker process, and no model/API extraction code path.
+- The Railway project should have only `observer-ui`, `mcp-broker`, and managed `Postgres`, with no cron, no worker process, no extra replicas, and no model/API extraction code path.
 - `sleepApplication=false` is acceptable while live observer availability matters; do not add Railway compute to compensate for sleeping/cold starts.

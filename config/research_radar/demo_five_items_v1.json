@@ -1,0 +1,461 @@
+{
+  "fixture_id": "research-radar-five-item-demo-v1",
+  "schema_version": "1",
+  "fixture_kind": "synthetic_public_safe_paraphrases",
+  "rights_note": "Every evidence string is an original synthetic paraphrase created for deterministic local testing. This fixture contains no transcript passages or copied publication text.",
+  "workspace": {
+    "workspace_id": "ai-technology-radar",
+    "name": "AI & Technology Radar",
+    "topic": "Public developments in artificial intelligence and technology",
+    "purpose": "Detect meaningful changes and preserve their evidence and uncertainty.",
+    "strategic_questions": [
+      "What materially changed?",
+      "Which people or organizations changed position?",
+      "What evidence supports or contradicts the development?",
+      "What remains uncertain, and what should be watched next?"
+    ],
+    "exclusions": [
+      "private_or_authenticated_sources",
+      "paywalled_sources",
+      "paid_transcription"
+    ],
+    "extension_schema_version": "ai-technology-v1"
+  },
+  "items": [
+    {
+      "source": {
+        "source_id": "demo-source-model-lab",
+        "name": "Synthetic Model Lab",
+        "canonical_url": "https://model-lab.example.invalid/",
+        "source_type": "official_post",
+        "trust_tier": "primary",
+        "discovery_reason": "demo_fixture"
+      },
+      "content": {
+        "content_item_id": "demo-content-efficient-model",
+        "source_id": "demo-source-model-lab",
+        "title": "Synthetic note on a smaller model",
+        "canonical_url": "https://model-lab.example.invalid/smaller-system",
+        "content_type": "official_post",
+        "published_at": "2026-07-15T13:00:00Z",
+        "normalized_text": "A model provider published a smaller system and reported lower serving cost at similar task quality."
+      },
+      "evidence": {
+        "evidence_span_id": "demo-evidence-efficient-model",
+        "content_item_id": "demo-content-efficient-model",
+        "start_char": 0,
+        "end_char": 100,
+        "support_kind": "primary_evidence",
+        "confidence": 1.0,
+        "extractor_version": "demo-fixture-v1",
+        "release_id": "demo-release-v1",
+        "lineage": {"fixture_id": "research-radar-five-item-demo-v1", "synthetic": true},
+        "observed_at": "2026-07-15T13:00:00Z",
+        "status": "provisional"
+      },
+      "entity": {
+        "entity_id": "demo-entity-model-lab",
+        "canonical_name": "Synthetic Model Lab",
+        "entity_type": "company_lab"
+      },
+      "development": {
+        "development_id": "demo-development-efficient-model",
+        "workspace_id": "ai-technology-radar",
+        "title": "Smaller model announced with claimed cost reduction",
+        "summary": "A provider announced a smaller system and claimed similar task quality at lower serving cost.",
+        "event_at": "2026-07-15T13:00:00Z",
+        "status": "provisional",
+        "significance": 0.82
+      },
+      "claim": {
+        "claim_id": "demo-claim-efficient-model",
+        "development_id": "demo-development-efficient-model",
+        "claim_text": "The smaller system may reduce serving cost without a large quality loss.",
+        "claim_type": "attributed_claim",
+        "confidence": 0.82,
+        "status": "provisional"
+      },
+      "position": {
+        "position_observation_id": "demo-position-efficient-model",
+        "entity_id": "demo-entity-model-lab",
+        "claim_id": "demo-claim-efficient-model",
+        "evidence_span_id": "demo-evidence-efficient-model",
+        "stance": "supports",
+        "position_text": "Synthetic Model Lab supports the claim that its smaller system lowers serving cost.",
+        "observed_at": "2026-07-15T13:00:00Z",
+        "confidence": 0.82,
+        "status": "provisional",
+        "extractor_version": "demo-fixture-v1",
+        "release_id": "demo-release-v1"
+      },
+      "brief": {
+        "briefing_id": "demo-brief-efficient-model",
+        "workspace_id": "ai-technology-radar",
+        "development_id": "demo-development-efficient-model",
+        "headline": "A smaller model changes the cost discussion",
+        "status": "provisional",
+        "event_at": "2026-07-15T13:00:00Z",
+        "what_changed": "A provider introduced a smaller system and made a cost-versus-quality claim.",
+        "why_it_matters": "If independently reproduced, the result could lower the threshold for serving capable models.",
+        "competing_interpretations": [
+          "The change reflects genuine efficiency improvement.",
+          "The comparison may depend on a narrow task mix."
+        ],
+        "position_changes": [],
+        "unresolved_questions": [
+          "Will independent evaluations reproduce the claimed quality?"
+        ],
+        "evidence_span_id": "demo-evidence-efficient-model",
+        "priority": "high"
+      }
+    },
+    {
+      "source": {
+        "source_id": "demo-source-evaluation-team",
+        "name": "Synthetic Evaluation Team",
+        "canonical_url": "https://evaluation-team.example.invalid/",
+        "source_type": "paper",
+        "trust_tier": "primary",
+        "discovery_reason": "demo_fixture"
+      },
+      "content": {
+        "content_item_id": "demo-content-evaluation-failures",
+        "source_id": "demo-source-evaluation-team",
+        "title": "Synthetic paper on hidden evaluation failures",
+        "canonical_url": "https://evaluation-team.example.invalid/paper",
+        "content_type": "paper",
+        "published_at": "2026-07-16T10:00:00Z",
+        "normalized_text": "A research team reported that a new evaluation exposes failures hidden by aggregate benchmark scores."
+      },
+      "evidence": {
+        "evidence_span_id": "demo-evidence-evaluation-failures",
+        "content_item_id": "demo-content-evaluation-failures",
+        "start_char": 0,
+        "end_char": 101,
+        "support_kind": "primary_evidence",
+        "confidence": 1.0,
+        "extractor_version": "demo-fixture-v1",
+        "release_id": "demo-release-v1",
+        "lineage": {"fixture_id": "research-radar-five-item-demo-v1", "synthetic": true},
+        "observed_at": "2026-07-16T10:00:00Z",
+        "status": "provisional"
+      },
+      "entity": {
+        "entity_id": "demo-entity-evaluation-team",
+        "canonical_name": "Synthetic Evaluation Team",
+        "entity_type": "company_lab"
+      },
+      "development": {
+        "development_id": "demo-development-evaluation-failures",
+        "workspace_id": "ai-technology-radar",
+        "title": "Evaluation reveals failures masked by aggregate scores",
+        "summary": "A paper describes failure modes that disappear inside one aggregate benchmark score.",
+        "event_at": "2026-07-16T10:00:00Z",
+        "status": "provisional",
+        "significance": 0.76
+      },
+      "claim": {
+        "claim_id": "demo-claim-evaluation-failures",
+        "development_id": "demo-development-evaluation-failures",
+        "claim_text": "Aggregate benchmark scores can conceal consequential failure modes.",
+        "claim_type": "attributed_claim",
+        "confidence": 0.79,
+        "status": "provisional"
+      },
+      "position": {
+        "position_observation_id": "demo-position-evaluation-failures",
+        "entity_id": "demo-entity-evaluation-team",
+        "claim_id": "demo-claim-evaluation-failures",
+        "evidence_span_id": "demo-evidence-evaluation-failures",
+        "stance": "supports",
+        "position_text": "Synthetic Evaluation Team supports failure-specific reporting alongside aggregate scores.",
+        "observed_at": "2026-07-16T10:00:00Z",
+        "confidence": 0.79,
+        "status": "provisional",
+        "extractor_version": "demo-fixture-v1",
+        "release_id": "demo-release-v1"
+      },
+      "brief": {
+        "briefing_id": "demo-brief-evaluation-failures",
+        "workspace_id": "ai-technology-radar",
+        "development_id": "demo-development-evaluation-failures",
+        "headline": "A new evaluation questions aggregate model scores",
+        "status": "provisional",
+        "event_at": "2026-07-16T10:00:00Z",
+        "what_changed": "Researchers introduced an evaluation intended to expose failures hidden by aggregate scores.",
+        "why_it_matters": "Model comparisons may need failure-specific reporting rather than one headline number.",
+        "competing_interpretations": [
+          "The evaluation measures a neglected practical weakness.",
+          "The reported failures may not generalize beyond the study design."
+        ],
+        "position_changes": [],
+        "unresolved_questions": [
+          "Will other teams reproduce the failure pattern?"
+        ],
+        "evidence_span_id": "demo-evidence-evaluation-failures",
+        "priority": "normal"
+      }
+    },
+    {
+      "source": {
+        "source_id": "demo-source-policy-agency",
+        "name": "Synthetic Policy Agency",
+        "canonical_url": "https://policy-agency.example.invalid/",
+        "source_type": "official_documentation",
+        "trust_tier": "primary",
+        "discovery_reason": "demo_fixture"
+      },
+      "content": {
+        "content_item_id": "demo-content-incident-consultation",
+        "source_id": "demo-source-policy-agency",
+        "title": "Synthetic consultation on incident reporting",
+        "canonical_url": "https://policy-agency.example.invalid/consultation",
+        "content_type": "official_documentation",
+        "published_at": "2026-07-17T09:00:00Z",
+        "normalized_text": "A policy agency opened a public consultation on incident reporting requirements for advanced AI systems."
+      },
+      "evidence": {
+        "evidence_span_id": "demo-evidence-incident-consultation",
+        "content_item_id": "demo-content-incident-consultation",
+        "start_char": 0,
+        "end_char": 104,
+        "support_kind": "primary_evidence",
+        "confidence": 1.0,
+        "extractor_version": "demo-fixture-v1",
+        "release_id": "demo-release-v1",
+        "lineage": {"fixture_id": "research-radar-five-item-demo-v1", "synthetic": true},
+        "observed_at": "2026-07-17T09:00:00Z",
+        "status": "provisional"
+      },
+      "entity": {
+        "entity_id": "demo-entity-policy-agency",
+        "canonical_name": "Synthetic Policy Agency",
+        "entity_type": "policy_action"
+      },
+      "development": {
+        "development_id": "demo-development-incident-consultation",
+        "workspace_id": "ai-technology-radar",
+        "title": "Consultation opens on advanced-AI incident reporting",
+        "summary": "A public agency began gathering input on potential incident reporting requirements.",
+        "event_at": "2026-07-17T09:00:00Z",
+        "status": "provisional",
+        "significance": 0.84
+      },
+      "claim": {
+        "claim_id": "demo-claim-incident-consultation",
+        "development_id": "demo-development-incident-consultation",
+        "claim_text": "Incident reporting requirements for advanced AI systems are under formal consideration.",
+        "claim_type": "primary_evidence",
+        "confidence": 0.95,
+        "status": "provisional"
+      },
+      "position": {
+        "position_observation_id": "demo-position-incident-consultation",
+        "entity_id": "demo-entity-policy-agency",
+        "claim_id": "demo-claim-incident-consultation",
+        "evidence_span_id": "demo-evidence-incident-consultation",
+        "stance": "considering",
+        "position_text": "Synthetic Policy Agency is considering incident reporting requirements.",
+        "observed_at": "2026-07-17T09:00:00Z",
+        "confidence": 0.95,
+        "status": "provisional",
+        "extractor_version": "demo-fixture-v1",
+        "release_id": "demo-release-v1"
+      },
+      "brief": {
+        "briefing_id": "demo-brief-incident-consultation",
+        "workspace_id": "ai-technology-radar",
+        "development_id": "demo-development-incident-consultation",
+        "headline": "Incident reporting moves into formal consultation",
+        "status": "provisional",
+        "event_at": "2026-07-17T09:00:00Z",
+        "what_changed": "A policy body formally opened consultation on incident reporting for advanced AI systems.",
+        "why_it_matters": "The consultation may shape future disclosure duties for developers and deployers.",
+        "competing_interpretations": [
+          "The consultation is an early step toward enforceable reporting rules.",
+          "The final policy may remain voluntary or narrow."
+        ],
+        "position_changes": [],
+        "unresolved_questions": [
+          "Which incidents and organizations would fall within the final scope?"
+        ],
+        "evidence_span_id": "demo-evidence-incident-consultation",
+        "priority": "high"
+      }
+    },
+    {
+      "source": {
+        "source_id": "demo-source-enterprise-report",
+        "name": "Synthetic Enterprise Report",
+        "canonical_url": "https://enterprise-report.example.invalid/",
+        "source_type": "reputable_news",
+        "trust_tier": "reputable_secondary",
+        "discovery_reason": "demo_fixture"
+      },
+      "content": {
+        "content_item_id": "demo-content-enterprise-controls",
+        "source_id": "demo-source-enterprise-report",
+        "title": "Synthetic report on enterprise deployment controls",
+        "canonical_url": "https://enterprise-report.example.invalid/deployment-controls",
+        "content_type": "reputable_news",
+        "published_at": "2026-07-18T15:00:00Z",
+        "normalized_text": "Two enterprise buyers said deployment expanded only after monitoring and rollback controls were added."
+      },
+      "evidence": {
+        "evidence_span_id": "demo-evidence-enterprise-controls",
+        "content_item_id": "demo-content-enterprise-controls",
+        "start_char": 0,
+        "end_char": 102,
+        "support_kind": "reputable_reporting",
+        "confidence": 1.0,
+        "extractor_version": "demo-fixture-v1",
+        "release_id": "demo-release-v1",
+        "lineage": {"fixture_id": "research-radar-five-item-demo-v1", "synthetic": true},
+        "observed_at": "2026-07-18T15:00:00Z",
+        "status": "provisional"
+      },
+      "entity": {
+        "entity_id": "demo-entity-enterprise-buyers",
+        "canonical_name": "Synthetic Enterprise Buyers",
+        "entity_type": "market_adoption_signal"
+      },
+      "development": {
+        "development_id": "demo-development-enterprise-controls",
+        "workspace_id": "ai-technology-radar",
+        "title": "Operational controls unlock broader enterprise deployment",
+        "summary": "A report attributes expanded deployments to monitoring and rollback controls.",
+        "event_at": "2026-07-18T15:00:00Z",
+        "status": "provisional",
+        "significance": 0.7
+      },
+      "claim": {
+        "claim_id": "demo-claim-enterprise-controls",
+        "development_id": "demo-development-enterprise-controls",
+        "claim_text": "Monitoring and rollback controls can be a precondition for expanded enterprise deployment.",
+        "claim_type": "reputable_reporting",
+        "confidence": 0.7,
+        "status": "provisional"
+      },
+      "position": {
+        "position_observation_id": "demo-position-enterprise-controls",
+        "entity_id": "demo-entity-enterprise-buyers",
+        "claim_id": "demo-claim-enterprise-controls",
+        "evidence_span_id": "demo-evidence-enterprise-controls",
+        "stance": "supports",
+        "position_text": "Synthetic Enterprise Buyers support monitoring and rollback controls before wider deployment.",
+        "observed_at": "2026-07-18T15:00:00Z",
+        "confidence": 0.7,
+        "status": "provisional",
+        "extractor_version": "demo-fixture-v1",
+        "release_id": "demo-release-v1"
+      },
+      "brief": {
+        "briefing_id": "demo-brief-enterprise-controls",
+        "workspace_id": "ai-technology-radar",
+        "development_id": "demo-development-enterprise-controls",
+        "headline": "Controls, not capability alone, shape enterprise adoption",
+        "status": "provisional",
+        "event_at": "2026-07-18T15:00:00Z",
+        "what_changed": "Reported enterprise deployments expanded after monitoring and rollback controls were introduced.",
+        "why_it_matters": "Operational safeguards may be a stronger near-term adoption constraint than raw model capability.",
+        "competing_interpretations": [
+          "Controls directly enabled deployment expansion.",
+          "The controls may correlate with, rather than cause, greater adoption."
+        ],
+        "position_changes": [],
+        "unresolved_questions": [
+          "Do the reported patterns hold across a broader buyer sample?"
+        ],
+        "evidence_span_id": "demo-evidence-enterprise-controls",
+        "priority": "normal"
+      }
+    },
+    {
+      "source": {
+        "source_id": "demo-source-security-researcher",
+        "name": "Synthetic Security Researcher",
+        "canonical_url": "https://security-research.example.invalid/",
+        "source_type": "public_video",
+        "trust_tier": "specialist_individual",
+        "discovery_reason": "demo_fixture"
+      },
+      "content": {
+        "content_item_id": "demo-content-indirect-prompt",
+        "source_id": "demo-source-security-researcher",
+        "title": "Synthetic demonstration of an indirect prompt weakness",
+        "canonical_url": "https://security-research.example.invalid/demonstration",
+        "content_type": "public_video",
+        "published_at": "2026-07-19T12:00:00Z",
+        "normalized_text": "A security researcher demonstrated that an indirect prompt could trigger an unsafe tool action in a test environment."
+      },
+      "evidence": {
+        "evidence_span_id": "demo-evidence-indirect-prompt",
+        "content_item_id": "demo-content-indirect-prompt",
+        "start_char": 0,
+        "end_char": 117,
+        "support_kind": "attributed_claim",
+        "confidence": 1.0,
+        "extractor_version": "demo-fixture-v1",
+        "release_id": "demo-release-v1",
+        "lineage": {"fixture_id": "research-radar-five-item-demo-v1", "synthetic": true},
+        "observed_at": "2026-07-19T12:00:00Z",
+        "status": "provisional"
+      },
+      "entity": {
+        "entity_id": "demo-entity-security-researcher",
+        "canonical_name": "Synthetic Security Researcher",
+        "entity_type": "person"
+      },
+      "development": {
+        "development_id": "demo-development-indirect-prompt",
+        "workspace_id": "ai-technology-radar",
+        "title": "Indirect prompt triggers unsafe tool action in a test",
+        "summary": "A public demonstration shows an indirect prompt causing an unsafe action under test conditions.",
+        "event_at": "2026-07-19T12:00:00Z",
+        "status": "provisional",
+        "significance": 0.88
+      },
+      "claim": {
+        "claim_id": "demo-claim-indirect-prompt",
+        "development_id": "demo-development-indirect-prompt",
+        "claim_text": "An indirect prompt can trigger an unsafe tool action in at least one controlled environment.",
+        "claim_type": "attributed_claim",
+        "confidence": 0.78,
+        "status": "provisional"
+      },
+      "position": {
+        "position_observation_id": "demo-position-indirect-prompt",
+        "entity_id": "demo-entity-security-researcher",
+        "claim_id": "demo-claim-indirect-prompt",
+        "evidence_span_id": "demo-evidence-indirect-prompt",
+        "stance": "supports",
+        "position_text": "Synthetic Security Researcher supports the claim that an indirect prompt can trigger unsafe tool use.",
+        "observed_at": "2026-07-19T12:00:00Z",
+        "confidence": 0.78,
+        "status": "provisional",
+        "extractor_version": "demo-fixture-v1",
+        "release_id": "demo-release-v1"
+      },
+      "brief": {
+        "briefing_id": "demo-brief-indirect-prompt",
+        "workspace_id": "ai-technology-radar",
+        "development_id": "demo-development-indirect-prompt",
+        "headline": "A tool-use test exposes an indirect-prompt risk",
+        "status": "provisional",
+        "event_at": "2026-07-19T12:00:00Z",
+        "what_changed": "A researcher publicly demonstrated an unsafe tool action triggered by an indirect prompt.",
+        "why_it_matters": "Tool-using systems may need stronger isolation and authorization controls around untrusted content.",
+        "competing_interpretations": [
+          "The demonstration identifies a broadly relevant control gap.",
+          "The result may depend on an artificial test configuration."
+        ],
+        "position_changes": [],
+        "unresolved_questions": [
+          "Which production configurations remain vulnerable to the same path?"
+        ],
+        "evidence_span_id": "demo-evidence-indirect-prompt",
+        "priority": "high"
+      }
+    }
+  ]
+}

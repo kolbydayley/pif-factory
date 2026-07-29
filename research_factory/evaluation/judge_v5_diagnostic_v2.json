@@ -1,0 +1,170 @@
+{
+  "schema_version": "pif_judge_v5_diagnostic_fixture_v2",
+  "fixture_name": "side_free_support_and_neutral_alignment_diagnostic_v2",
+  "seed": "app-server-judge-v5-diagnostic-v2-fresh",
+  "case_count": 18,
+  "predecessor_case_content_reused": false,
+  "canary_case_keys": [
+    "diag2_actor",
+    "diag2_event_boundary",
+    "diag2_metric",
+    "diag2_unsupported_inference",
+    "diag2_paraphrase_coreference",
+    "diag2_pronunciation_coach_field"
+  ],
+  "truth_contract": {
+    "proposition_support_scope": "claim_text_only_against_source",
+    "structured_field_scope": "all_populated_event_fields_against_source",
+    "field_only_mutation_adds_unsupported_inference": false,
+    "claim_level_ungrounded_assertion_adds_specific_root_and_unsupported_inference": true,
+    "merge_split_only_fields": ["event_boundary", "evidence"],
+    "direct_material_conflict_relation": "non_equivalent",
+    "merge_split_only_relation": "partial"
+  },
+  "cases": [
+    {
+      "case_key": "diag2_actor",
+      "focus_field": "actor",
+      "source_excerpt": "The routing assistant flags duplicate stops.",
+      "event_a": {"event_type": "capability_claim", "claim": "The routing assistant flags duplicate stops.", "actor": "Routing assistant", "evidence": "The routing assistant flags duplicate stops."},
+      "event_b": {"event_type": "capability_claim", "claim": "The routing assistant flags duplicate stops.", "actor": "Dispatcher", "evidence": "The routing assistant flags duplicate stops."},
+      "expected": {"proposition_a": "supported", "proposition_b": "supported", "structured_a": "correct", "structured_b": "incorrect", "field_issues_a": [], "field_issues_b": ["actor"], "relation": "non_equivalent", "mismatch_fields": ["actor"]}
+    },
+    {
+      "case_key": "diag2_attribution",
+      "focus_field": "attribution",
+      "source_excerpt": "Nora says the supplier reported that fourteen clinics adopted the portal.",
+      "event_a": {"event_type": "adoption_signal", "claim": "The supplier reported adoption by fourteen clinics.", "speaker": "Nora", "reported_actor": "Supplier", "source_kind": "reported_claim", "evidence": "Nora says the supplier reported that fourteen clinics adopted the portal."},
+      "event_b": {"event_type": "adoption_signal", "claim": "The supplier reported adoption by fourteen clinics.", "speaker": "Nora", "source_kind": "direct_speaker_claim", "evidence": "Nora says the supplier reported that fourteen clinics adopted the portal."},
+      "expected": {"proposition_a": "supported", "proposition_b": "supported", "structured_a": "correct", "structured_b": "incorrect", "field_issues_a": [], "field_issues_b": ["attribution", "reported_actor"], "relation": "non_equivalent", "mismatch_fields": ["attribution", "reported_actor"]}
+    },
+    {
+      "case_key": "diag2_causal_mechanism",
+      "focus_field": "causal_mechanism",
+      "source_excerpt": "The index speeds searches by precomputing term locations.",
+      "event_a": {"event_type": "causal_claim", "claim": "The index speeds searches by precomputing term locations.", "causal_mechanism": "precomputing term locations", "evidence": "The index speeds searches by precomputing term locations."},
+      "event_b": {"event_type": "causal_claim", "claim": "The index speeds searches by compressing documents.", "causal_mechanism": "compressing documents", "evidence": "The index speeds searches by precomputing term locations."},
+      "expected": {"proposition_a": "supported", "proposition_b": "unsupported", "structured_a": "correct", "structured_b": "incorrect", "field_issues_a": [], "field_issues_b": ["causal_mechanism", "unsupported_inference"], "relation": "non_equivalent", "mismatch_fields": ["causal_mechanism", "unsupported_inference"]}
+    },
+    {
+      "case_key": "diag2_certainty",
+      "focus_field": "certainty",
+      "source_excerpt": "The team says the migration may finish in June.",
+      "event_a": {"event_type": "forecast", "claim": "The migration may finish in June.", "certainty": "moderate", "evidence": "The team says the migration may finish in June."},
+      "event_b": {"event_type": "forecast", "claim": "The migration will finish in June.", "certainty": "high", "evidence": "The team says the migration may finish in June."},
+      "expected": {"proposition_a": "supported", "proposition_b": "unsupported", "structured_a": "correct", "structured_b": "incorrect", "field_issues_a": [], "field_issues_b": ["certainty", "unsupported_inference"], "relation": "non_equivalent", "mismatch_fields": ["certainty", "unsupported_inference"]}
+    },
+    {
+      "case_key": "diag2_event_boundary",
+      "focus_field": "event_boundary",
+      "source_excerpt": "The monitor detects failed invoices. It sends a retry notice.",
+      "event_a": {"event_type": "capability_claim", "claim": "The monitor detects failed invoices and sends a retry notice.", "evidence": "The monitor detects failed invoices. It sends a retry notice."},
+      "event_b": {"event_type": "capability_claim", "claim": "The monitor detects failed invoices.", "evidence": "The monitor detects failed invoices."},
+      "expected": {"proposition_a": "supported", "proposition_b": "supported", "structured_a": "correct", "structured_b": "correct", "field_issues_a": [], "field_issues_b": [], "relation": "partial", "mismatch_fields": ["event_boundary", "evidence"]}
+    },
+    {
+      "case_key": "diag2_event_type",
+      "focus_field": "event_type",
+      "source_excerpt": "Operators expect organization-wide use of the scheduling agent next quarter.",
+      "event_a": {"event_type": "forecast", "claim": "Operators expect organization-wide use next quarter.", "actor": "Operators", "evidence": "Operators expect organization-wide use of the scheduling agent next quarter."},
+      "event_b": {"event_type": "measurement_claim", "claim": "Operators expect organization-wide use next quarter.", "actor": "Operators", "evidence": "Operators expect organization-wide use of the scheduling agent next quarter."},
+      "expected": {"proposition_a": "supported", "proposition_b": "supported", "structured_a": "correct", "structured_b": "incorrect", "field_issues_a": [], "field_issues_b": ["event_type"], "relation": "non_equivalent", "mismatch_fields": ["event_type"]}
+    },
+    {
+      "case_key": "diag2_evidence",
+      "focus_field": "evidence",
+      "source_excerpt": "The service encrypts stored files. It rotates keys every week.",
+      "event_a": {"event_type": "capability_claim", "claim": "The service encrypts stored files and rotates keys every week.", "evidence": "The service encrypts stored files. It rotates keys every week."},
+      "event_b": {"event_type": "capability_claim", "claim": "The service encrypts stored files.", "evidence": "The service encrypts stored files."},
+      "expected": {"proposition_a": "supported", "proposition_b": "supported", "structured_a": "correct", "structured_b": "correct", "field_issues_a": [], "field_issues_b": [], "relation": "partial", "mismatch_fields": ["event_boundary", "evidence"]}
+    },
+    {
+      "case_key": "diag2_metric",
+      "focus_field": "metric",
+      "source_excerpt": "The cache reduced p95 latency by 22 percent.",
+      "event_a": {"event_type": "measurement_claim", "claim": "The cache reduced p95 latency by 22 percent.", "metric": {"value": "22", "unit": "percent", "comparator": "by", "direction": "decrease", "raw_text": "22 percent"}, "evidence": "The cache reduced p95 latency by 22 percent."},
+      "event_b": {"event_type": "measurement_claim", "claim": "The cache reduced p95 latency by 40 percent.", "metric": {"value": "40", "unit": "percent", "comparator": "by", "direction": "decrease", "raw_text": "40 percent"}, "evidence": "The cache reduced p95 latency by 22 percent."},
+      "expected": {"proposition_a": "supported", "proposition_b": "unsupported", "structured_a": "correct", "structured_b": "incorrect", "field_issues_a": [], "field_issues_b": ["metric", "unsupported_inference"], "relation": "non_equivalent", "mismatch_fields": ["metric", "unsupported_inference"]}
+    },
+    {
+      "case_key": "diag2_negation",
+      "focus_field": "negation",
+      "source_excerpt": "The editor does not recommend auto-publishing drafts.",
+      "event_a": {"event_type": "stance_position", "claim": "The editor does not recommend auto-publishing drafts.", "actor": "Editor", "stance": "skeptical", "target": "auto-publishing drafts", "evidence": "The editor does not recommend auto-publishing drafts."},
+      "event_b": {"event_type": "stance_position", "claim": "The editor recommends auto-publishing drafts.", "actor": "Editor", "stance": "supportive", "target": "auto-publishing drafts", "evidence": "The editor does not recommend auto-publishing drafts."},
+      "expected": {"proposition_a": "supported", "proposition_b": "unsupported", "structured_a": "correct", "structured_b": "incorrect", "field_issues_a": [], "field_issues_b": ["negation", "stance", "unsupported_inference"], "relation": "non_equivalent", "mismatch_fields": ["negation", "stance", "unsupported_inference"]}
+    },
+    {
+      "case_key": "diag2_reported_actor",
+      "focus_field": "reported_actor",
+      "source_excerpt": "The moderator says the audit board found the classifier reliable.",
+      "event_a": {"event_type": "capability_claim", "claim": "The audit board found the classifier reliable.", "speaker": "Moderator", "reported_actor": "Audit board", "source_kind": "reported_claim", "evidence": "The moderator says the audit board found the classifier reliable."},
+      "event_b": {"event_type": "capability_claim", "claim": "The audit board found the classifier reliable.", "speaker": "Moderator", "reported_actor": "Customer council", "source_kind": "reported_claim", "evidence": "The moderator says the audit board found the classifier reliable."},
+      "expected": {"proposition_a": "supported", "proposition_b": "supported", "structured_a": "correct", "structured_b": "incorrect", "field_issues_a": [], "field_issues_b": ["reported_actor"], "relation": "non_equivalent", "mismatch_fields": ["reported_actor"]}
+    },
+    {
+      "case_key": "diag2_speaker",
+      "focus_field": "speaker",
+      "source_excerpt": "Ari says the compiler removes duplicate imports.",
+      "event_a": {"event_type": "capability_claim", "claim": "The compiler removes duplicate imports.", "speaker": "Ari", "evidence": "Ari says the compiler removes duplicate imports."},
+      "event_b": {"event_type": "capability_claim", "claim": "The compiler removes duplicate imports.", "speaker": "Morgan", "evidence": "Ari says the compiler removes duplicate imports."},
+      "expected": {"proposition_a": "supported", "proposition_b": "supported", "structured_a": "correct", "structured_b": "incorrect", "field_issues_a": [], "field_issues_b": ["speaker"], "relation": "non_equivalent", "mismatch_fields": ["speaker"]}
+    },
+    {
+      "case_key": "diag2_stance",
+      "focus_field": "stance",
+      "source_excerpt": "The researcher opposes using generated citations in final reports.",
+      "event_a": {"event_type": "stance_position", "claim": "The researcher opposes generated citations in final reports.", "actor": "Researcher", "stance": "opposed", "target": "generated citations", "evidence": "The researcher opposes using generated citations in final reports."},
+      "event_b": {"event_type": "stance_position", "claim": "The researcher supports generated citations in final reports.", "actor": "Researcher", "stance": "supportive", "target": "generated citations", "evidence": "The researcher opposes using generated citations in final reports."},
+      "expected": {"proposition_a": "supported", "proposition_b": "unsupported", "structured_a": "correct", "structured_b": "incorrect", "field_issues_a": [], "field_issues_b": ["stance", "unsupported_inference"], "relation": "non_equivalent", "mismatch_fields": ["stance", "unsupported_inference"]}
+    },
+    {
+      "case_key": "diag2_target",
+      "focus_field": "target",
+      "source_excerpt": "The policy covers employee access logs.",
+      "event_a": {"event_type": "policy_position", "claim": "The policy covers employee access logs.", "target": "employee access logs", "evidence": "The policy covers employee access logs."},
+      "event_b": {"event_type": "policy_position", "claim": "The policy covers customer payment records.", "target": "customer payment records", "evidence": "The policy covers employee access logs."},
+      "expected": {"proposition_a": "supported", "proposition_b": "unsupported", "structured_a": "correct", "structured_b": "incorrect", "field_issues_a": [], "field_issues_b": ["target", "unsupported_inference"], "relation": "non_equivalent", "mismatch_fields": ["target", "unsupported_inference"]}
+    },
+    {
+      "case_key": "diag2_temporal_horizon",
+      "focus_field": "temporal_horizon",
+      "source_excerpt": "The agency plans to deploy the sensor next winter.",
+      "event_a": {"event_type": "forecast", "claim": "The agency plans to deploy the sensor next winter.", "temporal_horizon": "next winter", "evidence": "The agency plans to deploy the sensor next winter."},
+      "event_b": {"event_type": "forecast", "claim": "The agency plans to deploy the sensor next summer.", "temporal_horizon": "next summer", "evidence": "The agency plans to deploy the sensor next winter."},
+      "expected": {"proposition_a": "supported", "proposition_b": "unsupported", "structured_a": "correct", "structured_b": "incorrect", "field_issues_a": [], "field_issues_b": ["temporal_horizon", "unsupported_inference"], "relation": "non_equivalent", "mismatch_fields": ["temporal_horizon", "unsupported_inference"]}
+    },
+    {
+      "case_key": "diag2_unsupported_inference",
+      "focus_field": "unsupported_inference",
+      "source_excerpt": "The dashboard shows weekly active users.",
+      "event_a": {"event_type": "measurement_claim", "claim": "The dashboard shows weekly active users.", "target": "weekly active users", "evidence": "The dashboard shows weekly active users."},
+      "event_b": {"event_type": "capability_claim", "claim": "The dashboard shows weekly active users and predicts churn.", "target": "churn prediction", "evidence": "The dashboard shows weekly active users."},
+      "expected": {"proposition_a": "supported", "proposition_b": "unsupported", "structured_a": "correct", "structured_b": "incorrect", "field_issues_a": [], "field_issues_b": ["target", "unsupported_inference"], "relation": "non_equivalent", "mismatch_fields": ["target", "unsupported_inference"]}
+    },
+    {
+      "case_key": "diag2_paraphrase_coreference",
+      "focus_field": "paraphrase_coreference",
+      "source_excerpt": "Leah introduced the assistant. She said it organizes meeting notes.",
+      "event_a": {"event_type": "capability_claim", "claim": "Leah says the assistant organizes meeting notes.", "speaker": "Leah", "actor": "Assistant", "evidence": "Leah introduced the assistant. She said it organizes meeting notes."},
+      "event_b": {"event_type": "capability_claim", "claim": "According to Leah, it arranges notes from meetings.", "speaker": "Leah", "actor": "Assistant", "evidence": "Leah introduced the assistant. She said it organizes meeting notes."},
+      "expected": {"proposition_a": "supported", "proposition_b": "supported", "structured_a": "correct", "structured_b": "correct", "field_issues_a": [], "field_issues_b": [], "relation": "equivalent", "mismatch_fields": []}
+    },
+    {
+      "case_key": "diag2_pronunciation_coach_field",
+      "focus_field": "pronunciation_coach_fixture_correction",
+      "source_excerpt": "The pronunciation coach can identify stressed syllables.",
+      "event_a": {"event_type": "capability_claim", "claim": "The pronunciation coach can identify stressed syllables.", "actor": "Pronunciation coach", "evidence": "The pronunciation coach can identify stressed syllables."},
+      "event_b": {"event_type": "capability_claim", "claim": "The pronunciation coach can identify stressed syllables.", "actor": "Instructor", "speaker": "Instructor", "evidence": "The pronunciation coach can identify stressed syllables."},
+      "expected": {"proposition_a": "supported", "proposition_b": "supported", "structured_a": "correct", "structured_b": "incorrect", "field_issues_a": [], "field_issues_b": ["actor", "speaker"], "relation": "non_equivalent", "mismatch_fields": ["actor", "speaker"]}
+    },
+    {
+      "case_key": "diag2_exact_evidence_not_support",
+      "focus_field": "exact_evidence_not_sufficient",
+      "source_excerpt": "The filter blocks files with known malware signatures.",
+      "event_a": {"event_type": "capability_claim", "claim": "The filter blocks files with known malware signatures.", "target": "known malware signatures", "evidence": "The filter blocks files with known malware signatures."},
+      "event_b": {"event_type": "capability_claim", "claim": "The filter blocks every malicious file.", "target": "every malicious file", "certainty": "high", "evidence": "The filter blocks files with known malware signatures."},
+      "expected": {"proposition_a": "supported", "proposition_b": "unsupported", "structured_a": "correct", "structured_b": "incorrect", "field_issues_a": [], "field_issues_b": ["certainty", "target", "unsupported_inference"], "relation": "non_equivalent", "mismatch_fields": ["certainty", "target", "unsupported_inference"]}
+    }
+  ]
+}

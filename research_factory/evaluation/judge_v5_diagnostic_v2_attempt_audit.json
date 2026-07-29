@@ -1,0 +1,53 @@
+{
+  "schema_version": "pif_judge_v5_diagnostic_v2_attempt_audit_v1",
+  "audit_status": "completed_before_diagnostic_v3_semantic_calls",
+  "source_records": {
+    "runtime_lock_v7": {"path": "work/app-server-development-v2/unattended-runtime-lock-v7.json", "sha256": "9e133bc77b8f6a7c7733ebaae8f4f69029510609e2d4e9e592a6d76e2c4363c9"},
+    "launch_receipt_v7": {"path": "work/app-server-development-v2/unattended-control-v7/launch-receipt-v7.json", "sha256": "cac21daef4ec4f7842a50e38b5c24e1917fdc2187dd736a27bc8fe7f33264dac"},
+    "terminal_receipt_v7": {"path": "work/app-server-development-v2/unattended-control-v7/terminal-receipt-v7.json", "sha256": "b1a61f0f4778f8cacf54b1bb147c4960d284a0531aeefa60831cb35922523173"},
+    "diagnostic_v2_spec": {"path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v2/diagnostic-spec.json", "sha256": "012f905486a4c60faa33c4ce53cd43a38ef070a5b546bec0809a05e907432869"},
+    "diagnostic_v2_terminal": {"path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v2/terminal.json", "sha256": "9c10aad4f023b4375b4f78e7951e41da6e259c482529a26d8bd4e644c4753290"},
+    "diagnostic_v2_failure": {"path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v2/failure.json", "sha256": "55b1c1036dd7e9d67974a0bade4a5847ce1b5c79de9739d9ad36ef5c625d2996"},
+    "diagnostic_v2_canary_output": {"path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v2/turns/neutral-alignment-canary/output.private.json", "sha256": "b45c728ea0bbcd4f088817fc897aca33fc394ff172c77ccb5da69274df55d2cf"},
+    "diagnostic_fixture_v2": {"path": "research_factory/evaluation/judge_v5_diagnostic_v2.json", "sha256": "9cf3b5d4b82694d7efa5d784ceca5bbc4dce0fbda7e48e24e8404d6f3ad59021"}
+  },
+  "attempt_result": {
+    "classification": "infrastructure_or_judge_attempt_failed",
+    "transport_failed": false,
+    "quality_scored": false,
+    "completed_turn_count": 3,
+    "failed_turn_count": 0,
+    "unknown_usage_turn_count": 0,
+    "sidecar_usage_status": "complete",
+    "sidecar_total_tokens": 107187,
+    "terminal_usage_status": "unknown",
+    "retry_count": 0,
+    "full_calibration_authorized": false
+  },
+  "failure_forensics": {
+    "failed_stage": "neutral_alignment_canary_exact_source_evidence_validation",
+    "invalid_checklist_row_count": 29,
+    "invalid_source_span_count": 34,
+    "affected_canary_case_count": 6,
+    "semantic_checklist_or_relation_score_computed": false,
+    "root_cause": "The model placed witness or event text into evidence_spans fields reserved for exact source substrings. The schema did not separately represent source evidence and witness evidence.",
+    "provider_or_transport_failure": false
+  },
+  "diagnostic_v3_recovery_contract": {
+    "fixture_truth_changed": false,
+    "fixture_content_changed": false,
+    "support_protocol_changed": false,
+    "alignment_evidence_envelope_changed": true,
+    "source_evidence_field": "source_evidence_spans",
+    "witness_evidence_field": "witness_evidence_ids",
+    "source_evidence_rule": "every nonempty span must be an exact source substring",
+    "witness_evidence_rule": "every checklist row must cite exactly the two paired opaque witness IDs",
+    "all_v3_turns_must_run_fresh": true,
+    "diagnostic_v2_output_reuse_allowed": false,
+    "diagnostic_v2_replay_allowed": false,
+    "new_immutable_root_required": true,
+    "full_calibration_remains_unauthorized": true
+  },
+  "semantic_model_calls_performed_during_audit": 0,
+  "privacy": "hashes_counts_usage_failure_classes_and_schema_contracts_only"
+}

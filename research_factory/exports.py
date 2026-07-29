@@ -7,10 +7,18 @@ from pathlib import Path
 from typing import Any
 
 from .paths import exports_dir
-from .util import now_iso, stable_id, write_text_atomic
+from .util import now_iso, parse_datetime, stable_id, write_text_atomic
 
 
-def export_trend_report(conn, *, topic: str, window: str, output: str | None = None) -> Path:
+def export_trend_report(
+    conn,
+    *,
+    topic: str,
+    window: str,
+    output: str | None = None,
+    as_of: str | None = None,
+) -> Path:
+    window_start, window_end, window_bucket = _window_bounds(conn, window=window, as_of=as_of)
     rows = conn.execute(
         """
         SELECT labels.*, segments.episode_id, episodes.title, episodes.published_at, sources.name AS source_name
@@ -19,8 +27,11 @@ def export_trend_report(conn, *, topic: str, window: str, output: str | None = N
         JOIN episodes ON episodes.id = segments.episode_id
         JOIN sources ON sources.id = episodes.source_id
         WHERE labels.status = 'ready'
+          AND datetime(episodes.published_at) >= datetime(?)
+          AND datetime(episodes.published_at) <= datetime(?)
         ORDER BY episodes.published_at ASC
-        """
+        """,
+        (window_start, window_end),
     ).fetchall()
     bucket_counts: Counter[str] = Counter()
     evidence: list[dict[str, Any]] = []
@@ -67,6 +78,8 @@ def export_trend_report(conn, *, topic: str, window: str, output: str | None = N
         JOIN episodes ON episodes.id = segments.episode_id
         JOIN sources ON sources.id = episodes.source_id
         WHERE labels.status = 'ready'
+          AND datetime(episodes.published_at) >= datetime(?)
+          AND datetime(episodes.published_at) <= datetime(?)
           AND (
             LOWER(coded_observations.code_id) LIKE ?
             OR LOWER(coded_observations.code_family) LIKE ?
@@ -74,7 +87,13 @@ def export_trend_report(conn, *, topic: str, window: str, output: str | None = N
           )
         ORDER BY episodes.published_at ASC
         """,
-        (f"%{normalized_topic}%", f"%{normalized_topic}%", f"%{topic.lower()}%"),
+        (
+            window_start,
+            window_end,
+            f"%{normalized_topic}%",
+            f"%{normalized_topic}%",
+            f"%{topic.lower()}%",
+        ),
     ).fetchall()
     for row in observation_rows:
         bucket = _bucket(row["published_at"], window)
@@ -103,6 +122,8 @@ def export_trend_report(conn, *, topic: str, window: str, output: str | None = N
         "",
         f"- Generated: `{now_iso()}`",
         f"- Window: `{window}`",
+        f"- Window bucket: `{window_bucket}`",
+        f"- Source cutoff: `{window_start}` through `{window_end}`",
         f"- Labels scanned: `{len(rows)}`",
         f"- Evidence segments: `{len(evidence)}`",
         "",
@@ -269,60 +290,110 @@ def export_signal_report(conn, *, window: str, limit: int, output: str | None = 
     return path
 
 
-def export_actor_stance_report(conn, *, window: str, output: str | None = None) -> Path:
+def export_actor_stance_report(
+    conn,
+    *,
+    window: str,
+    output: str | None = None,
+    as_of: str | None = None,
+) -> Path:
+    window_start, window_end, window_bucket = _window_bounds(conn, window=window, as_of=as_of)
     rows = conn.execute(
         """
-        SELECT
-          actor_positions.actor_name,
-          actor_positions.actor_type,
-          actor_positions.actor_affiliation,
-          actor_positions.concept_name,
-          actor_positions.stance,
-          actor_positions.claim_type,
-          actor_positions.certainty,
-          actor_positions.temporal_horizon,
-          actor_positions.confidence,
-          actor_positions.discourse_event_id,
-          episodes.published_at,
-          sources.name AS source_name
-        FROM actor_positions
-        JOIN segments ON segments.id = actor_positions.segment_id
-        JOIN episodes ON episodes.id = segments.episode_id
-        JOIN sources ON sources.id = segments.source_id
-        ORDER BY episodes.published_at DESC, actor_positions.created_at DESC
-        LIMIT 500
-        """
+        WITH subject_observations AS (
+          SELECT
+            subject_id, canonical_person_id, speaker_name, stance, published_at,
+            source_id, episode_id, confidence, 'claim' AS observation_kind, id AS observation_id
+          FROM claim_position_observations
+          UNION ALL
+          SELECT
+            subject_id, canonical_person_id, speaker_name, stance, published_at,
+            source_id, episode_id, confidence, 'event' AS observation_kind, id AS observation_id
+          FROM claim_subject_event_observations
+        )
+        SELECT claim_subjects.subject_text AS claim_subject, subject_observations.*
+        FROM subject_observations
+        JOIN claim_subjects ON claim_subjects.id = subject_observations.subject_id
+        WHERE subject_observations.published_at IS NOT NULL
+          AND datetime(subject_observations.published_at) >= datetime(?)
+          AND datetime(subject_observations.published_at) <= datetime(?)
+        ORDER BY subject_observations.published_at DESC, claim_subjects.subject_text
+        LIMIT 5000
+        """,
+        (window_start, window_end),
     ).fetchall()
-    grouped: Counter[tuple[str, str, str]] = Counter()
-    traces: dict[tuple[str, str, str], list[str]] = defaultdict(list)
+    grouped: dict[tuple[str, str, str, str, str], dict[str, Any]] = {}
     for row in rows:
         bucket = _bucket(row["published_at"], window)
-        actor = row["actor_affiliation"] or row["actor_name"] or "unknown"
-        concept = row["concept_name"] or "unknown_concept"
-        stance = row["stance"] or "unknown"
-        key = (bucket, actor, concept, stance)
-        grouped[key] += 1
-        traces[key].append(row["discourse_event_id"])
+        speaker = row["speaker_name"] or "unknown"
+        resolution = "canonical_person" if row["canonical_person_id"] else "speaker_fallback"
+        stance = row["stance"] or "unspecified"
+        key = (bucket, row["claim_subject"], speaker, resolution, stance)
+        item = grouped.setdefault(
+            key,
+            {
+                "observation_count": 0,
+                "claim_observation_count": 0,
+                "event_observation_count": 0,
+                "source_ids": set(),
+                "episode_ids": set(),
+                "confidence_total": 0.0,
+                "confidence_count": 0,
+            },
+        )
+        item["observation_count"] += 1
+        item[f"{row['observation_kind']}_observation_count"] += 1
+        if row["source_id"]:
+            item["source_ids"].add(row["source_id"])
+        if row["episode_id"]:
+            item["episode_ids"].add(row["episode_id"])
+        if row["confidence"] is not None:
+            item["confidence_total"] += float(row["confidence"])
+            item["confidence_count"] += 1
     lines = [
-        "# Actor Stance Report",
+        "# Claim Subject Expert Stance Report",
         "",
         f"- Generated: `{now_iso()}`",
         f"- Window: `{window}`",
-        "- Evidence policy: trace IDs only; no full transcript text.",
+        f"- Window bucket: `{window_bucket}`",
+        f"- Source cutoff: `{window_start}` through `{window_end}`",
+        "- Primary model: Claim Subject + Proposition Variant + Position/Event Observation.",
+        "- Evidence policy: observation IDs only; no full transcript text.",
+        "- Compatibility note: this replaces the old actor/concept stance report while preserving the CLI command name.",
         "",
-        "| Window | Actor | Concept | Stance | Count | Trace |",
-        "| --- | --- | --- | --- | ---: | --- |",
+        "| Window | Subject | Speaker | Resolution | Stance | Observations | Claims | Events | Sources | Episodes | Confidence |",
+        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
-    for (bucket, actor, concept, stance), count in grouped.most_common(200):
-        lines.append(f"| {bucket} | {actor} | {concept} | {stance} | {count} | {', '.join(f'`{item}`' for item in traces[(bucket, actor, concept, stance)][:3])} |")
+    ranked = sorted(
+        grouped.items(),
+        key=lambda pair: (-int(pair[1]["observation_count"]), pair[0]),
+    )[:500]
+    for (bucket, subject, speaker, resolution, stance), item in ranked:
+        confidence = (
+            round(item["confidence_total"] / item["confidence_count"], 3)
+            if item["confidence_count"]
+            else 0
+        )
+        lines.append(
+            f"| {bucket} | {subject} | {speaker} | {resolution} | {stance} | "
+            f"{item['observation_count']} | {item['claim_observation_count']} | {item['event_observation_count']} | "
+            f"{len(item['source_ids'])} | {len(item['episode_ids'])} | {confidence} |"
+        )
     if not grouped:
-        lines.append("| none | none | none | none | 0 | No actor positions have landed yet. |")
+        lines.append("| none | none | none | none | none | 0 | 0 | 0 | 0 | 0 | 0 |")
     path = Path(output).expanduser().resolve() if output else exports_dir() / f"actor-stance-report-{window}.md"
     write_text_atomic(path, "\n".join(lines) + "\n")
     return path
 
 
-def export_term_drift_report(conn, *, window: str, output: str | None = None) -> Path:
+def export_term_drift_report(
+    conn,
+    *,
+    window: str,
+    output: str | None = None,
+    as_of: str | None = None,
+) -> Path:
+    window_start, window_end, window_bucket = _window_bounds(conn, window=window, as_of=as_of)
     rows = conn.execute(
         """
         SELECT
@@ -338,9 +409,12 @@ def export_term_drift_report(conn, *, window: str, output: str | None = None) ->
         JOIN segments ON segments.id = term_usages.segment_id
         JOIN episodes ON episodes.id = segments.episode_id
         JOIN sources ON sources.id = segments.source_id
+        WHERE datetime(episodes.published_at) >= datetime(?)
+          AND datetime(episodes.published_at) <= datetime(?)
         ORDER BY episodes.published_at DESC
         LIMIT 1000
-        """
+        """,
+        (window_start, window_end),
     ).fetchall()
     grouped: Counter[tuple[str, str, str]] = Counter()
     traces: dict[tuple[str, str, str], list[str]] = defaultdict(list)
@@ -353,17 +427,25 @@ def export_term_drift_report(conn, *, window: str, output: str | None = None) ->
         traces[key].append(row["discourse_event_id"])
     signal_rows = conn.execute(
         """
-        SELECT signal_type, concept_name, term_a, term_b, window_start, window_end, score, support, id
+        SELECT shift_signals.signal_type, shift_signals.concept_name, shift_signals.term_a,
+               shift_signals.term_b, shift_signals.window_start, shift_signals.window_end,
+               shift_signals.score, shift_signals.support, shift_signals.id
         FROM shift_signals
-        ORDER BY score DESC, support DESC, created_at DESC
+        JOIN signal_runs ON signal_runs.id = shift_signals.signal_run_id
+        WHERE signal_runs.window = ?
+          AND shift_signals.window_end = ?
+        ORDER BY shift_signals.score DESC, shift_signals.support DESC, shift_signals.created_at DESC
         LIMIT 100
-        """
+        """,
+        (window, window_bucket),
     ).fetchall()
     lines = [
         "# Term Drift Report",
         "",
         f"- Generated: `{now_iso()}`",
         f"- Window: `{window}`",
+        f"- Window bucket: `{window_bucket}`",
+        f"- Source cutoff: `{window_start}` through `{window_end}`",
         "- Evidence policy: trace IDs only; no full transcript text.",
         "",
         "## Term Timeline",
@@ -386,10 +468,28 @@ def export_term_drift_report(conn, *, window: str, output: str | None = None) ->
     return path
 
 
-def export_narrative_map(conn, *, window: str, output: str | None = None) -> Path:
-    graph: dict[str, Any] = {"type": "narrative_map", "window": window, "generated_at": now_iso(), "nodes": [], "edges": [], "signals": []}
+def export_narrative_map(
+    conn,
+    *,
+    window: str,
+    output: str | None = None,
+    as_of: str | None = None,
+) -> Path:
+    window_start, window_end, window_bucket = _window_bounds(conn, window=window, as_of=as_of)
+    graph: dict[str, Any] = {
+        "type": "narrative_map",
+        "window": window,
+        "window_bucket": window_bucket,
+        "window_start": window_start,
+        "as_of": window_end,
+        "generated_at": now_iso(),
+        "nodes": [],
+        "edges": [],
+        "signals": [],
+    }
     nodes: dict[str, dict[str, Any]] = {}
     edges: Counter[tuple[str, str, str]] = Counter()
+    edge_windows: dict[tuple[str, str, str], Counter[str]] = defaultdict(Counter)
     for row in conn.execute(
         """
         SELECT
@@ -406,30 +506,63 @@ def export_narrative_map(conn, *, window: str, output: str | None = None) -> Pat
         FROM discourse_events
         JOIN segments ON segments.id = discourse_events.segment_id
         JOIN episodes ON episodes.id = segments.episode_id
+        WHERE datetime(episodes.published_at) >= datetime(?)
+          AND datetime(episodes.published_at) <= datetime(?)
         ORDER BY episodes.published_at DESC
         LIMIT 1000
-        """
+        """,
+        (window_start, window_end),
     ).fetchall():
         concept = row["candidate_concept"] or "unknown_concept"
         actor = row["actor_affiliation"] or row["actor_name"] or "unknown_actor"
         nodes[concept] = {"id": concept, "label": concept, "kind": "concept"}
         nodes[actor] = {"id": actor, "label": actor, "kind": "actor"}
-        edges[(actor, concept, row["event_type"] or "discusses")] += 1
+        event_bucket = _bucket(row["published_at"], window)
+        edge_key = (actor, concept, row["event_type"] or "discusses")
+        edges[edge_key] += 1
+        edge_windows[edge_key][event_bucket] += 1
         for term in json.loads(row["surface_terms_json"] or "[]"):
             nodes[term] = {"id": term, "label": term, "kind": "term"}
-            edges[(concept, term, "uses_term")] += 1
+            edge_key = (concept, term, "uses_term")
+            edges[edge_key] += 1
+            edge_windows[edge_key][event_bucket] += 1
         for product in json.loads(row["product_names_json"] or "[]"):
             nodes[product] = {"id": product, "label": product, "kind": "product"}
-            edges[(concept, product, "mentions_product")] += 1
+            edge_key = (concept, product, "mentions_product")
+            edges[edge_key] += 1
+            edge_windows[edge_key][event_bucket] += 1
         for org in json.loads(row["organizations_json"] or "[]"):
             nodes[org] = {"id": org, "label": org, "kind": "org"}
-            edges[(org, concept, "associated_with")] += 1
+            edge_key = (org, concept, "associated_with")
+            edges[edge_key] += 1
+            edge_windows[edge_key][event_bucket] += 1
     graph["nodes"] = list(nodes.values())
-    graph["edges"] = [{"source": a, "target": b, "kind": kind, "weight": weight} for (a, b, kind), weight in edges.items()]
+    graph["edges"] = [
+        {
+            "source": a,
+            "target": b,
+            "kind": kind,
+            "weight": weight,
+            "window_counts": dict(sorted(edge_windows[(a, b, kind)].items())),
+        }
+        for (a, b, kind), weight in edges.items()
+    ]
     graph["signals"] = [
         dict(row)
         for row in conn.execute(
-            "SELECT signal_type, slice_key, concept_name, term_a, term_b, window_start, window_end, score, support, status FROM shift_signals ORDER BY score DESC LIMIT 200"
+            """
+            SELECT shift_signals.signal_type, shift_signals.slice_key, shift_signals.concept_name,
+                   shift_signals.term_a, shift_signals.term_b, shift_signals.window_start,
+                   shift_signals.window_end, shift_signals.score, shift_signals.support,
+                   shift_signals.status
+            FROM shift_signals
+            JOIN signal_runs ON signal_runs.id = shift_signals.signal_run_id
+            WHERE signal_runs.window = ?
+              AND shift_signals.window_end = ?
+            ORDER BY shift_signals.score DESC
+            LIMIT 200
+            """,
+            (window, window_bucket),
         ).fetchall()
     ]
     path = Path(output).expanduser().resolve() if output else exports_dir() / f"narrative-map-{window}.json"
@@ -549,4 +682,37 @@ def _bucket(value: str | None, window: str) -> str:
         return f"{year}-W{week:02d}"
     if window == "day":
         return parsed.date().isoformat()
+    if window == "quarter":
+        return f"{parsed.year}-Q{((parsed.month - 1) // 3) + 1}"
     return f"{parsed.year}-{parsed.month:02d}"
+
+
+def _window_bounds(conn, *, window: str, as_of: str | None = None) -> tuple[str, str, str]:
+    if window not in {"day", "week", "month", "quarter"}:
+        raise ValueError("window must be day, week, month, or quarter")
+    anchor = parse_datetime(as_of)
+    if as_of and anchor is None:
+        raise ValueError("as_of must be an ISO-8601 or RFC-2822 timestamp")
+    if anchor is None:
+        latest = conn.execute(
+            "SELECT MAX(datetime(published_at)) AS published_at FROM episodes WHERE published_at IS NOT NULL"
+        ).fetchone()["published_at"]
+        anchor = parse_datetime(latest)
+    if anchor is None:
+        anchor = parse_datetime(now_iso())
+    assert anchor is not None
+    if window == "day":
+        start = anchor.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif window == "week":
+        start = (anchor - dt.timedelta(days=anchor.weekday())).replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+    elif window == "quarter":
+        start_month = ((anchor.month - 1) // 3) * 3 + 1
+        start = anchor.replace(month=start_month, day=1, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        start = anchor.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return start.isoformat(), anchor.isoformat(), _bucket(anchor.isoformat(), window)

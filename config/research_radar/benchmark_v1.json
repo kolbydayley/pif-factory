@@ -1,0 +1,51 @@
+{
+  "benchmark_id": "research-radar-representative-v1",
+  "schema_version": "1",
+  "status": "definition_frozen_items_unselected",
+  "total_items": 30,
+  "splits": {
+    "development": 20,
+    "holdout": 10
+  },
+  "format_counts": {
+    "podcast": 6,
+    "official_post_or_documentation": 6,
+    "paper": 6,
+    "news_or_public_newsletter": 6,
+    "public_video": 6
+  },
+  "coverage": {
+    "minimum_developments": 8,
+    "minimum_multi_source_position_histories": 4
+  },
+  "extraction_policy": {
+    "maximum_candidate_configurations": 2,
+    "freeze_before_holdout": true,
+    "holdout_untouched_until_freeze": true
+  },
+  "acceptance": {
+    "material_statements_with_resolving_evidence": 1.0,
+    "minimum_attribution_temporal_accuracy": 0.95,
+    "minimum_entity_and_position_change_accuracy": 0.9,
+    "maximum_unsupported_verified_statements": 0,
+    "maximum_duplicate_development_rate": 0.1
+  },
+  "shadow_acceptance": {
+    "duration_days": 7,
+    "minimum_retained_or_useful_rate": 0.8,
+    "maximum_critical_source_misattributions": 0,
+    "maximum_dashboard_query_seconds": 2.0,
+    "budget_compliance_required": true
+  },
+  "promotion_receipt_required_fields": [
+    "benchmark_version",
+    "model_prompt_version",
+    "source_set",
+    "quality_results",
+    "token_usage",
+    "wall_time",
+    "failures",
+    "release_id",
+    "signature"
+  ]
+}

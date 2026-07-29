@@ -1,0 +1,120 @@
+{
+  "schema_version": "pif_judge_v5_diagnostic_v1_truth_audit_v1",
+  "audit_status": "completed_before_diagnostic_v2_semantic_calls",
+  "source_records": {
+    "diagnostic_v1_fixture": {
+      "path": "research_factory/evaluation/judge_v5_diagnostic_v1.json",
+      "sha256": "b0826fb8e05886a2c4ff0578d48b22fdd115c856abc79dad5a1c79af64367bd5",
+      "size_bytes": 17170
+    },
+    "diagnostic_v1_terminal": {
+      "path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v1/terminal.json",
+      "sha256": "d676497bb968039b11444e18e0b298b7224bd3230e3302ae4e4cb0db86eea512",
+      "size_bytes": 7041
+    },
+    "diagnostic_v1_score": {
+      "path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v1/diagnostic-score.json",
+      "sha256": "2736c6684cc1d21cd5ae63064a6a1d41d9e531ce6372f2886d86bee15913d1ee",
+      "size_bytes": 1638
+    },
+    "diagnostic_v1_terminal_receipt": {
+      "path": "work/app-server-development-v2/unattended-control-v6/terminal-receipt-v6.json",
+      "sha256": "1eb7220dafdf4eb14e48c62f8ff4e33657fd9c5571187cdda5b755ada91caec2",
+      "size_bytes": 9317
+    },
+    "diagnostic_v2_fresh_fixture": {
+      "path": "research_factory/evaluation/judge_v5_diagnostic_v2.json",
+      "sha256": "9cf3b5d4b82694d7efa5d784ceca5bbc4dce0fbda7e48e24e8404d6f3ad59021",
+      "size_bytes": 17419
+    }
+  },
+  "diagnostic_v1_measured_result": {
+    "classification": "judge_diagnostic_quality_gate_not_passed",
+    "transport_failed": false,
+    "completed_turn_count": 4,
+    "failed_turn_count": 0,
+    "unknown_usage_turn_count": 0,
+    "retry_count": 0,
+    "usage_status": "complete",
+    "total_tokens": 138211,
+    "support_sensitivity": 0.724138,
+    "support_specificity": 1.0,
+    "structured_field_accuracy": 0.944444,
+    "field_diagnostic_f1": 0.921053,
+    "order_bias": 0.666667,
+    "full_calibration_authorized": false
+  },
+  "fixture_truth_defects": [
+    {
+      "case_key": "diag_event_boundary",
+      "defect": "not_merge_split_only",
+      "detail": "The merged event turns an Analysts-say clause into an unattributed direct assertion, so attribution and reported-actor truth also change.",
+      "v1_truth_admissible": false
+    },
+    {
+      "case_key": "diag_evidence",
+      "defect": "not_merge_split_only",
+      "detail": "The merged event turns a Researchers-say clause into an unattributed direct assertion, so attribution truth also changes.",
+      "v1_truth_admissible": false
+    },
+    {
+      "case_key": "diag_exact_evidence_not_support",
+      "defect": "missing_structured_field_error",
+      "detail": "The unsupported event adds certainty=high as well as an unsupported target, but v1 truth lists target only.",
+      "v1_truth_admissible": false
+    },
+    {
+      "case_key": "field_only_mutation_family",
+      "defect": "unsupported_inference_precedence_overlabel",
+      "detail": "Actor, attribution, event_type, reported_actor, speaker, and language-tutor field-only mutations do not change claim_text and therefore require only minimal structured root fields, not unsupported_inference.",
+      "affected_case_keys": [
+        "diag_actor",
+        "diag_attribution",
+        "diag_event_type",
+        "diag_reported_actor",
+        "diag_speaker",
+        "diag_language_tutor_field"
+      ],
+      "v1_truth_admissible": false
+    }
+  ],
+  "protocol_defects": [
+    {
+      "defect": "proposition_and_structured_event_underseparated_in_input",
+      "evidence": "The support pass marked both otherwise-supported witnesses unsupported in speaker, reported_actor, and attribution field-only cases while separately marking the correct structured witness correct.",
+      "required_fix": "Present claim_text in an explicit proposition object and the complete event in a separate structured_event object; require proposition verdict to ignore every structured field while the field verdict still sees the whole event."
+    },
+    {
+      "defect": "canary_changed_multiple_serialization_axes",
+      "evidence": "The v1 canary simultaneously reversed witness order, checklist-field order, and decision-enum order, producing four of six changed cases.",
+      "required_fix": "Permute anonymous case and witness order only; keep rubric, checklist, and decision order fixed."
+    }
+  ],
+  "admissibility": {
+    "diagnostic_v1_remains_immutable_intent_to_treat_evidence": true,
+    "diagnostic_v1_is_admissible_as_transport_and_accounting_evidence": true,
+    "diagnostic_v1_is_admissible_as_final_judge_quality_evidence": false,
+    "diagnostic_v1_model_outputs_may_be_reused_as_passing_evidence": false,
+    "diagnostic_v1_semantic_turns_may_be_replayed": false,
+    "diagnostic_v2_requires_new_immutable_root": true,
+    "full_calibration_remains_unauthorized": true
+  },
+  "diagnostic_v2_fixture_contract": {
+    "fresh_case_count": 18,
+    "v1_case_keys_reused": 0,
+    "all_fifteen_mismatch_fields_covered": true,
+    "field_only_mutation_proposition_truth": "supported",
+    "field_only_mutation_unsupported_inference_truth": "same",
+    "claim_level_ungrounded_assertion_truth": "specific_root_plus_unsupported_inference",
+    "merge_split_only_truth": "partial_with_event_boundary_plus_evidence",
+    "exact_evidence_case_structured_issues": [
+      "certainty",
+      "target",
+      "unsupported_inference"
+    ],
+    "canary_case_count": 6,
+    "support_ab_ba_allowed": false
+  },
+  "semantic_model_calls_performed_during_audit": 0,
+  "privacy": "case_keys_hashes_counts_metrics_and_classifications_no_private_transcripts_or_outputs"
+}

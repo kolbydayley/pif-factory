@@ -178,8 +178,18 @@ def groom_identity_graph(conn, *, model: str, pilot_id: str | None = None, limit
 
     metrics.update(_build_person_concept_edges(conn, event_filter=event_filter, ts=ts))
     metrics.update(_build_person_person_mentions(conn, person_lookup=person_lookup, event_filter=event_filter, ts=ts))
-    score_run_id = _build_authority_scores(conn, graph_run_model=model, event_filter=event_filter, ts=ts)
-    metrics["graph_score_runs_created"] += 1
+    authority_status = _authority_score_eligibility(conn)
+    score_run_id = None
+    if authority_status["eligible"]:
+        score_run_id = _build_authority_scores(
+            conn,
+            graph_run_model=model,
+            event_filter=event_filter,
+            ts=ts,
+        )
+        metrics["graph_score_runs_created"] += 1
+    else:
+        metrics["graph_score_runs_skipped_untrusted_inputs"] += 1
 
     conn.execute(
         """
@@ -197,7 +207,60 @@ def groom_identity_graph(conn, *, model: str, pilot_id: str | None = None, limit
         "model": model,
         "pilot_id": pilot_id,
         "review_status": "deterministic_candidate_bootstrap_pending_gpt55_judge",
+        "authority_score_status": authority_status,
         "metrics": dict(metrics),
+    }
+
+
+def _authority_score_eligibility(conn) -> dict[str, Any]:
+    """Fail closed until identity and outcome inputs are accepted and release-scoped.
+
+    The legacy graph builder previously appended preliminary authority rows on
+    every grooming pass, even though all identities were candidates and no
+    outcome checks existed.  Authority is an analytical product, not a graph
+    bootstrap side effect, so it is enabled only when the versioned accepted
+    surfaces are present and populated.
+    """
+
+    relations = {
+        str(row["name"])
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
+        ).fetchall()
+    }
+    accepted_people = int(
+        conn.execute(
+            "SELECT COUNT(*) AS count FROM canonical_people WHERE status = 'accepted'"
+        ).fetchone()["count"]
+        or 0
+    )
+    accepted_outcomes = 0
+    accepted_releases = 0
+    if "current_accepted_outcome_resolutions" in relations:
+        accepted_outcomes = int(
+            conn.execute(
+                "SELECT COUNT(*) AS count FROM current_accepted_outcome_resolutions"
+            ).fetchone()["count"]
+            or 0
+        )
+    if "current_accepted_corpus_releases" in relations:
+        accepted_releases = int(
+            conn.execute(
+                "SELECT COUNT(*) AS count FROM current_accepted_corpus_releases"
+            ).fetchone()["count"]
+            or 0
+        )
+    eligible = bool(accepted_people and accepted_outcomes and accepted_releases)
+    return {
+        "eligible": eligible,
+        "accepted_people": accepted_people,
+        "accepted_outcomes": accepted_outcomes,
+        "accepted_releases": accepted_releases,
+        "reason": (
+            "accepted_identity_outcome_release_inputs_present"
+            if eligible
+            else "authority_scores_require_accepted_identities_outcomes_and_release"
+        ),
     }
 
 

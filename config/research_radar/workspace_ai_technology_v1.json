@@ -1,0 +1,42 @@
+{
+  "workspace_id": "ai-technology-radar",
+  "schema_version": "1",
+  "name": "AI & Technology Radar",
+  "status": "pilot",
+  "topic": "Public developments in artificial intelligence and technology",
+  "purpose": "Detect meaningful changes and preserve the evidence, competing interpretations, position history, and unresolved questions needed to understand them.",
+  "strategic_questions": [
+    "What materially changed?",
+    "Which people or organizations changed position?",
+    "What evidence supports or contradicts the development?",
+    "What remains uncertain, and what should be watched next?"
+  ],
+  "exclusions": [
+    "private_or_authenticated_sources",
+    "paywalled_sources",
+    "paid_transcription",
+    "personal_action_recommendations",
+    "authority_rankings",
+    "consensus_or_contrarian_scores",
+    "forecast_leaderboards"
+  ],
+  "source_discovery": {
+    "autonomous": true,
+    "allowed_routes": [
+      "citations",
+      "public_links",
+      "guests",
+      "publishers",
+      "public_feeds",
+      "referenced_research"
+    ],
+    "initial_status": "probation",
+    "active_source_cap": 50
+  },
+  "notification_policy": {
+    "briefs_are_event_driven": true,
+    "scheduled_digest": false,
+    "local_only": true,
+    "maximum_high_priority_per_day": 3
+  }
+}

@@ -1,0 +1,3 @@
+# The official Python Codex SDK is beta. Keep it isolated from the production
+# factory environment until its pinned app-server runtime passes compatibility.
+openai-codex==0.1.0b3

@@ -1,0 +1,311 @@
+{
+  "schema_version": 1,
+  "last_reviewed": "2026-07-08",
+  "policy": "creator_rss_official_pages_public_creator_captions_only",
+  "strategies": [
+    {
+      "id": "rss_direct_transcript_backlog",
+      "lane": "automatic_fetch",
+      "route_type": "creator_rss_transcript",
+      "status": "ready",
+      "priority": 1,
+      "sources": [
+        "Odd Lots",
+        "Talk Python To Me",
+        "Python Bytes",
+        "Microsoft Research Podcast",
+        "Practical AI",
+        "Developer Tea",
+        "Syntax",
+        "AI and the Future of Work",
+        "Security Now"
+      ],
+      "automation": "Run backfill-episodes regularly, then enqueue-transcript-backlog without YouTube/document flags. Prefer VTT, JSON, TXT, then SRT when multiple transcript tags exist.",
+      "failure_rule": "Do not mark exhausted while a creator RSS transcript link exists. Retry transient failures; durable 404/410 after repeated refreshes becomes stale_transcript_link.",
+      "expected_yield": "high",
+      "next_hardening": [
+        "provider transcript-tag ranking",
+        "linked-not-ready backlog enqueue",
+        "timestamp cleanup before quality quarantine"
+      ]
+    },
+    {
+      "id": "rss_body_official_file_links",
+      "lane": "automatic_fetch",
+      "route_type": "rss_body_official_link",
+      "status": "ready",
+      "priority": 1,
+      "sources": [
+        "Software Engineering Daily",
+        "Risky Business",
+        "The Enterprise AI Show"
+      ],
+      "automation": "Parse RSS description/content:encoded for official direct transcript files and explicit transcript anchors. Attach direct TXT/VTT/JSON links automatically; keep YouTube URLs in caption lane.",
+      "failure_rule": "If RSS body has an official transcript file, retry fetch/parse before browser discovery. For YouTube URLs, caption_blocked is not exhaustion.",
+      "expected_yield": "medium_high",
+      "next_hardening": [
+        "RSS content:encoded parser",
+        "public Google Doc txt export for official links",
+        "YouTube caption availability tracking separate from fetch blocking"
+      ]
+    },
+    {
+      "id": "changelog_official_transcript_pages",
+      "lane": "automatic_fetch",
+      "route_type": "official_transcript_page",
+      "status": "ready",
+      "priority": 1,
+      "sources": [
+        "The Changelog",
+        "JS Party"
+      ],
+      "automation": "Use RSS transcript/page links and official /transcript pages. Backfill from Changelog sitemap/archive only to discover official episode transcript pages.",
+      "failure_rule": "404/410 /transcript after repeated checks is stale_official_transcript; Coming Soon/no transcript remains pending or no_public_transcript based on page state.",
+      "expected_yield": "high",
+      "next_hardening": [
+        "Changelog HTML transcript section parser",
+        "linked-not-ready fetch refill",
+        "Coming Soon detection"
+      ]
+    },
+    {
+      "id": "verge_official_article_transcripts",
+      "lane": "official_archive_discovery",
+      "route_type": "official_article_page",
+      "status": "ready",
+      "priority": 2,
+      "sources": [
+        "Decoder with Nilay Patel",
+        "The Vergecast"
+      ],
+      "automation": "Run sync-verge-official-transcripts to poll official Verge Atom feeds while preserving Megaphone audio feeds as episode inventory. Attach only canonical Verge /podcast/ article pages whose JSON-LD articleBody is transcript-sized.",
+      "failure_rule": "Short official article bodies are not treated as transcripts. Exhaust only after official archive pagination and canonical article checks show no transcript/full-content route.",
+      "expected_yield": "high_for_decoder_medium_for_vergecast",
+      "next_hardening": [
+        "archive paginator",
+        "duplicate source-id guard between Decoder aliases"
+      ]
+    },
+    {
+      "id": "econtalk_official_page_transcripts",
+      "lane": "automatic_fetch",
+      "route_type": "official_episode_page",
+      "status": "ready",
+      "priority": 2,
+      "sources": [
+        "EconTalk"
+      ],
+      "automation": "Use the official EconTalk episode URL and extract the .audio-highlight transcript/highlights section only. Strip standalone timestamp lines before quality checks. Do not ingest reader comments, sidebars, or whole-page boilerplate.",
+      "failure_rule": "Recent pages without an audio-highlight section stay pending for the normal publication lag. Older pages with no official transcript section become official_page_no_transcript after retry.",
+      "expected_yield": "high",
+      "next_hardening": [
+        "bulk verified URL attach for all EconTalk episode pages",
+        "per-page no-section status recording",
+        "spot-check older archive page variants"
+      ]
+    },
+    {
+      "id": "stackoverflow_simplecast_transcript_pages",
+      "lane": "automatic_fetch",
+      "route_type": "official_simplecast_transcript",
+      "status": "ready",
+      "priority": 2,
+      "sources": [
+        "The Stack Overflow Podcast"
+      ],
+      "automation": "Use official Stack Overflow podcast pages that expose a Simplecast transcript link, then fetch the official Simplecast transcription through the public episode API. Do not treat recent Art19 feed items without an official page/transcript link as eligible.",
+      "failure_rule": "HTTP 404/410/403 remain hard failures. Blog-shell or short-parser failures may be retried only after parser/adapter fixes and an explicit quarantined/parser retry flag.",
+      "expected_yield": "medium_for_legacy_linked_pages",
+      "next_hardening": [
+        "official archive crawler for Stack Overflow podcast pages with transcript links",
+        "Simplecast API response validation",
+        "negative discovery for recent Art19-only episodes"
+      ]
+    },
+    {
+      "id": "official_archive_page_transcripts",
+      "lane": "official_archive_discovery",
+      "route_type": "official_episode_page",
+      "status": "needs_adapter",
+      "priority": 2,
+      "sources": [
+        "The AI Daily Brief",
+        "Training Data",
+        "Developer Tea",
+        "The Pragmatic Engineer",
+        "Google Cloud Platform Podcast",
+        "Kubernetes Podcast from Google"
+      ],
+      "automation": "Use official archives/sitemaps to map RSS episodes to official episode pages, then parse only the transcript section or deterministic transcript URL.",
+      "failure_rule": "Recent missing transcript pages stay pending for a lag window. Older official pages with no transcript marker become official_page_no_transcript.",
+      "expected_yield": "high",
+      "next_hardening": [
+        "per-site archive crawlers",
+        "transcript-section extraction",
+        "sitemap/date/title matching"
+      ]
+    },
+    {
+      "id": "direct_official_episode_page_transcripts",
+      "lane": "automatic_fetch",
+      "route_type": "direct_official_episode_page",
+      "status": "ready",
+      "priority": 2,
+      "sources": [
+        "CoRecursive",
+        "The Cognitive Revolution"
+      ],
+      "automation": "Promote official RSS episode pages as transcript pages for CoRecursive and The Cognitive Revolution.",
+      "failure_rule": "Fetch only official creator domains. Pages without a transcript-sized section fail closed and are not retried as generic page scrapes.",
+      "expected_yield": "high",
+      "next_hardening": [
+        "periodic linked-not-ready backlog refill",
+        "per-source transcript-section quality counters"
+      ]
+    },
+    {
+      "id": "lex_fridman_legacy_transcript_pages",
+      "lane": "official_archive_discovery",
+      "route_type": "official_transcript_page",
+      "status": "needs_adapter",
+      "priority": 3,
+      "sources": [
+        "Lex Fridman Podcast"
+      ],
+      "automation": "Use only explicit Lex RSS transcript links until a safer archive matcher distinguishes valid legacy transcript pages from missing derived slugs.",
+      "failure_rule": "Do not bulk-derive -transcript URLs across the full archive without a positive page existence and transcript-size check.",
+      "expected_yield": "medium_after_adapter",
+      "next_hardening": [
+        "archive transcript-link crawler",
+        "episode-number cutoff analysis",
+        "positive page-existence preflight before enqueue"
+      ]
+    },
+    {
+      "id": "substack_rss_post_transcripts",
+      "lane": "automatic_fetch",
+      "route_type": "substack_rss_official_post",
+      "status": "ready",
+      "priority": 3,
+      "sources": [
+        "Latent Space",
+        "The Gradient",
+        "The Pragmatic Engineer"
+      ],
+      "automation": "For Substack podcast RSS feeds whose item links point directly to official public posts, promote the post URL as an official transcript page only when the page exposes a transcript section.",
+      "failure_rule": "Pages without a public transcript marker, sign-in/paywall pages, and external mirrors remain blocked or pending; do not ingest generic post chrome as a transcript.",
+      "expected_yield": "medium_high_for_direct_substack_feeds",
+      "next_hardening": [
+        "archive/title matching for Substack shows whose podcast RSS lacks post links",
+        "paywall and sign-in state metrics",
+        "section-specific transcript cleanup"
+      ]
+    },
+    {
+      "id": "substack_transcript_tabs",
+      "lane": "official_archive_discovery",
+      "route_type": "substack_official_page",
+      "status": "needs_adapter",
+      "priority": 3,
+      "sources": [
+        "Last Week in AI",
+        "Big Technology Podcast"
+      ],
+      "automation": "Use official Substack podcast RSS/section/sitemap pages and parse public transcript tabs/sections only; ignore unrelated newsletter posts and external mirrors.",
+      "failure_rule": "Public transcript tab missing after retry becomes official_page_no_transcript. Sign-in-only/paywalled pages are blocked, not ingested.",
+      "expected_yield": "medium_high",
+      "next_hardening": [
+        "Substack transcript tab parser",
+        "paywall/sign-in state detection",
+        "podcast-post filtering"
+      ]
+    },
+    {
+      "id": "official_document_transcripts",
+      "lane": "document_transcript_fetch",
+      "route_type": "official_document_asset",
+      "status": "blocked_until_parser_ready",
+      "priority": 4,
+      "sources": [
+        "Eye On AI",
+        "NVIDIA AI Podcast"
+      ],
+      "automation": "Scan official archives for public DOCX/PDF transcript assets, but enqueue only after document-to-text parsing is enabled and quality-gated.",
+      "failure_rule": "Do not fetch document assets as raw text. If official archive/page has no document transcript, record no_official_document_transcript.",
+      "expected_yield": "high_for_eye_on_ai_low_for_nvidia",
+      "next_hardening": [
+        "DOCX text extraction",
+        "PDF transcript extraction",
+        "Sonix/document boilerplate cleanup"
+      ]
+    },
+    {
+      "id": "official_creator_youtube_captions",
+      "lane": "caption_discovery",
+      "route_type": "public_creator_captions",
+      "status": "blocked_by_local_caption_fetch",
+      "priority": 5,
+      "sources": [
+        "No Priors",
+        "Waveform",
+        "The Real Python Podcast",
+        "Tech Brew Ride Home",
+        "Animal Spirits",
+        "Equity",
+        "Risky Business",
+        "Data Skeptic",
+        "All-In",
+        "The TWIML AI Podcast"
+      ],
+      "automation": "Match RSS episodes to official creator-channel videos by title/date/duration; use public captions only when the official channel and episode match are verified.",
+      "failure_rule": "caption_fetch_blocked is not exhaustion. Exhaust only when official video has no public captions or no official video match exists.",
+      "expected_yield": "medium_environment_dependent",
+      "next_hardening": [
+        "caption availability probe separate from fetch",
+        "official channel whitelist",
+        "IP/block state metrics"
+      ]
+    },
+    {
+      "id": "gated_official_transcripts",
+      "lane": "approval_required",
+      "route_type": "official_gated_page",
+      "status": "requires_user_approval",
+      "priority": 6,
+      "sources": [
+        "Founders",
+        "Business Breakdowns"
+      ],
+      "automation": "Detect official gated transcript availability and report counts only. Do not ingest gated transcripts without explicit approval and a policy update.",
+      "failure_rule": "Without approved auth, public preview is insufficient and stays official_gated.",
+      "expected_yield": "high_if_approved_low_public_only",
+      "next_hardening": [
+        "gated availability detector",
+        "policy flag for approved official auth",
+        "no-preview-ingestion guard"
+      ]
+    },
+    {
+      "id": "exhaustion_or_audio_fallback",
+      "lane": "manual_exhaustion",
+      "route_type": "no_allowed_public_transcript_route",
+      "status": "ready_for_exhaustion_records",
+      "priority": 7,
+      "sources": [
+        "How I Built This",
+        "Search Engine",
+        "Marketplace Tech",
+        "Data Skeptic",
+        "NVIDIA AI Podcast"
+      ],
+      "automation": "Record negative official-source searches and mark transcription_eligible only after RSS, official homepage/archive, official episode page, and public creator-caption routes are exhausted.",
+      "failure_rule": "Do not use Apple native transcripts, third-party transcript mirrors, app-only surfaces, or paywalled/private pages.",
+      "expected_yield": "low_public_transcript_yield",
+      "next_hardening": [
+        "negative discovery recorder",
+        "official_page_blocked status",
+        "paid transcription fallback remains explicit opt-in"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "contract_id": "research-radar-product-v1",
+  "schema_version": "1",
+  "status": "frozen_pilot",
+  "frozen_at": "2026-07-20",
+  "audience": "private_local_single_user",
+  "first_workspace_id": "ai-technology-radar",
+  "product_promise": "Surface a briefing only when public evidence indicates a meaningful development.",
+  "primary_output": "event_driven_evidence_linked_briefing",
+  "editorial_posture": "neutral_synthesis",
+  "recommend_actions": false,
+  "maintain_user_beliefs": false,
+  "history_policy": {
+    "chronological": true,
+    "amendments_visible": true,
+    "retractions_visible": true,
+    "silent_rewrites_forbidden": true
+  },
+  "allowed_source_formats": [
+    "podcast",
+    "official_post",
+    "official_documentation",
+    "paper",
+    "reputable_news",
+    "public_newsletter",
+    "public_video"
+  ],
+  "forbidden_source_access": [
+    "authenticated_private",
+    "paywalled",
+    "paid_transcription"
+  ],
+  "source_trust_tiers": [
+    "primary",
+    "reputable_secondary",
+    "specialist_individual",
+    "weak_signal"
+  ],
+  "statement_kinds": [
+    "primary_evidence",
+    "reputable_reporting",
+    "attributed_claim",
+    "inference",
+    "speculation"
+  ],
+  "feedback_values": [
+    "useful",
+    "irrelevant",
+    "wrong",
+    "duplicate",
+    "follow"
+  ],
+  "brief_required_sections": [
+    "what_changed",
+    "why_it_may_matter",
+    "competing_interpretations",
+    "position_changes",
+    "unresolved_questions",
+    "evidence"
+  ],
+  "pipeline": [
+    "discover",
+    "fetch",
+    "normalize",
+    "extract_evidence",
+    "reconcile_document",
+    "reconcile_graph",
+    "score_significance",
+    "publish_provisional",
+    "verify_amend_retract"
+  ],
+  "semantic_authority": "managed_auth_llm_only",
+  "embeddings_allowed": false,
+  "deterministic_semantic_matching_allowed": false,
+  "railway_data_policy": "sanitized_operational_counts_only",
+  "scheduler_enabled": false,
+  "legacy_queue_access": "forbidden",
+  "production_enablement_gate": "benchmark_and_seven_day_shadow_accepted"
+}

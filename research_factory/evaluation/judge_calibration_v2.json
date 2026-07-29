@@ -1,0 +1,172 @@
+{
+  "schema_version": "judge_calibration_v2",
+  "minimum_expanded_cases": 60,
+  "base_event": {
+    "actor": "Analyst",
+    "speaker": "Analyst",
+    "reported_actor": "",
+    "source_kind": "direct_speaker_claim",
+    "event_type": "capability_claim",
+    "target": "",
+    "stance": "neutral",
+    "claim": "",
+    "certainty": "medium",
+    "temporal_horizon": "present",
+    "causal_mechanism": "",
+    "metric": {
+      "value": "",
+      "unit": "",
+      "comparator": "",
+      "direction": "not_applicable",
+      "raw_text": ""
+    },
+    "evidence": ""
+  },
+  "templates": [
+    {"template_id": "identity_paraphrase", "shape": "single_event_pairs"},
+    {"template_id": "material_field_error", "shape": "single_event_pairs"},
+    {"template_id": "merged_split_boundary", "shape": "merged_and_split_boundaries"},
+    {"template_id": "reversed_multi_lens", "shape": "multi_event_set_alignment"},
+    {"template_id": "supported_one_sided", "shape": "one_sided_supported_residuals"},
+    {"template_id": "unsupported_one_sided", "shape": "one_sided_unsupported_residuals"}
+  ],
+  "mismatch_fields": [
+    "actor",
+    "attribution",
+    "causal_mechanism",
+    "certainty",
+    "event_boundary",
+    "event_type",
+    "evidence",
+    "metric",
+    "negation",
+    "reported_actor",
+    "speaker",
+    "stance",
+    "target",
+    "temporal_horizon",
+    "unsupported_inference"
+  ],
+  "topics": [
+    {
+      "topic_id": "radiology",
+      "source_excerpt": "The radiology assistant flags likely fractures. Clinicians warn that it can miss rare presentations.",
+      "primary": {"actor": "Radiologist", "speaker": "Radiologist", "target": "fracture triage", "claim": "The radiology assistant flags likely fractures.", "certainty": "high", "evidence": "The radiology assistant flags likely fractures."},
+      "primary_paraphrase": {"claim": "Likely fractures can be flagged by the radiology assistant."},
+      "secondary": {"actor": "Clinicians", "speaker": "Clinicians", "event_type": "risk_signal", "target": "rare presentation detection", "stance": "warning", "claim": "Clinicians warn that the assistant can miss rare presentations.", "evidence": "Clinicians warn that it can miss rare presentations."},
+      "secondary_paraphrase": {"claim": "Rare presentations may be missed, clinicians warn."},
+      "changed": {"actor": "Hospital administrator"},
+      "changed_fields": ["actor"],
+      "merged": {"claim": "The assistant flags likely fractures but can miss rare presentations.", "evidence": "The radiology assistant flags likely fractures. Clinicians warn that it can miss rare presentations."},
+      "unsupported": {"claim": "The assistant eliminates the need for radiologists.", "certainty": "high", "evidence": "The radiology assistant flags likely fractures."}
+    },
+    {
+      "topic_id": "climate",
+      "source_excerpt": "The forecasting model projects heavier winter rainfall next year. Researchers say uncertainty widens beyond five years.",
+      "primary": {"actor": "Researchers", "speaker": "Researchers", "event_type": "forecast", "target": "winter rainfall", "claim": "The forecasting model projects heavier winter rainfall next year.", "temporal_horizon": "near_future", "evidence": "The forecasting model projects heavier winter rainfall next year."},
+      "primary_paraphrase": {"claim": "Heavier winter rainfall is projected for next year."},
+      "secondary": {"actor": "Researchers", "speaker": "Researchers", "event_type": "risk_signal", "target": "long-range forecast uncertainty", "stance": "warning", "claim": "Researchers say forecast uncertainty widens beyond five years.", "temporal_horizon": "long_future", "evidence": "Researchers say uncertainty widens beyond five years."},
+      "secondary_paraphrase": {"claim": "Uncertainty grows for forecasts extending past five years."},
+      "changed": {"temporal_horizon": "long_future"},
+      "changed_fields": ["temporal_horizon"],
+      "merged": {"claim": "The model projects heavier rainfall next year while uncertainty widens beyond five years.", "evidence": "The forecasting model projects heavier winter rainfall next year. Researchers say uncertainty widens beyond five years."},
+      "unsupported": {"claim": "The model proves every city will flood next year.", "certainty": "high", "evidence": "The forecasting model projects heavier winter rainfall next year."}
+    },
+    {
+      "topic_id": "hiring",
+      "source_excerpt": "The hiring assistant ranks applicants for recruiter review. The vendor reports that twelve teams adopted it this quarter.",
+      "primary": {"actor": "Recruiting lead", "speaker": "Recruiting lead", "target": "applicant ranking", "claim": "The hiring assistant ranks applicants for recruiter review.", "evidence": "The hiring assistant ranks applicants for recruiter review."},
+      "primary_paraphrase": {"claim": "Applicants are ranked by the assistant before recruiter review."},
+      "secondary": {"actor": "Recruiting lead", "speaker": "Recruiting lead", "reported_actor": "Vendor", "source_kind": "reported_claim", "event_type": "adoption_signal", "target": "team adoption", "claim": "The vendor reports that twelve teams adopted the assistant this quarter.", "metric": {"value": "12", "unit": "teams", "comparator": "", "direction": "increase", "raw_text": "twelve teams"}, "evidence": "The vendor reports that twelve teams adopted it this quarter."},
+      "secondary_paraphrase": {"claim": "According to the vendor, twelve teams began using it this quarter."},
+      "changed": {"reported_actor": "Competitor"},
+      "changed_fields": ["reported_actor"],
+      "merged": {"claim": "The assistant ranks applicants and the vendor reports adoption by twelve teams.", "evidence": "The hiring assistant ranks applicants for recruiter review. The vendor reports that twelve teams adopted it this quarter."},
+      "unsupported": {"claim": "The assistant makes final hiring decisions without review.", "certainty": "high", "evidence": "The hiring assistant ranks applicants for recruiter review."}
+    },
+    {
+      "topic_id": "database",
+      "source_excerpt": "Query caching cut median latency by 18 percent. Engineers attribute the gain to avoiding repeated storage reads.",
+      "primary": {"actor": "Engineers", "speaker": "Engineers", "event_type": "measurement_claim", "target": "median query latency", "claim": "Query caching cut median latency by 18 percent.", "metric": {"value": "18", "unit": "percent", "comparator": "by", "direction": "decrease", "raw_text": "18 percent"}, "evidence": "Query caching cut median latency by 18 percent."},
+      "primary_paraphrase": {"claim": "Median query latency fell 18 percent with caching."},
+      "secondary": {"actor": "Engineers", "speaker": "Engineers", "event_type": "causal_mechanism", "target": "latency reduction mechanism", "claim": "Engineers attribute the gain to avoiding repeated storage reads.", "causal_mechanism": "Caching avoids repeated storage reads.", "evidence": "Engineers attribute the gain to avoiding repeated storage reads."},
+      "secondary_paraphrase": {"claim": "Avoided storage reads explain the latency gain, engineers say."},
+      "changed": {"claim": "Query caching cut median latency by 30 percent.", "metric": {"value": "30", "unit": "percent", "comparator": "by", "direction": "decrease", "raw_text": "30 percent"}},
+      "changed_fields": ["metric", "unsupported_inference"],
+      "merged": {"claim": "Caching cut latency by 18 percent by avoiding repeated storage reads.", "evidence": "Query caching cut median latency by 18 percent. Engineers attribute the gain to avoiding repeated storage reads."},
+      "unsupported": {"claim": "Caching makes every query instantaneous.", "certainty": "high", "evidence": "Query caching cut median latency by 18 percent."}
+    },
+    {
+      "topic_id": "language_tutor",
+      "source_excerpt": "The language tutor can correct common pronunciation errors. Teachers remain skeptical about its feedback on regional accents.",
+      "primary": {"actor": "Teacher", "speaker": "Teacher", "target": "pronunciation correction", "claim": "The language tutor can correct common pronunciation errors.", "evidence": "The language tutor can correct common pronunciation errors."},
+      "primary_paraphrase": {"claim": "Common pronunciation errors can be corrected by the tutor."},
+      "secondary": {"actor": "Teachers", "speaker": "Teachers", "event_type": "stance_position", "target": "regional accent feedback", "stance": "skeptical", "claim": "Teachers remain skeptical about the tutor's feedback on regional accents.", "evidence": "Teachers remain skeptical about its feedback on regional accents."},
+      "secondary_paraphrase": {"claim": "Teachers doubt the quality of its regional-accent feedback."},
+      "changed": {"stance": "skeptical"},
+      "changed_fields": ["stance"],
+      "merged": {"claim": "The tutor corrects common errors, though teachers doubt its regional-accent feedback.", "evidence": "The language tutor can correct common pronunciation errors. Teachers remain skeptical about its feedback on regional accents."},
+      "unsupported": {"claim": "The tutor guarantees native-level fluency.", "certainty": "high", "evidence": "The language tutor can correct common pronunciation errors."}
+    },
+    {
+      "topic_id": "logistics",
+      "source_excerpt": "The routing agent recommends lower-fuel delivery routes. Dispatchers expect fleet-wide use next year.",
+      "primary": {"actor": "Dispatcher", "speaker": "Dispatcher", "target": "lower-fuel route recommendations", "claim": "The routing agent recommends lower-fuel delivery routes.", "evidence": "The routing agent recommends lower-fuel delivery routes."},
+      "primary_paraphrase": {"claim": "Lower-fuel delivery routes are recommended by the routing agent."},
+      "secondary": {"actor": "Dispatchers", "speaker": "Dispatchers", "event_type": "forecast", "target": "fleet-wide routing-agent use", "claim": "Dispatchers expect fleet-wide use next year.", "temporal_horizon": "near_future", "evidence": "Dispatchers expect fleet-wide use next year."},
+      "secondary_paraphrase": {"claim": "Fleet-wide deployment is expected next year."},
+      "changed": {"event_type": "adoption_signal"},
+      "changed_fields": ["event_type"],
+      "merged": {"claim": "The agent recommends lower-fuel routes and dispatchers expect fleet-wide use next year.", "evidence": "The routing agent recommends lower-fuel delivery routes. Dispatchers expect fleet-wide use next year."},
+      "unsupported": {"claim": "The agent removes all fuel costs.", "certainty": "high", "evidence": "The routing agent recommends lower-fuel delivery routes."}
+    },
+    {
+      "topic_id": "legal_search",
+      "source_excerpt": "The host says the bar association found the search tool reliable. The host warns that citations still require manual verification.",
+      "primary": {"actor": "Host", "speaker": "Host", "reported_actor": "Bar association", "source_kind": "reported_claim", "target": "legal search reliability", "claim": "The host says the bar association found the search tool reliable.", "stance": "supportive", "evidence": "The host says the bar association found the search tool reliable."},
+      "primary_paraphrase": {"claim": "According to the host, the bar association judged the tool reliable."},
+      "secondary": {"actor": "Host", "speaker": "Host", "event_type": "risk_signal", "target": "citation verification", "stance": "warning", "claim": "The host warns that citations still require manual verification.", "evidence": "The host warns that citations still require manual verification."},
+      "secondary_paraphrase": {"claim": "Manual checking of citations remains necessary, the host warns."},
+      "changed": {"reported_actor": "", "source_kind": "direct_speaker_claim"},
+      "changed_fields": ["attribution", "reported_actor"],
+      "merged": {"claim": "The association found the tool reliable, but the host says citations still need manual verification.", "evidence": "The host says the bar association found the search tool reliable. The host warns that citations still require manual verification."},
+      "unsupported": {"claim": "The tool replaces licensed legal counsel.", "certainty": "high", "evidence": "The host says the bar association found the search tool reliable."}
+    },
+    {
+      "topic_id": "manufacturing",
+      "source_excerpt": "The vision system detects surface cracks on the assembly line. Plant operators say false alarms increase under glare.",
+      "primary": {"actor": "Plant operator", "speaker": "Plant operator", "target": "surface crack detection", "claim": "The vision system detects surface cracks on the assembly line.", "evidence": "The vision system detects surface cracks on the assembly line."},
+      "primary_paraphrase": {"claim": "Assembly-line surface cracks are detected by the vision system."},
+      "secondary": {"actor": "Plant operators", "speaker": "Plant operators", "event_type": "risk_signal", "target": "false alarms under glare", "stance": "warning", "claim": "Plant operators say false alarms increase under glare.", "evidence": "Plant operators say false alarms increase under glare."},
+      "secondary_paraphrase": {"claim": "Glare raises the false-alarm rate, according to plant operators."},
+      "changed": {"target": "billing decisions"},
+      "changed_fields": ["target"],
+      "merged": {"claim": "The system detects surface cracks, while operators report more false alarms under glare.", "evidence": "The vision system detects surface cracks on the assembly line. Plant operators say false alarms increase under glare."},
+      "unsupported": {"claim": "The system prevents every manufacturing defect.", "certainty": "high", "evidence": "The vision system detects surface cracks on the assembly line."}
+    },
+    {
+      "topic_id": "audio_production",
+      "source_excerpt": "The producer supports using the audio model for rough cuts. She does not support using it for final mastering.",
+      "primary": {"actor": "Producer", "speaker": "Producer", "event_type": "stance_position", "target": "audio model for rough cuts", "stance": "supportive", "claim": "The producer supports using the audio model for rough cuts.", "evidence": "The producer supports using the audio model for rough cuts."},
+      "primary_paraphrase": {"claim": "The producer favors the audio model for rough-cut work."},
+      "secondary": {"actor": "Producer", "speaker": "Producer", "event_type": "stance_position", "target": "audio model for final mastering", "stance": "skeptical", "claim": "The producer does not support using the model for final mastering.", "evidence": "She does not support using it for final mastering."},
+      "secondary_paraphrase": {"claim": "The producer opposes its use for final mastering."},
+      "changed": {"claim": "The producer does not support using the audio model for rough cuts.", "stance": "skeptical"},
+      "changed_fields": ["negation", "stance", "unsupported_inference"],
+      "merged": {"claim": "The producer supports the model for rough cuts but not for final mastering.", "evidence": "The producer supports using the audio model for rough cuts. She does not support using it for final mastering."},
+      "unsupported": {"claim": "The model independently masters every commercial release.", "certainty": "high", "evidence": "The producer supports using the audio model for rough cuts."}
+    },
+    {
+      "topic_id": "cybersecurity",
+      "source_excerpt": "The detector blocks known phishing domains. Analysts say it misses newly registered domains.",
+      "primary": {"actor": "Security analyst", "speaker": "Security analyst", "target": "known phishing domain blocking", "claim": "The detector blocks known phishing domains.", "evidence": "The detector blocks known phishing domains."},
+      "primary_paraphrase": {"claim": "Known phishing domains are blocked by the detector."},
+      "secondary": {"actor": "Analysts", "speaker": "Analysts", "event_type": "risk_signal", "target": "newly registered phishing domains", "stance": "warning", "claim": "Analysts say the detector misses newly registered domains.", "evidence": "Analysts say it misses newly registered domains."},
+      "secondary_paraphrase": {"claim": "Newly registered domains can evade the detector, analysts say."},
+      "changed": {"causal_mechanism": "The detector blocks domains by analyzing employee sentiment."},
+      "changed_fields": ["causal_mechanism", "unsupported_inference"],
+      "merged": {"claim": "The detector blocks known phishing domains but misses newly registered domains.", "evidence": "The detector blocks known phishing domains. Analysts say it misses newly registered domains."},
+      "unsupported": {"claim": "The detector prevents every phishing attack.", "certainty": "high", "evidence": "The detector blocks known phishing domains."}
+    }
+  ]
+}

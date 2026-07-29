@@ -1,18 +1,15 @@
 {
-  "$id": "investment_signal_v1",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["schema_version", "segment_id", "episode_id", "companies", "market_narratives", "risk_flags", "overall_confidence", "needs_review", "review_reason"],
+  "$id": "https://podcast-intelligence-factory.local/schemas/investment_signal_v1",
   "properties": {
-    "schema_version": {"type": "string", "enum": ["investment_signal_v1"]},
-    "segment_id": {"type": "string"},
-    "episode_id": {"type": "string"},
-    "companies": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["name", "ticker", "evidence", "confidence"], "properties": {"name": {"type": "string"}, "ticker": {"type": ["string", "null"]}, "evidence": {"type": "string"}, "confidence": {"type": "number"}}}},
-    "market_narratives": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["narrative", "direction", "time_horizon", "evidence", "confidence"], "properties": {"narrative": {"type": "string"}, "direction": {"type": "string", "enum": ["positive", "negative", "mixed", "unknown"]}, "time_horizon": {"type": "string", "enum": ["near_term", "medium_term", "long_term", "unknown"]}, "evidence": {"type": "string"}, "confidence": {"type": "number"}}}},
-    "risk_flags": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["risk", "evidence", "confidence"], "properties": {"risk": {"type": "string"}, "evidence": {"type": "string"}, "confidence": {"type": "number"}}}},
-    "overall_confidence": {"type": "number"},
-    "needs_review": {"type": "boolean"},
-    "review_reason": {"type": ["string", "null"]}
-  }
+    "schema_version": {
+      "enum": [
+        "investment_signal_v1"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version"
+  ],
+  "type": "object"
 }
-

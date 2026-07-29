@@ -1,11 +1,20 @@
 .DS_Store
 .env
 .railway-ingest-token.local
+.mcp-broker-ingest-token.local
 .venv/
 __pycache__/
 .pytest_cache/
 .codex-controller/
 .codex-controller-logs/
+
+# Locally built runtime entrypoints; reproduce them from their tracked builders.
+automation/pif-native-goal-supervisor-runtime
+automation/pif-watchdog-runtime
+
+# Private diagnostic drafts containing development-gold excerpts.
+docs/TRUE_NORTH_ACTOR_SHADOW_20260728.md
+docs/TRUE_NORTH_OPUS_SHADOW_20260728.md
 
 # Local private corpus and generated state.
 corpus/

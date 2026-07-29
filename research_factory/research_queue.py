@@ -20,16 +20,32 @@ ROLE_JOB_TYPES: dict[str, tuple[str, ...]] = {
 }
 
 
-def sync_queue_envelopes(conn) -> dict[str, Any]:
+def sync_queue_envelopes(
+    conn,
+    *,
+    statuses: list[str] | tuple[str, ...] | None = None,
+    job_types: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
     db.init_db(conn)
+    where: list[str] = []
+    params: list[Any] = []
+    if statuses:
+        where.append(f"jobs.status IN ({','.join('?' for _ in statuses)})")
+        params.extend(statuses)
+    if job_types:
+        where.append(f"jobs.job_type IN ({','.join('?' for _ in job_types)})")
+        params.extend(job_types)
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
     rows = conn.execute(
-        """
+        f"""
         SELECT jobs.*, segments.episode_id AS segment_episode_id, segments.transcript_id AS segment_transcript_id,
                episodes.source_id AS episode_source_id
         FROM jobs
         LEFT JOIN segments ON segments.id = jobs.target_id
         LEFT JOIN episodes ON episodes.id = COALESCE(segments.episode_id, jobs.target_id)
-        """
+        {where_sql}
+        """,
+        params,
     ).fetchall()
     created = 0
     updated = 0
@@ -95,9 +111,10 @@ def sync_queue_envelopes(conn) -> dict[str, Any]:
     return {"ok": True, "created": created, "updated": updated, "total": len(rows)}
 
 
-def queue_status(conn, *, group_by: list[str] | None = None) -> dict[str, Any]:
+def queue_status(conn, *, group_by: list[str] | None = None, sync: bool = True) -> dict[str, Any]:
     db.init_db(conn)
-    sync_queue_envelopes(conn)
+    if sync:
+        sync_queue_envelopes(conn)
     allowed = {
         "lane": "jobs.lane",
         "job_type": "jobs.job_type",
@@ -140,10 +157,13 @@ def queue_status(conn, *, group_by: list[str] | None = None) -> dict[str, Any]:
         row["privacy_tier"]: int(row["count"])
         for row in conn.execute(
             """
-            SELECT privacy_tier, COUNT(*) AS count
+            SELECT queue_envelopes.privacy_tier, COUNT(*) AS count
             FROM queue_envelopes
-            WHERE remote_claimable = 1
-            GROUP BY privacy_tier
+            JOIN jobs ON jobs.id = queue_envelopes.job_id
+            WHERE queue_envelopes.remote_claimable = 1
+              AND jobs.status = 'pending'
+              AND jobs.attempts < jobs.max_attempts
+            GROUP BY queue_envelopes.privacy_tier
             """
         ).fetchall()
     }

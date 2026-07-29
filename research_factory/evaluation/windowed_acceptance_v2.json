@@ -1,0 +1,167 @@
+{
+  "baseline": {
+    "model": "gpt-5.5",
+    "reasoning_effort": "high",
+    "representation": "full_ai_discourse_v3_1"
+  },
+  "bootstrap": {
+    "confidence": 0.95,
+    "iterations": 10000,
+    "method": "paired_source_clustered_density_stratified",
+    "statistic": "mean_segment_full_field_f1_delta",
+    "seed": "windowed-paired-cluster-bootstrap-v2"
+  },
+  "candidate": {
+    "core_model": "gpt-5.6-sol",
+    "core_reasoning_effort": "low",
+    "enrichment_paths": [
+      {
+        "fallback": null,
+        "model": "gpt-5.3-codex-spark",
+        "name": "spark_only",
+        "reasoning_effort": "low"
+      },
+      {
+        "fallback": null,
+        "model": "gpt-5.4-mini",
+        "name": "mini_only",
+        "reasoning_effort": "low"
+      }
+    ],
+    "max_events": 25,
+    "representation": "global_event_array_with_owner_window"
+  },
+  "cost_accounting": {
+    "context_generation": "report_measured_or_fail_closed_amortized_shared_cost_for_both_systems",
+    "end_to_end_ratio_required": true,
+    "failed_calls_retries_and_waits_included": true,
+    "marginal_extractor_ratio_required": true,
+    "shared_cost_does_not_cancel_from_ratio": true
+  },
+  "context_generation": {
+    "model": "gpt-5.5",
+    "reasoning_effort": "high",
+    "retry_count": 0,
+    "usage_sidecar_required": true,
+    "production_amortization": "one context run allocated across every prepared segment in its episode for both systems"
+  },
+  "evaluation_status": "frozen_fail_closed_retrospective_v2",
+  "failure_repair": {
+    "all_triggers_must_clear": true,
+    "generic_confidence_routing": false,
+    "max_headless_calls_per_segment": 1,
+    "model": "gpt-5.6-sol",
+    "observable_triggers": [
+      "global_event_cap_hit",
+      "nonexact_evidence",
+      "malformed_enrichment",
+      "validator_pruning",
+      "attribution_conflict",
+      "quota_failure"
+    ],
+    "promotion_requires_incremental_gate_gain": true,
+    "reasoning_effort": "medium",
+    "retry_count": 0,
+    "score_repaired_and_unrepaired_separately": true
+  },
+  "gates": {
+    "exact_evidence_rate_min": 1.0,
+    "max_equal_concurrency_wall_ratio": 0.25,
+    "max_macro_f1_drop": 0.05,
+    "max_no_signal_false_positive_rate": 0.05,
+    "max_paired_f1_drop": 0.03,
+    "max_total_token_ratio": 0.25,
+    "min_schema_status_success": 0.95,
+    "minimum_subgroup_size": 5,
+    "paired_f1_ci_rule": "clustered_stratified_ci_lower_bound_must_be_at_least_negative_margin"
+  },
+  "intent_to_treat": {
+    "denominator": "all_frozen_requested_segments",
+    "failure_full_field_f1": 0.0,
+    "failure_schema_status_success": false,
+    "silent_rerun_or_drop": false,
+    "terminal_failure_policy": "preserve_after_declared_attempt_limit"
+  },
+  "judge_calibration": {
+    "fixture_path": "research_factory/evaluation/judge_calibration_v2.json",
+    "gates": {
+      "alignment_f1_min": 0.95,
+      "equivalent_sensitivity_min": 0.9,
+      "equivalent_specificity_min": 0.9,
+      "field_diagnostic_f1_min": 0.85,
+      "order_bias_max": 0.05,
+      "relation_accuracy_min": 0.9,
+      "support_sensitivity_min": 0.95,
+      "support_specificity_min": 0.95
+    },
+    "human_audit_requires_explicit_human_provenance": true,
+    "llm_judge_allowed_only_after_expanded_fixture_pass": true,
+    "minimum_cases": 60,
+    "required_shapes": [
+      "single_event_pairs",
+      "multi_event_set_alignment",
+      "one_sided_supported_residuals",
+      "one_sided_unsupported_residuals",
+      "merged_and_split_boundaries",
+      "multi_lens_same_evidence",
+      "source_and_order_permutations"
+    ]
+  },
+  "no_signal_power": {
+    "decision_rule": "one_sided_95_percent_binomial_upper_bound_at_or_below_gate",
+    "minimum_clean_cases": 60,
+    "retrospective_density_stratum_cases": 15
+  },
+  "paired_run": {
+    "concurrency": 4,
+    "density_strata": {
+      "dense": {
+        "golden_event_min": 16,
+        "minimum_segments": 15
+      },
+      "low": {
+        "golden_event_max": 4,
+        "golden_event_min": 1,
+        "minimum_segments": 15
+      },
+      "medium": {
+        "golden_event_max": 15,
+        "golden_event_min": 5,
+        "minimum_segments": 15
+      },
+      "no_signal": {
+        "golden_event_max": 0,
+        "minimum_segments": 15
+      }
+    },
+    "minimum_segments": 60,
+    "minimum_sources": 20,
+    "multiple_segments_per_source_required": true,
+    "retry_policy": "one_same_model_retry_for_primary_extractors_only",
+    "selection_classification": "retrospective_validation_when_prior_episodes_are_not_excluded"
+  },
+  "parent_extraction_spec_sha256": "b4f09564d5f1b8e2de445077980fee6107da241dbffecf2bdbdfc782167c10a2",
+  "promotion": {
+    "new_episode_and_preferably_unseen_show_shadow_required": true,
+    "production_switch_allowed": false,
+    "result_if_ci_crosses_margin": "inconclusive"
+  },
+  "provenance": {
+    "required_hashes": [
+      "evaluator_code",
+      "baseline_prompt",
+      "baseline_schema",
+      "baseline_codebook",
+      "context_artifacts",
+      "golden_outputs",
+      "candidate_guidelines",
+      "window_parameters",
+      "batch_parameters"
+    ]
+  },
+  "schema_version": "windowed_acceptance_v2",
+  "structural_recall_ceiling": {
+    "enumerate_segments_above_candidate_cap": true,
+    "include_in_quality_interpretation": true
+  }
+}

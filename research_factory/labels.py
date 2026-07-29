@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import signal
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -32,17 +33,51 @@ def load_label_pack(name: str) -> LabelPack:
     codebook_path = path / "codebook.md"
     examples_path = path / "examples.json"
     evals_path = path / "evals.json"
-    examples = json.loads(read_text(examples_path)) if examples_path.exists() else []
-    evals = json.loads(read_text(evals_path)) if evals_path.exists() else []
+    examples = _read_optional_json(examples_path, default=[])
+    evals = _read_optional_json(evals_path, default=[])
     return LabelPack(
         name=name,
         version=str(schema.get("$id", name)).rsplit("/", 1)[-1],
         schema=schema,
         prompt=prompt,
-        codebook=read_text(codebook_path) if codebook_path.exists() else "",
+        codebook=_read_optional_text(codebook_path, default=""),
         examples=examples,
         evals=evals,
     )
+
+
+class _OptionalPackReadTimeout(TimeoutError):
+    pass
+
+
+def _read_optional_text(path: Path, *, default: str, timeout_seconds: float = 0.5) -> str:
+    if not path.exists():
+        return default
+    previous_handler = signal.getsignal(signal.SIGALRM)
+
+    def _raise_timeout(signum, frame):  # noqa: ARG001
+        raise _OptionalPackReadTimeout(str(path))
+
+    try:
+        signal.signal(signal.SIGALRM, _raise_timeout)
+        signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+        return read_text(path)
+    except _OptionalPackReadTimeout:
+        return default
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+
+
+def _read_optional_json(path: Path, *, default: list[dict[str, Any]], timeout_seconds: float = 0.5) -> list[dict[str, Any]]:
+    text = _read_optional_text(path, default="", timeout_seconds=timeout_seconds)
+    if not text:
+        return default
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        return default
+    return value if isinstance(value, list) else default
 
 
 def validate_label_output(label_pack: str, value: dict[str, Any], *, segment_text: str | None = None) -> None:
@@ -65,6 +100,8 @@ def repair_label_output_for_submission(label_pack: str, value: dict[str, Any], *
                 continue
             item["evidence"] = repaired
             repairs += 1
+        repairs += _drop_v1_items_with_unresolved_evidence(value, segment_text=segment_text)
+        repairs += _drop_v1_unsupported_entities(value, segment_text=segment_text)
         return repairs
     if label_pack not in {"ai_discourse_v2", "ai_discourse_v3", "ai_discourse_v3_1"}:
         return 0
@@ -88,62 +125,126 @@ def repair_label_output_for_submission(label_pack: str, value: dict[str, Any], *
         _append_repair_note(item, f"deterministic evidence offset repair from {start}-{end} to {repaired_start}-{repaired_end}")
         repairs += 1
     if label_pack == "ai_discourse_v3_1":
-        events = value.get("discourse_events") if isinstance(value.get("discourse_events"), list) else []
-        kept_events = []
-        for event in events:
-            if not isinstance(event, dict):
-                kept_events.append(event)
+        repairs += _drop_v31_items_with_unresolved_evidence(value, segment_text=segment_text)
+    return repairs
+
+
+def _drop_v1_items_with_unresolved_evidence(value: dict[str, Any], *, segment_text: str) -> int:
+    repairs = 0
+    removed = 0
+    for key in ("topics", "claims", "terminology_shifts"):
+        items = value.get(key)
+        if not isinstance(items, list):
+            continue
+        kept = []
+        for item in items:
+            if not isinstance(item, dict):
+                kept.append(item)
                 continue
-            rejection_reason = _v31_rejectable_event_reason(event)
-            if rejection_reason:
-                source_context = event.get("source_context") if isinstance(event.get("source_context"), dict) else {}
-                if isinstance(value.get("rejected_candidates"), list):
-                    value["rejected_candidates"].append(
-                        {
-                            "text": str(event.get("evidence") or event.get("claim_text") or "")[:500],
-                            "reason": rejection_reason,
-                            "source_context_kind": str(source_context.get("kind") or "unknown"),
-                        }
-                    )
-                repairs += 1
+            evidence = item.get("evidence")
+            if isinstance(evidence, str) and evidence and evidence in segment_text:
+                kept.append(item)
                 continue
-            event_type = _enum_key(event.get("event_type"))
-            repaired_event_type = V31_EVENT_TYPE_REPAIRS.get(event_type)
-            if repaired_event_type:
-                original = event.get("event_type")
-                event["event_type"] = repaired_event_type
-                if not event.get("event_subtype"):
-                    event["event_subtype"] = str(original or "")
-                _append_repair_note(event, f"deterministic event_type repair from {original!r} to {repaired_event_type!r}")
-                repairs += 1
-            stance = str(event.get("stance") or "").strip().lower()
-            repaired_stance = V31_STANCE_REPAIRS.get(stance)
-            if repaired_stance:
-                event["stance"] = repaired_stance
-                _append_repair_note(event, f"deterministic stance repair from {stance!r} to {repaired_stance!r}")
-                repairs += 1
-            actor = event.get("actor") if isinstance(event.get("actor"), dict) else {}
-            speaker = event.get("speaker_context") if isinstance(event.get("speaker_context"), dict) else {}
-            actor_role = str(actor.get("role") or "").strip().lower()
-            speaker_role = str(speaker.get("role") or "").strip().lower()
-            repaired_speaker_role = V31_SPEAKER_ROLE_REPAIRS.get(speaker_role)
-            if repaired_speaker_role:
-                speaker["role"] = repaired_speaker_role
-                event["speaker_context"] = speaker
-                _append_repair_note(event, f"deterministic speaker_context role repair from {speaker_role!r} to {repaired_speaker_role!r}")
-                repairs += 1
-                speaker_role = repaired_speaker_role
-            if actor_role and actor_role != "unknown" and speaker_role in {"", "unknown"}:
-                speaker["role"] = actor.get("role")
-                event["speaker_context"] = speaker
-                _append_repair_note(event, f"deterministic speaker_context role repair from {speaker_role!r} to {actor.get('role')!r}")
-                repairs += 1
+            removed += 1
+            repairs += 1
+        if len(kept) != len(items):
+            value[key] = kept
+    if removed:
+        value["needs_review"] = True
+        reason = "Removed generated items whose evidence was not exact current-segment text."
+        current = str(value.get("review_reason") or "").strip()
+        if reason not in current:
+            value["review_reason"] = f"{current} {reason}".strip()[:240] if current else reason
+        repairs += 1
+    return repairs
+
+
+def _drop_v1_unsupported_entities(value: dict[str, Any], *, segment_text: str) -> int:
+    entities = value.get("entities")
+    if not isinstance(entities, dict):
+        return 0
+    text_without_urls = re.sub(r"https?://\S+|www\.\S+", " ", segment_text, flags=re.I)
+    normalized_segment = _normalize_entity_text(text_without_urls)
+    repairs = 0
+    for key in ("people", "organizations", "products"):
+        items = entities.get(key)
+        if not isinstance(items, list):
+            continue
+        kept = []
+        for item in items:
+            if not isinstance(item, str):
+                kept.append(item)
+                continue
+            normalized_item = _normalize_entity_text(item)
+            if normalized_item and normalized_item in normalized_segment:
+                kept.append(item)
+                continue
+            repairs += 1
+        if len(kept) != len(items):
+            entities[key] = kept
+    if repairs:
+        value["entities"] = entities
+        value["needs_review"] = True
+        reason = "Removed generated entities that were not explicit current-segment text."
+        current = str(value.get("review_reason") or "").strip()
+        if reason not in current:
+            value["review_reason"] = f"{current} {reason}".strip()[:240] if current else reason
+        repairs += 1
+    return repairs
+
+
+def _drop_v31_items_with_unresolved_evidence(value: dict[str, Any], *, segment_text: str) -> int:
+    repairs = 0
+    events = value.get("discourse_events") if isinstance(value.get("discourse_events"), list) else []
+    kept_events = []
+    for event in events:
+        if not isinstance(event, dict):
             kept_events.append(event)
-        if len(kept_events) != len(events):
-            value["discourse_events"] = kept_events
-            if not kept_events and value.get("extraction_status") == "coded":
-                value["extraction_status"] = "no_signal"
-                value["no_signal_reason"] = value.get("no_signal_reason") or "Only setup, sponsor, or filler-like evidence was produced and was removed before submission."
+            continue
+        evidence = event.get("evidence")
+        if isinstance(evidence, str) and evidence and evidence in segment_text:
+            kept_events.append(event)
+            continue
+        if isinstance(value.get("rejected_candidates"), list):
+            source_context = event.get("source_context") if isinstance(event.get("source_context"), dict) else {}
+            value["rejected_candidates"].append(
+                {
+                    "text": str(event.get("claim_text") or event.get("evidence") or "")[:500],
+                    "reason": "insufficient_evidence",
+                    "source_context_kind": str(source_context.get("kind") or "unknown"),
+                }
+            )
+        repairs += 1
+    if len(kept_events) != len(events):
+        value["discourse_events"] = kept_events
+        removed_events = len(events) - len(kept_events)
+        value["needs_review"] = True
+        reason = f"Exact-evidence validation pruned {removed_events} event(s); treat this as audited recall loss."
+        current = str(value.get("review_reason") or "").strip()
+        if reason not in current:
+            value["review_reason"] = f"{current} {reason}".strip()[:240]
+
+    candidates = value.get("concept_candidates") if isinstance(value.get("concept_candidates"), list) else []
+    kept_candidates = []
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            kept_candidates.append(candidate)
+            continue
+        evidence = candidate.get("evidence")
+        if isinstance(evidence, str) and evidence and evidence in segment_text:
+            kept_candidates.append(candidate)
+            continue
+        repairs += 1
+    if len(kept_candidates) != len(candidates):
+        value["concept_candidates"] = kept_candidates
+
+    if not value.get("discourse_events") and value.get("extraction_status") == "coded":
+        value["extraction_status"] = "insufficient_evidence"
+        value["concept_candidates"] = []
+        value["no_signal_reason"] = value.get("no_signal_reason") or "No generated event retained exact current-segment evidence."
+        value["needs_review"] = True
+        value["review_reason"] = value.get("review_reason") or "All generated evidence spans failed exact grounding; the segment remains in quality scoring with zero events."
+        repairs += 1
     return repairs
 
 
@@ -281,298 +382,39 @@ def _validate_pack_logic(label_pack: str, value: dict[str, Any], *, segment_text
         raise ValidationError("$.no_signal_reason is required for non-coded extraction_status")
     if extraction_status == "coded" and not candidates and label_pack != "ai_discourse_v3_1":
         raise ValidationError("$.concept_candidates should include at least one candidate when discourse_events are coded")
-    if label_pack == "ai_discourse_v3_1":
-        segment_source_context = value.get("segment_source_context") if isinstance(value.get("segment_source_context"), dict) else {}
-        if segment_source_context.get("kind") in {"show_setup", "page_chrome"} and extraction_status == "coded":
-            raise ValidationError("$.segment_source_context excluded source contexts cannot produce coded events")
     for index, event in enumerate(events):
         _validate_exact_offset(f"$.discourse_events[{index}]", event, segment_text)
         target = event.get("target") if isinstance(event, dict) else {}
         if not isinstance(target, dict) or not target.get("candidate_concept"):
             raise ValidationError(f"$.discourse_events[{index}].target.candidate_concept is required")
-        if not event.get("surface_terms") and event.get("event_type") in {"term_usage", "product_signal", "capability_claim"}:
-            raise ValidationError(f"$.discourse_events[{index}].surface_terms must not be empty for {event.get('event_type')}")
         if label_pack == "ai_discourse_v3_1":
-            _validate_v31_event_quality(index, event)
+            _validate_v31_metric_grounding(index, event)
     for index, candidate in enumerate(candidates):
         _validate_exact_offset(f"$.concept_candidates[{index}]", candidate, segment_text)
 
 
-GENERIC_V31_CLAIM_PATTERNS = [
-    re.compile(r"^segment (discusses|contains|mentions|signals|raises|frames)\b", re.I),
-    re.compile(r"\bcontains a discourse signal\b", re.I),
-    re.compile(r"\bforward-looking AI forecast around\b", re.I),
-    re.compile(r"\bproduct or model narrative around\b", re.I),
-]
 
-
-FILLER_EVIDENCE_PATTERNS = [
-    re.compile(r"\bwe(?:'re| are) going to (talk|welcome|discuss|cover)\b", re.I),
-    re.compile(r"\bgoing to be story number\b", re.I),
-    re.compile(r"\bsubscribe\b|\bsponsor\b|\bpromo code\b|\bshow notes\b", re.I),
-    re.compile(r"\bcoming up (?:next|after|on)\b|\bin this episode\b|\btoday['’]?s episode\b", re.I),
-    re.compile(r"\btranscript\b.*\b(show notes|timestamps|links)\b", re.I),
-]
-
-
-PAGE_NUMERIC_ARTIFACT_PATTERNS = [
-    re.compile(r"^\s*(?:\[\s*)?\d{1,3}(?:\s*\])?[\).:]?\s*$"),
-    re.compile(r"^\s*\d{1,2}:\d{2}(?::\d{2})?\s*$"),
-    re.compile(r"^\s*(?:footnote|note|source|chapter|timestamp)\s*\d{1,3}\s*$", re.I),
-    re.compile(r"^\s*\d{1,3}\s+(?:comments?|likes?|shares?|views?)\s*$", re.I),
-]
-
-
-QUANTITATIVE_EVENT_TYPES = {
-    "capability_claim",
-    "product_signal",
-    "market_signal",
-    "forecast",
-    "causal_mechanism",
-    "adoption_signal",
-}
-
-
-QUANTIFIED_EVIDENCE_PATTERN = re.compile(
-    r"(\$\s*\d|\b\d+(?:[,.]\d+)*(?:\.\d+)?(?:\s*[-–]\s*\d+(?:\.\d+)?)?\s*(?:%|x|gb|tb|mb|kb|mph|times|fold|percent|million|billion|trillion|thousand|k|m|bn|users?|customers?|tokens?|dollars?|months?|years?|weeks?|days?|hours?|minutes?|seconds?|arr|revenue|valuation|rate|margin|growth|latency|parameters?|gpu|gpus|chips?|queries?|requests?|gates?|ors?)?\b|\b[a-z]\s+times\b|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|hundred|thousand|million|billion|trillion|half|third|quarter|twentieth|full[- ]year|quarterly|deca[- ]?billions?)\b)",
-    re.I,
-)
-
-GROUNDED_METRIC_CONTEXT_PATTERN = re.compile(
-    r"(\$\s*\d|\b\d+(?:[,.]\d+)*(?:\.\d+)?\s*(?:%|x|gb|tb|mb|kb|mph|times|fold|percent|million|billion|trillion|thousand|k|m|bn|users?|customers?|institutions?|tokens?|dollars?|months?|years?|weeks?|days?|hours?|minutes?|seconds?|arr|revenue|valuation|rate|margin|growth|latency|parameters?|gpu|gpus|chips?|queries?|requests?|gates?|ors?)\b|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|hundred|thousand|million|billion|trillion|half|third|quarter|twentieth|full[- ]year|quarterly|deca[- ]?billions?)\s+(?:times|fold|percent|users?|customers?|institutions?|tokens?|dollars?|months?|years?|weeks?|days?|hours?|minutes?|seconds?|gpus?|chips?|parameters?)\b)",
-    re.I,
-)
-
-
-V31_STANCE_REPAIRS = {
-    "analytical": "neutral",
-    "cautionary": "warning",
-    "cautious": "uncertain",
-    "critical": "skeptical",
-    "descriptive": "neutral",
-    "exploratory": "uncertain",
-    "hedged": "uncertain",
-    "optimistic": "supportive",
-    "positive": "supportive",
-    "negative": "skeptical",
-}
-
-
-V31_SPEAKER_ROLE_REPAIRS = {
-    "co-host": "host",
-    "cohost": "host",
-    "interviewer": "host",
-    "moderator": "host",
-    "presenter": "host",
-    "narrator": "host",
-    "guest_expert": "guest",
-    "expert_guest": "guest",
-    "panelist": "guest",
-    "interviewee": "guest",
-    "participant": "speaker",
-    "source": "quoted_source",
-    "quoted": "quoted_source",
-    "reported_source": "quoted_source",
-}
-
-
-V31_EVENT_TYPE_REPAIRS = {
-    "actor_position": "stance_position",
-    "actor_org_position": "stance_position",
-    "adoption_pattern": "adoption_signal",
-    "adoption": "adoption_signal",
-    "causal_claim": "causal_mechanism",
-    "claim": "capability_claim",
-    "descriptive_claim": "capability_claim",
-    "entity_mention": "entity_reference",
-    "entity_relation": "entity_reference",
-    "entity_relationship": "entity_reference",
-    "forecast_claim": "forecast",
-    "frame": "frame_usage",
-    "market_investment_narrative": "market_signal",
-    "market_narrative": "market_signal",
-    "model_reference": "entity_reference",
-    "org_reference": "entity_reference",
-    "person_reference": "actor_mention",
-    "product_release_signal": "product_signal",
-    "relationship_edge": "entity_reference",
-    "risk": "risk_signal",
-    "safety_risk": "risk_signal",
-    "technical_mechanism": "causal_mechanism",
-    "term": "term_usage",
-    "terminology_drift": "term_usage",
-    "uncertainty_marker": "uncertainty",
-}
-
-
-def _enum_key(value: Any) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
-
-
-def _validate_v31_event_quality(index: int, event: dict[str, Any]) -> None:
-    claim_text = str(event.get("claim_text") or "")
+def _validate_v31_metric_grounding(index: int, event: dict[str, Any]) -> None:
     evidence = str(event.get("evidence") or "")
-    signal_reason = str(event.get("signal_reason") or "")
-    if any(pattern.search(claim_text) for pattern in GENERIC_V31_CLAIM_PATTERNS):
-        raise ValidationError(f"$.discourse_events[{index}].claim_text is generic/template-like")
-    if _is_filler_v31_event(event):
-        raise ValidationError(f"$.discourse_events[{index}].evidence appears to be setup, sponsor, or filler text")
-    source_context = event.get("source_context") if isinstance(event.get("source_context"), dict) else {}
-    if source_context.get("kind") == "sponsor_ad_read":
-        raise ValidationError(f"$.discourse_events[{index}].sponsor/ad-read event must be isolated from durable discourse extraction")
-    if _is_numeric_artifact_v31_event(event):
-        raise ValidationError(f"$.discourse_events[{index}].metric or quantitative claim is not grounded in substantive evidence")
-    if _is_low_value_identity_v31_event(event):
-        raise ValidationError(f"$.discourse_events[{index}] is a low-value identity mention without graph-useful context")
-    actor = event.get("actor") if isinstance(event.get("actor"), dict) else {}
-    speaker = event.get("speaker_context") if isinstance(event.get("speaker_context"), dict) else {}
-    if not claim_text or claim_text.lower() == evidence.lower():
-        raise ValidationError(f"$.discourse_events[{index}].claim_text must be a faithful proposition, not a copied evidence span")
-    if len(signal_reason.split()) < 5:
-        raise ValidationError(f"$.discourse_events[{index}].signal_reason must explain why the event is useful")
-    if actor.get("actor_type") == "unknown" and speaker.get("role") == "unknown" and source_context.get("kind") != "mixed_or_uncertain":
-        raise ValidationError(f"$.discourse_events[{index}] must identify an actor or speaker context")
-
-
-def _is_filler_v31_event(event: dict[str, Any]) -> bool:
-    evidence = str(event.get("evidence") or "")
-    source_context = event.get("source_context") if isinstance(event.get("source_context"), dict) else {}
-    if source_context.get("kind") == "sponsor_ad_read":
-        return True
-    return any(pattern.search(evidence) for pattern in FILLER_EVIDENCE_PATTERNS)
-
-
-def _is_allowed_sponsor_v31_event(event: dict[str, Any]) -> bool:
-    return False
-
-
-def _v31_rejectable_event_reason(event: dict[str, Any]) -> str | None:
-    evidence = str(event.get("evidence") or "")
-    source_context = event.get("source_context") if isinstance(event.get("source_context"), dict) else {}
-    if source_context.get("kind") == "sponsor_ad_read":
-        return "sponsor_or_ad"
-    if _is_filler_v31_event(event):
-        return "sponsor_or_ad" if re.search(r"\bsponsor\b|\bpromo code\b", evidence, re.I) else "show_setup"
-    if _is_numeric_artifact_v31_event(event):
-        return "insufficient_evidence"
-    if _is_low_value_identity_v31_event(event):
-        return "unsupported_actor"
-    return None
-
-
-LOW_VALUE_IDENTITY_NAME_PATTERN = re.compile(
-    r"\b(?:unknown|responding|unnamed|anonymous|pseudonymous|commenter|user|reader|poster|speaker|host|guest|interviewer|interviewee)\b",
-    re.I,
-)
-
-SPEAKER_LABEL_ONLY_PATTERN = re.compile(
-    r"^\s*(?:host|guest|speaker|interviewer|interviewee|[A-Z][A-Za-z0-9 ._'’-]{0,48})\s*:?\s*$",
-    re.I,
-)
-
-GRAPH_USEFUL_IDENTITY_CONTEXT_PATTERN = re.compile(
-    r"\b(?:"
-    r"ceo|cto|founder|co[- ]founder|researcher|scientist|economist|professor|partner|investor|"
-    r"lead|director|head|president|minister|author|writer|journalist|analyst|guest|host|"
-    r"interview|interviews|interviewed|mentioned|mentions|quoted|quotes|according to|reported|"
-    r"said|says|argued|argues|claims|claimed|criticized|endorsed|compared|discussed|"
-    r"affiliation|affiliated|from|at|works at|joined|left|runs|leads|founded|"
-    r"podcast|episode|source|publication|paper|blog|newsletter"
-    r")\b",
-    re.I,
-)
-
-
-def _is_low_value_identity_v31_event(event: dict[str, Any]) -> bool:
-    event_type = str(event.get("event_type") or "").strip()
-    if event_type != "actor_mention":
-        return False
-    evidence = re.sub(r"\s+", " ", str(event.get("evidence") or "")).strip()
-    claim_text = re.sub(r"\s+", " ", str(event.get("claim_text") or "")).strip()
-    signal_reason = re.sub(r"\s+", " ", str(event.get("signal_reason") or "")).strip()
-    event_subtype = str(event.get("event_subtype") or "")
-    actor = event.get("actor") if isinstance(event.get("actor"), dict) else {}
-    reported_actor = event.get("reported_actor") if isinstance(event.get("reported_actor"), dict) else {}
-    speaker = event.get("speaker_context") if isinstance(event.get("speaker_context"), dict) else {}
-    actor_name = str(actor.get("name") or "").strip()
-    reported_name = str(reported_actor.get("name") or "").strip()
-    speaker_name = str(speaker.get("name") or "").strip()
-    combined = " ".join([evidence, claim_text, signal_reason, event_subtype, actor_name, reported_name, speaker_name])
-
-    if SPEAKER_LABEL_ONLY_PATTERN.fullmatch(evidence) and not GRAPH_USEFUL_IDENTITY_CONTEXT_PATTERN.search(combined):
-        return True
-    if re.search(r"\bspeaker[_ -]?label\b|\btranscript speaker\b", combined, re.I):
-        return True
-    if LOW_VALUE_IDENTITY_NAME_PATTERN.search(actor_name) and not GRAPH_USEFUL_IDENTITY_CONTEXT_PATTERN.search(combined):
-        return True
-    if LOW_VALUE_IDENTITY_NAME_PATTERN.search(reported_name) and not GRAPH_USEFUL_IDENTITY_CONTEXT_PATTERN.search(combined):
-        return True
-    if LOW_VALUE_IDENTITY_NAME_PATTERN.search(speaker_name) and not GRAPH_USEFUL_IDENTITY_CONTEXT_PATTERN.search(combined):
-        return True
-    if len(evidence.split()) <= 5 and not GRAPH_USEFUL_IDENTITY_CONTEXT_PATTERN.search(combined):
-        return True
-    return False
-
-
-def _is_numeric_artifact_v31_event(event: dict[str, Any]) -> bool:
-    evidence = str(event.get("evidence") or "").strip()
-    if not evidence:
-        return False
-    quality_flags = {str(flag).strip().lower() for flag in event.get("quality_flags") or []}
-    if quality_flags.intersection({"footnote_source", "referent_outside_current_segment", "show_notes_not_dialogue"}):
-        metric = event.get("metric") if isinstance(event.get("metric"), dict) else {}
-        if any(str(metric.get(key) or "").strip() for key in ["value", "unit", "comparator", "raw_text"]):
-            return True
-    if any(pattern.search(evidence) for pattern in PAGE_NUMERIC_ARTIFACT_PATTERNS):
-        return _event_has_quantitative_intent(event)
-    if not _event_has_quantitative_intent(event):
-        return False
     metric = event.get("metric") if isinstance(event.get("metric"), dict) else {}
-    metric_raw = str(metric.get("raw_text") or "").strip()
-    metric_value = str(metric.get("value") or "").strip()
-    normalized_evidence = re.sub(r"\s+", " ", evidence).lower()
-    normalized_metric_raw = re.sub(r"\s+", " ", metric_raw).lower()
-    normalized_metric_value = re.sub(r"\s+", " ", metric_value).lower()
-    if metric_raw and _looks_quantitative_text(metric_raw) and normalized_metric_raw not in normalized_evidence and not QUANTIFIED_EVIDENCE_PATTERN.search(evidence):
-        return True
-    if metric_value and _looks_quantitative_text(metric_value) and normalized_metric_value not in normalized_evidence and not QUANTIFIED_EVIDENCE_PATTERN.search(evidence):
-        return True
-    if _metric_is_bare_or_artifact_like(metric_raw, evidence) or _metric_is_bare_or_artifact_like(metric_value, evidence):
-        return True
-    claim_text = str(event.get("claim_text") or "")
-    if re.search(r"\b\d+(?:\.\d+)?\s*(?:x|times|%|percent|million|billion|arr|revenue|valuation)\b", claim_text, re.I) and not QUANTIFIED_EVIDENCE_PATTERN.search(evidence):
-        return True
-    return False
-
-
-def _metric_is_bare_or_artifact_like(metric_value: str, evidence: str) -> bool:
-    value = str(metric_value or "").strip()
-    if not value or not re.fullmatch(r"\d{1,3}(?:\.\d+)?", value):
-        return False
-    if GROUNDED_METRIC_CONTEXT_PATTERN.search(evidence):
-        return False
-    return True
-
-
-def _event_has_quantitative_intent(event: dict[str, Any]) -> bool:
-    metric = event.get("metric") if isinstance(event.get("metric"), dict) else {}
-    metric_has_value = any(_looks_quantitative_text(metric.get(key)) for key in ["value", "unit", "raw_text"])
-    claim_text = str(event.get("claim_text") or "")
-    metric_language = re.search(
-        r"(\b\d+(?:\.\d+)?\b|\$\s*\d|%|\bpercent\b)",
-        claim_text,
-        re.I,
-    )
-    return bool(metric_has_value or metric_language)
-
-
-def _looks_quantitative_text(value: Any) -> bool:
-    text = str(value or "").strip()
-    if not text or text == "not_applicable":
-        return False
-    return bool(
-        re.search(r"\d|\$|%|\b(?:percent|million|billion|trillion|thousand|hundred|half|third|quarter|twentieth|fold|times|x|gb|tb|mb|kb|mph|users?|customers?|tokens?|dollars?|months?|years?|weeks?|days?|hours?|minutes?|seconds?|arr|parameters?|gpu|gpus|chips?|queries?|requests?|gates?|ors?|deca[- ]?billions?)\b", text, re.I)
-    )
+    raw_text = str(metric.get("raw_text") or "")
+    parts = [
+        str(metric.get(field) or "")
+        for field in ("value", "unit", "comparator")
+        if metric.get(field) not in (None, "")
+    ]
+    direction = str(metric.get("direction") or "not_applicable")
+    if not raw_text and not parts and direction == "not_applicable":
+        return
+    if not raw_text or raw_text not in evidence:
+        raise ValidationError(
+            f"$.discourse_events[{index}].metric.raw_text must be an exact evidence substring"
+        )
+    for part in parts:
+        if part not in raw_text and part not in evidence:
+            raise ValidationError(
+                f"$.discourse_events[{index}].metric fields must be exact evidence substrings"
+            )
 
 
 def _validate_exact_offset(path: str, item: dict[str, Any], segment_text: str | None) -> None:
@@ -619,7 +461,7 @@ def audit_label_grounding(label_pack: str, value: dict[str, Any], *, segment_tex
     if value.get("overall_confidence", 0) < 0.6 and not value.get("needs_review") and _has_substantive_codes(value):
         checks += 1
         issues.append({"severity": "warning", "field": "needs_review", "message": "low-confidence label should be marked needs_review"})
-    if _looks_low_signal(segment_text) and any(_iter_evidence_values(value)):
+    if label_pack != "ai_discourse_v3_1" and _looks_low_signal(segment_text) and any(_iter_evidence_values(value)):
         checks += 1
         issues.append({"severity": "warning", "field": "segment", "message": "low-signal or boilerplate-like segment received substantive codes"})
     penalty = sum(0.35 if issue["severity"] == "critical" else 0.15 for issue in issues)

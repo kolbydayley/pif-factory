@@ -1,20 +1,15 @@
 {
-  "$id": "people_network_v1",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["schema_version", "segment_id", "episode_id", "hosts", "guests", "mentioned_people", "organizations", "relationship_edges", "overall_confidence", "needs_review", "review_reason"],
+  "$id": "https://podcast-intelligence-factory.local/schemas/people_network_v1",
   "properties": {
-    "schema_version": {"type": "string", "enum": ["people_network_v1"]},
-    "segment_id": {"type": "string"},
-    "episode_id": {"type": "string"},
-    "hosts": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["name", "confidence"], "properties": {"name": {"type": "string"}, "confidence": {"type": "number"}}}},
-    "guests": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["name", "affiliation", "confidence"], "properties": {"name": {"type": "string"}, "affiliation": {"type": ["string", "null"]}, "confidence": {"type": "number"}}}},
-    "mentioned_people": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["name", "role_or_context", "confidence"], "properties": {"name": {"type": "string"}, "role_or_context": {"type": "string"}, "confidence": {"type": "number"}}}},
-    "organizations": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["name", "role_or_context", "confidence"], "properties": {"name": {"type": "string"}, "role_or_context": {"type": "string"}, "confidence": {"type": "number"}}}},
-    "relationship_edges": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["source", "target", "relationship", "evidence", "confidence"], "properties": {"source": {"type": "string"}, "target": {"type": "string"}, "relationship": {"type": "string"}, "evidence": {"type": "string"}, "confidence": {"type": "number"}}}},
-    "overall_confidence": {"type": "number"},
-    "needs_review": {"type": "boolean"},
-    "review_reason": {"type": ["string", "null"]}
-  }
+    "schema_version": {
+      "enum": [
+        "people_network_v1"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version"
+  ],
+  "type": "object"
 }
-

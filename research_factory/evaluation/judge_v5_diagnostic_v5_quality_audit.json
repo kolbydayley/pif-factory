@@ -1,0 +1,37 @@
+{
+  "schema_version": "pif_judge_v5_diagnostic_v5_quality_audit_v1",
+  "source_records": {
+    "runtime_lock_v10": {"path": "work/app-server-development-v2/unattended-runtime-lock-v10.json", "sha256": "a9b2d4dc51a8d80c9f593bd0ba9d34908cc47a6e0c3a09e097f06bc861e831e6", "size_bytes": 12733},
+    "launch_receipt_v10": {"path": "work/app-server-development-v2/unattended-control-v10/launch-receipt-v10.json", "sha256": "a27d0deb06790771921c8ed97f0e3bb1a964723a52fc97b5bff2f2116f8ddf2d", "size_bytes": 3859},
+    "terminal_receipt_v10": {"path": "work/app-server-development-v2/unattended-control-v10/terminal-receipt-v10.json", "sha256": "7763d2bcea93620635bdcfd1f1a209cd603a32f3848e5622d0413632a949517c", "size_bytes": 5829},
+    "diagnostic_v5_spec": {"path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v5/diagnostic-spec.json", "sha256": "aa1ef2e281e9d3c42c65a8f69ad40c732cf5f36b6c1c3dad7ec3b5598cd2039f", "size_bytes": 6714},
+    "diagnostic_v5_terminal": {"path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v5/terminal.json", "sha256": "e4aef244e6b5997314fcee81d85fbdf21e87c6c3ae6ba741215de5e94f38294d", "size_bytes": 7039},
+    "diagnostic_v5_score": {"path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v5/diagnostic-score.json", "sha256": "51a03b8b7c2fc647a7aab0b0e6db2783ccaf1505bf8e75c3566d5f84854f5d15", "size_bytes": 1625},
+    "diagnostic_v5_disagreements": {"path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v5/observable-disagreements.private.json", "sha256": "34f7d6b99b05e4a8695206e8ca717547b4130f77beb92689f42d4496c9754265", "size_bytes": 284},
+    "diagnostic_v5_base": {"path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v5/turns/neutral-alignment-base/output.private.json", "sha256": "7025090b2ccad438d541f6182374de1118e19feb744759586b9ad4f053553d3c", "size_bytes": 64479},
+    "diagnostic_v5_canary": {"path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v5/turns/neutral-alignment-canary/output.private.json", "sha256": "098024ca3d72bf02addc5fe9e7d5c654976ab724c1eca89f4dde8c9e460fce78", "size_bytes": 25852},
+    "diagnostic_v5_adjudication": {"path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v5/turns/disagreement-adjudication/output.private.json", "sha256": "7cf87bbd07570353d6ad5be7e2b7a1da083d842aff5a002907f19feed15ebd6a", "size_bytes": 4973},
+    "diagnostic_fixture_patch_v3": {"path": "research_factory/evaluation/judge_v5_diagnostic_v3.json", "sha256": "b85cadac13336ea088bc34d95ff9be26fd0301615dbe00bb155ee10377a291d1", "size_bytes": 1469}
+  },
+  "finding": {
+    "case_key": "diag2_unsupported_inference",
+    "case_id": "jcase_ca563903916c50cf1a8e32ef",
+    "base_different_fields": ["event_boundary", "target", "unsupported_inference"],
+    "canary_different_fields": ["event_type", "target", "unsupported_inference"],
+    "adjudication_different_fields": ["event_type", "target", "unsupported_inference"],
+    "base_boundary_without_evidence": true,
+    "fixture_truth_is_corrected": true
+  },
+  "diagnostic_v6_recovery_contract": {
+    "diagnostic_v5_replay_allowed": false,
+    "diagnostic_v5_output_reuse_allowed": false,
+    "all_diagnostic_v6_turns_run_fresh": true,
+    "fixture_content_changed": false,
+    "fixture_truth_changed": false,
+    "gate_thresholds_changed": false,
+    "boundary_evidence_consistency_rule_added": true,
+    "unsupported_assertion_not_boundary_rule_added": true,
+    "event_type_direct_category_rule_added": true,
+    "full_calibration_allowed_before_v6_pass": false
+  }
+}

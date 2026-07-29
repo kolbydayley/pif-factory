@@ -1,0 +1,57 @@
+{
+  "schema_version": "pif_judge_v5_diagnostic_v3_quality_audit_v1",
+  "audit_status": "completed_before_diagnostic_v4_semantic_calls",
+  "source_records": {
+    "runtime_lock_v8": {"path": "work/app-server-development-v2/unattended-runtime-lock-v8.json", "sha256": "41714a4ee5a0806f2266fad38e5d27fcd157b7d78423ebaff0bb4dd00a88979e"},
+    "launch_receipt_v8": {"path": "work/app-server-development-v2/unattended-control-v8/launch-receipt-v8.json", "sha256": "804eae619895dd86d01ffde9d6ce48d48b3525cec7b9ce37675e5c9fcb889cb7"},
+    "terminal_receipt_v8": {"path": "work/app-server-development-v2/unattended-control-v8/terminal-receipt-v8.json", "sha256": "bbcc89eddaa64f65a6f89ea0453398a1b46df6922cd7b83b856c20e2d61c2991"},
+    "diagnostic_v3_spec": {"path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v3/diagnostic-spec.json", "sha256": "d91441f1c731bc01da10f9765424f7a8da5c9dfe6b5af26801efbcd7acc6120d"},
+    "diagnostic_v3_terminal": {"path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v3/terminal.json", "sha256": "0705c550fb105a69f8bc3119071c1708f799922820590e36bd0402e356348994"},
+    "diagnostic_v3_score": {"path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v3/diagnostic-score.json", "sha256": "1efa40dd41743d6ca44c70fd8bb1ae50c4dcc9265f3f61af76544e5e1f8ca9a3"},
+    "diagnostic_v3_disagreements": {"path": "work/app-server-development-v2/unattended-pipeline-v5/judge-diagnostic-v3/observable-disagreements.private.json", "sha256": "03da901c1fc653fe0edd3173eaee5e5cc07b9ed6cf1c4317a2ed88540d8c9d37"},
+    "diagnostic_fixture_v2": {"path": "research_factory/evaluation/judge_v5_diagnostic_v2.json", "sha256": "9cf3b5d4b82694d7efa5d784ceca5bbc4dce0fbda7e48e24e8404d6f3ad59021"}
+  },
+  "measured_result": {
+    "classification": "judge_diagnostic_quality_gate_not_passed",
+    "completed_turn_count": 4,
+    "unknown_usage_turn_count": 0,
+    "retry_count": 0,
+    "usage_status": "complete",
+    "total_tokens": 150769,
+    "support_sensitivity": 1.0,
+    "support_specificity": 1.0,
+    "structured_field_accuracy": 1.0,
+    "field_diagnostic_f1": 0.923077,
+    "relation_accuracy": 1.0,
+    "equivalence_partition_exact_case_rate": 1.0,
+    "order_bias": 0.333333,
+    "only_failed_gate": "order_bias",
+    "full_calibration_authorized": false
+  },
+  "order_failure_forensics": {
+    "changed_canary_case_count": 2,
+    "changed_case_keys": ["diag2_actor", "diag2_pronunciation_coach_field"],
+    "only_changed_checklist_field": "unsupported_inference",
+    "both_pointwise_proposition_verdicts_supported_in_each_case": true,
+    "base_decision": "same",
+    "canary_decision": "different",
+    "adjudication_decision": "different",
+    "fixture_truth_decision": "same"
+  },
+  "diagnostic_v4_recovery_contract": {
+    "gate_thresholds_changed": false,
+    "fixture_content_changed": false,
+    "fixture_truth_changed": false,
+    "support_protocol_changed": false,
+    "alignment_evidence_envelope_changed": false,
+    "unsupported_inference_consistency_rule_added": true,
+    "rule": "unsupported_inference is different exactly when one frozen proposition verdict is unsupported and the other is supported; it is same when verdicts match and abstain when either verdict abstains",
+    "validator_must_reject_inconsistent_row": true,
+    "all_v4_turns_must_run_fresh": true,
+    "diagnostic_v3_output_reuse_allowed": false,
+    "diagnostic_v3_replay_allowed": false,
+    "full_calibration_remains_unauthorized": true
+  },
+  "semantic_model_calls_performed_during_audit": 0,
+  "privacy": "hashes_case_keys_counts_usage_metrics_and_protocol_rules_only"
+}

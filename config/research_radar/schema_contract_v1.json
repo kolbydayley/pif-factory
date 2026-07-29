@@ -1,0 +1,67 @@
+{
+  "contract_id": "research-radar-schema-v1",
+  "schema_version": "1",
+  "status": "frozen_pilot",
+  "node_types": [
+    "workspace",
+    "source",
+    "content_item",
+    "evidence_span",
+    "entity",
+    "topic",
+    "development",
+    "claim",
+    "position_observation",
+    "briefing"
+  ],
+  "semantic_edge_required_fields": [
+    "evidence_span_id",
+    "observed_at",
+    "confidence",
+    "release_status",
+    "extractor_version",
+    "release_id"
+  ],
+  "release_statuses": [
+    "candidate",
+    "provisional",
+    "verified",
+    "amended",
+    "retracted",
+    "dismissed"
+  ],
+  "source_statuses": [
+    "probation",
+    "active",
+    "paused",
+    "blocked"
+  ],
+  "source_trust_tiers": [
+    "primary",
+    "reputable_secondary",
+    "specialist_individual",
+    "weak_signal"
+  ],
+  "ai_technology_extension": {
+    "schema_version": "1",
+    "entity_types": [
+      "person",
+      "company_lab",
+      "product_model",
+      "research_result",
+      "policy_action",
+      "security_incident",
+      "market_adoption_signal"
+    ],
+    "model_may_invent_relation_types": false
+  },
+  "authority_rules": {
+    "canonical_database": "research_radar_sqlite",
+    "provisional_overlay_separate": true,
+    "verified_requires_explicit_acceptance": true,
+    "legacy_pending_queue_import": false,
+    "legacy_semantic_graph_import": false,
+    "fts_for_literal_search": true,
+    "embeddings": false
+  }
+}

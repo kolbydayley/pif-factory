@@ -1,0 +1,65 @@
+{
+  "schema_version": "pif_production_cohort_v1",
+  "cohort_id": "pif-gold-25-v1",
+  "content_adapter": "podcast",
+  "episode_count": 25,
+  "show_count": 5,
+  "selection_policy": {
+    "baseline": "completed GPT-5.5 ai_discourse_v3_1 full-episode extraction",
+    "audited_pilot_reuse": "Reuse all qualifying episodes from the fixed July 2 pilot for retained shows, then make the minimum cohort substitutions needed for cross-show speakers and mature outcomes.",
+    "semantic_authority": "Cohort membership is deterministic; identity, proposition, relation, and outcome decisions remain LLM-owned and separately accepted.",
+    "time_span": "2013-04-01 through 2026-07-02"
+  },
+  "constraint_evidence": {
+    "repeated_raw_speaker": {
+      "name": "Eric Topol",
+      "episode_ids": [
+        "ep_04a936e3ab2a5c7cd8e7147f",
+        "ep_5a0096ed535e043a0a2ece7e",
+        "ep_94e2d08d0d9e41b8a7ac35ca"
+      ],
+      "note": "Raw attribution only; canonical identity still requires an accepted LLM identity judgment."
+    },
+    "audited_pilot_episode_ids": [
+      "ep_7b5e1f63e7513366dd4f9551",
+      "ep_7b4c2cb46c0bd5ebd6c95c0c",
+      "ep_4051d4f942c4ec9fd9233c62",
+      "ep_7b6b53d4dff291d5953c66b8",
+      "ep_8d9a45888f13814004d79864",
+      "ep_c70c38149a4443491efc0ec4",
+      "ep_6a5787a9372e75669b90385d",
+      "ep_0024a1ddf6205a4a1c2a73ad"
+    ]
+  },
+  "episodes": [
+    {"id": "ep_7b5e1f63e7513366dd4f9551", "source_id": "big-technology-podcast", "published_at": "2026-06-30T19:38:01+00:00"},
+    {"id": "ep_7b4c2cb46c0bd5ebd6c95c0c", "source_id": "big-technology-podcast", "published_at": "2026-06-27T15:16:00+00:00"},
+    {"id": "ep_44cf0086a71fc46365f88ba8", "source_id": "big-technology-podcast", "published_at": "2026-06-19T23:24:00+00:00"},
+    {"id": "ep_83480f3fe555a4943c00d2a6", "source_id": "big-technology-podcast", "published_at": "2026-06-19T18:39:54+00:00"},
+    {"id": "ep_39d9367c6f34bb98fa7d1a42", "source_id": "big-technology-podcast", "published_at": "2026-06-12T21:55:14+00:00"},
+
+    {"id": "ep_059ded175468559ef73004d8", "source_id": "econtalk", "published_at": "2026-03-30T10:30:00+00:00"},
+    {"id": "ep_03ded6fc08bec3f1a0405c93", "source_id": "econtalk", "published_at": "2026-01-12T11:30:00+00:00"},
+    {"id": "ep_01a0696860dd993f65f69b76", "source_id": "econtalk", "published_at": "2025-02-03T11:30:00+00:00"},
+    {"id": "ep_01e16c484773b69611c4f5d6", "source_id": "econtalk", "published_at": "2024-09-23T10:30:00+00:00"},
+    {"id": "ep_04a936e3ab2a5c7cd8e7147f", "source_id": "econtalk", "published_at": "2013-04-01T06:30:00+00:00"},
+
+    {"id": "ep_09e2e71c0f74fb64ca859156", "source_id": "latent-space", "published_at": "2026-06-24T18:53:16+00:00"},
+    {"id": "ep_e7630540911fc5dea9850204", "source_id": "latent-space", "published_at": "2026-06-22T21:06:55+00:00"},
+    {"id": "ep_8d9fef4d070751773d4a4245", "source_id": "latent-space", "published_at": "2026-06-18T17:30:00+00:00"},
+    {"id": "ep_4051d4f942c4ec9fd9233c62", "source_id": "latent-space", "published_at": "2026-06-17T17:58:06+00:00"},
+    {"id": "ep_7b6b53d4dff291d5953c66b8", "source_id": "latent-space", "published_at": "2026-06-03T19:27:49+00:00"},
+
+    {"id": "ep_8d9a45888f13814004d79864", "source_id": "microsoft-research-podcast", "published_at": "2026-04-20T16:23:00+00:00"},
+    {"id": "ep_c70c38149a4443491efc0ec4", "source_id": "microsoft-research-podcast", "published_at": "2026-04-09T16:09:43+00:00"},
+    {"id": "ep_55fa2a2ba4e27f02260a3398", "source_id": "microsoft-research-podcast", "published_at": "2026-03-23T15:00:00+00:00"},
+    {"id": "ep_94e2d08d0d9e41b8a7ac35ca", "source_id": "microsoft-research-podcast", "published_at": "2025-08-21T16:00:00+00:00"},
+    {"id": "ep_5a0096ed535e043a0a2ece7e", "source_id": "microsoft-research-podcast", "published_at": "2025-07-10T16:00:00+00:00"},
+
+    {"id": "ep_6a5787a9372e75669b90385d", "source_id": "practical-ai", "published_at": "2026-07-02T09:00:00+00:00"},
+    {"id": "ep_0024a1ddf6205a4a1c2a73ad", "source_id": "practical-ai", "published_at": "2026-06-25T09:00:00+00:00"},
+    {"id": "ep_903cc763f0f106d7f4610f17", "source_id": "practical-ai", "published_at": "2026-06-11T09:00:00+00:00"},
+    {"id": "ep_7c6022a2544ce19235993847", "source_id": "practical-ai", "published_at": "2026-06-04T09:00:00+00:00"},
+    {"id": "ep_6f2a3729a8012f0e3510d239", "source_id": "practical-ai", "published_at": "2026-05-21T09:00:00+00:00"}
+  ]
+}

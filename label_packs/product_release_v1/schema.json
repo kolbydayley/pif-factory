@@ -1,58 +1,15 @@
 {
-  "$id": "product_release_v1",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["schema_version", "segment_id", "episode_id", "products", "release_signals", "correlation_hypotheses", "overall_confidence", "needs_review", "review_reason"],
+  "$id": "https://podcast-intelligence-factory.local/schemas/product_release_v1",
   "properties": {
-    "schema_version": {"type": "string", "enum": ["product_release_v1"]},
-    "segment_id": {"type": "string"},
-    "episode_id": {"type": "string"},
-    "products": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["name", "organization", "evidence", "confidence"],
-        "properties": {
-          "name": {"type": "string"},
-          "organization": {"type": "string"},
-          "evidence": {"type": "string"},
-          "confidence": {"type": "number"}
-        }
-      }
-    },
-    "release_signals": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["signal", "signal_type", "evidence", "confidence"],
-        "properties": {
-          "signal": {"type": "string"},
-          "signal_type": {"type": "string", "enum": ["pre_release_hint", "post_release_reaction", "roadmap_shift", "competitive_response", "other"]},
-          "evidence": {"type": "string"},
-          "confidence": {"type": "number"}
-        }
-      }
-    },
-    "correlation_hypotheses": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["hypothesis", "related_org", "related_product", "evidence", "confidence"],
-        "properties": {
-          "hypothesis": {"type": "string"},
-          "related_org": {"type": "string"},
-          "related_product": {"type": "string"},
-          "evidence": {"type": "string"},
-          "confidence": {"type": "number"}
-        }
-      }
-    },
-    "overall_confidence": {"type": "number"},
-    "needs_review": {"type": "boolean"},
-    "review_reason": {"type": ["string", "null"]}
-  }
+    "schema_version": {
+      "enum": [
+        "product_release_v1"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version"
+  ],
+  "type": "object"
 }
-

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import signal
 import shutil
 import subprocess
 from pathlib import Path
@@ -15,6 +16,9 @@ from .paths import corpus_dir, runs_dir
 from .prep import prepare_transcript
 from .transcription import run_transcription_job
 from .util import dumps_json, loads_json, now_iso, read_text, stable_id, write_text_atomic
+
+
+CORPUS_TEXT_READ_TIMEOUT_SECONDS = 3.0
 
 
 def preflight(model: str) -> dict[str, Any]:
@@ -255,6 +259,16 @@ def gate_v31_label_on_episode_context(conn, job, *, label_pack: str, model: str)
     context = completed_episode_context_for_segment(conn, job["target_id"], label_pack=label_pack, model=model)
     if context:
         return None
+    failed_context = failed_episode_context_for_segment(conn, job["target_id"], label_pack=label_pack, model=model)
+    if failed_context:
+        fail_job(conn, job["id"], "required_episode_context_failed")
+        conn.commit()
+        return {
+            "status": "episode_context_failed",
+            "message": "v3.1 segment extraction skipped because the required full-episode context job failed.",
+            "failed_label_job_id": job["id"],
+            "episode_context_job_id": failed_context["id"],
+        }
     context_job_id = enqueue_episode_context_job_for_segment(conn, job, label_pack=label_pack, model=model)
     release_job(conn, job["id"])
     conn.commit()
@@ -298,7 +312,7 @@ def enqueue_episode_context_job_for_segment(conn, job, *, label_pack: str, model
     )
     if context_job_id:
         existing = conn.execute("SELECT status FROM jobs WHERE id = ?", (context_job_id,)).fetchone()
-        if existing and existing["status"] in {"completed", "failed"}:
+        if existing and existing["status"] == "completed":
             conn.execute(
                 """
                 UPDATE jobs
@@ -320,6 +334,27 @@ def completed_episode_context_for_segment(conn, segment_id: str, *, label_pack: 
     if not row:
         raise ValueError(f"Segment not found: {segment_id}")
     return completed_episode_context_for_episode(conn, row["episode_id"], label_pack=label_pack, model=model)
+
+
+def failed_episode_context_for_segment(conn, segment_id: str, *, label_pack: str, model: str):
+    row = conn.execute("SELECT episode_id FROM segments WHERE id = ?", (segment_id,)).fetchone()
+    if not row:
+        raise ValueError(f"Segment not found: {segment_id}")
+    return conn.execute(
+        """
+        SELECT id, error
+        FROM jobs
+        WHERE job_type = 'episode_context'
+          AND target_id = ?
+          AND status = 'failed'
+          AND json_extract(payload_json, '$.label_pack') = ?
+          AND json_extract(payload_json, '$.model') = ?
+          AND json_extract(payload_json, '$.episode_context_version') = ?
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 1
+        """,
+        (row["episode_id"], label_pack, model, EPISODE_CONTEXT_SCHEMA_VERSION),
+    ).fetchone()
 
 
 def completed_episode_context_for_episode(conn, episode_id: str, *, label_pack: str, model: str):
@@ -466,7 +501,7 @@ def render_episode_context_prompt(label_pack: str, episode_context: dict[str, An
             "Do not extract final discourse events here. Do not include the full transcript or long transcript passages in the JSON output.",
             "The artifact should help later extractors map speakers, aliases, orgs, products, models, sections, recurring concepts, and likely high-value discourse shifts.",
             "Build the speaker_map as an explicit roster: hosts, guests, quoted/reported actors, affiliations, titles, aliases, handles, misspellings, and confidence. Preserve uncertainty instead of merging names.",
-            "In extraction_guidance, call out who-mentioned-whom patterns, guest authority clues, product/model aliases, and any page/footnote/timestamp residue that later extractors should reject.",
+            "In extraction_guidance, infer the episode's actual domain and label scope from the complete transcript, describe how later extractors should distinguish substantive dialogue, quoted sources, ads, setup, page chrome, and mixed passages, and call out who-mentioned-whom patterns, authority clues, aliases, and transcript residue. Make these decisions semantically; do not propose keyword, regex, or phrase gates.",
             "# v3.1 Codebook Reference",
             pack.codebook.strip() or pack.prompt.strip(),
             "# Context Output Schema",
@@ -488,6 +523,7 @@ def submit_episode_context_output(
     output_json_path: str | Path,
     worker_id: str | None = None,
     allow_expired: bool = False,
+    commit: bool = True,
 ) -> dict[str, str]:
     job = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
     if not job:
@@ -547,7 +583,8 @@ def submit_episode_context_output(
         ),
     )
     complete_job(conn, job_id)
-    conn.commit()
+    if commit:
+        conn.commit()
     return {"job_id": str(job_id), "episode_context_run_id": context_run_id, "context_artifact_path": str(artifact_path)}
 
 
@@ -587,6 +624,51 @@ def validate_episode_context_output(output: dict[str, Any], *, expected_episode_
         raise ValueError("Episode context quality_flags must be a list")
     if not isinstance(output["extraction_guidance"], str) or len(output["extraction_guidance"].split()) < 6:
         raise ValueError("Episode context extraction_guidance must be a useful string")
+    if not isinstance(output["context_summary"], str):
+        raise ValueError("Episode context context_summary must be a string")
+    if isinstance(output["overall_confidence"], bool) or not isinstance(
+        output["overall_confidence"], (int, float)
+    ):
+        raise ValueError("Episode context overall_confidence must be a number")
+    if not isinstance(output["needs_review"], bool):
+        raise ValueError("Episode context needs_review must be a boolean")
+    if output["review_reason"] is not None and not isinstance(output["review_reason"], str):
+        raise ValueError("Episode context review_reason must be a string or null")
+
+    persisted_fields = (
+        "context_summary",
+        "speaker_map",
+        "section_map",
+        "entity_seed",
+        "concept_seed",
+    )
+    has_canonical_authority = (
+        "episode_context" in output or "excluded_source_context" in output
+    )
+    if has_canonical_authority:
+        if "episode_context" not in output or "excluded_source_context" not in output:
+            raise ValueError(
+                "Canonical episode context output requires episode_context and excluded_source_context"
+            )
+        nested = output["episode_context"]
+        exclusions = output["excluded_source_context"]
+        if not isinstance(nested, dict) or set(nested) != set(persisted_fields):
+            raise ValueError(
+                "Canonical episode_context must contain exactly the persisted context fields"
+            )
+        if not isinstance(exclusions, list) or any(
+            not isinstance(item, str) for item in exclusions
+        ):
+            raise ValueError("Episode context excluded_source_context must be a string array")
+        if any(nested[field] != output[field] for field in persisted_fields):
+            raise ValueError(
+                "Canonical episode_context fields must exactly match the persisted top-level fields"
+            )
+    else:
+        # Preserve compatibility with the existing worker prompt while writing the
+        # same canonical artifact shape used by the managed app-server runner.
+        nested = {field: output[field] for field in persisted_fields}
+        exclusions = []
     serialized = json.dumps(output, ensure_ascii=True, sort_keys=True)
     forbidden_markers = ["full_segmented_episode_text", "===== SEGMENT", "WEBVTT"]
     for marker in forbidden_markers:
@@ -608,6 +690,8 @@ def validate_episode_context_output(output: dict[str, Any], *, expected_episode_
         "overall_confidence": output["overall_confidence"],
         "needs_review": output["needs_review"],
         "review_reason": output["review_reason"],
+        "episode_context": dict(nested),
+        "excluded_source_context": list(exclusions),
     }
 
 
@@ -696,7 +780,13 @@ def submit_label_output(
     output_json_path: str | Path,
     worker_id: str | None = None,
     allow_expired: bool = False,
+    repair_output: bool = True,
+    derive_semantics: bool = True,
 ) -> dict[str, str]:
+    if not isinstance(repair_output, bool):
+        raise ValueError("repair_output must be boolean")
+    if not isinstance(derive_semantics, bool):
+        raise ValueError("derive_semantics must be boolean")
     job = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
     if not job:
         raise ValueError(f"Job not found: {job_id}")
@@ -736,7 +826,12 @@ def submit_label_output(
         raise ValueError(f"Output path does not match label run {label_run_id}")
     segment_context = segment_for_job(conn, job)
     output = json.loads(output_path.read_text(encoding="utf-8"))
-    repair_label_output_for_submission(label_pack, output, segment_text=segment_context["segment_text"])
+    if repair_output:
+        repair_label_output_for_submission(
+            label_pack,
+            output,
+            segment_text=segment_context["segment_text"],
+        )
     validate_label_output(label_pack, output)
     if output.get("segment_id") != job["target_id"]:
         raise ValueError(f"Output segment_id does not match job target_id for job {job_id}")
@@ -752,6 +847,7 @@ def submit_label_output(
         worker_id=worker_id or job["lease_owner"],
         prompt_path=payload.get("prompt_path"),
         output_path=str(output_path),
+        derive_semantics=derive_semantics,
     )
     complete_job(conn, job_id)
     if payload.get("label_run_id"):
@@ -854,7 +950,10 @@ def insert_label(
     worker_id: str | None = None,
     prompt_path: str | None = None,
     output_path: str | None = None,
+    derive_semantics: bool = True,
 ) -> str:
+    if not isinstance(derive_semantics, bool):
+        raise ValueError("derive_semantics must be boolean")
     pack = load_label_pack(label_pack)
     validate_label_output(label_pack, output, segment_text=segment_text_by_id(conn, segment_id))
     label_id = stable_id(segment_id, label_pack, pack.version, model, prefix="lbl_")
@@ -890,31 +989,32 @@ def insert_label(
         ),
     )
     _delete_label_derivatives(conn, label_id)
-    for claim in _claim_like_items(output):
-        text = claim.get("claim_text") or claim.get("narrative") or claim.get("signal") or claim.get("description")
-        if not text:
-            continue
-        claim_id = stable_id(label_id, text, prefix="clm_")
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO claims
-              (id, label_id, segment_id, text, stance, confidence, evidence_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                claim_id,
-                label_id,
-                segment_id,
-                text,
-                claim.get("stance") or claim.get("claim_type"),
-                claim.get("confidence"),
-                dumps_json({"evidence": claim.get("evidence")}),
-                ts,
-            ),
-        )
-    _insert_coded_observations(conn, output, segment_id=segment_id, label_id=label_id)
-    _insert_discourse_event_derivatives(conn, output, segment_id=segment_id, label_id=label_id)
-    _insert_entities(conn, output, segment_id=segment_id, label_id=label_id)
+    if derive_semantics:
+        for claim in _claim_like_items(output):
+            text = claim.get("claim_text") or claim.get("narrative") or claim.get("signal") or claim.get("description")
+            if not text:
+                continue
+            claim_id = stable_id(label_id, text, prefix="clm_")
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO claims
+                  (id, label_id, segment_id, text, stance, confidence, evidence_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    claim_id,
+                    label_id,
+                    segment_id,
+                    text,
+                    claim.get("stance") or claim.get("claim_type"),
+                    claim.get("confidence"),
+                    dumps_json({"evidence": claim.get("evidence")}),
+                    ts,
+                ),
+            )
+        _insert_coded_observations(conn, output, segment_id=segment_id, label_id=label_id)
+        _insert_discourse_event_derivatives(conn, output, segment_id=segment_id, label_id=label_id)
+        _insert_entities(conn, output, segment_id=segment_id, label_id=label_id)
     return label_id
 
 
@@ -943,8 +1043,7 @@ def segment_for_job(conn, job, *, include_episode_text: bool = False) -> dict[st
     ).fetchone()
     if not row:
         raise ValueError(f"Segment not found: {job['target_id']}")
-    text_path = corpus_dir().parent / row["text_path"]
-    segment_text = read_text(text_path)
+    segment_text = _read_corpus_text_with_timeout(row["text_path"], error_prefix="segment")
     context = {
         "segment_id": row["id"],
         "episode_id": row["episode_id"],
@@ -1006,7 +1105,7 @@ def episode_context_for_episode(conn, episode_id: str) -> dict[str, Any]:
     parts = []
     total_words = 0
     for row in rows:
-        text = read_text(corpus_dir().parent / row["text_path"])
+        text = _read_corpus_text_with_timeout(row["text_path"], error_prefix="episode_context_segment")
         total_words += int(row["word_count"] or len(text.split()))
         parts.append(
             "\n".join(
@@ -1038,6 +1137,26 @@ def episode_context_for_episode(conn, episode_id: str) -> dict[str, Any]:
         },
         "full_segmented_episode_text": "\n\n".join(parts),
     }
+
+
+def _read_corpus_text_with_timeout(text_path: str, *, error_prefix: str) -> str:
+    path = corpus_dir().parent / text_path
+    previous_handler = signal.getsignal(signal.SIGALRM)
+
+    def timeout_handler(_signum, _frame):
+        raise TimeoutError(f"{error_prefix}_read_timeout")
+
+    try:
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.setitimer(signal.ITIMER_REAL, CORPUS_TEXT_READ_TIMEOUT_SECONDS)
+        return path.read_text(encoding="utf-8")
+    except TimeoutError as exc:
+        raise ValueError(str(exc)) from None
+    except OSError as exc:
+        raise ValueError(f"{error_prefix}_read_failed:{exc.__class__.__name__}:{exc.errno}") from None
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
 
 
 def episode_context_for_segment(conn, segment_row) -> dict[str, Any]:
@@ -1074,7 +1193,7 @@ def adjacent_segment_context_for_segment(conn, segment_id: str, *, max_chars: in
     ).fetchall()
     items = []
     for neighbor in neighbors:
-        text = read_text(corpus_dir().parent / neighbor["text_path"])
+        text = _read_corpus_text_with_timeout(neighbor["text_path"], error_prefix="adjacent_segment")
         role = "current"
         if neighbor["segment_index"] < row["segment_index"]:
             role = "previous"
@@ -1111,7 +1230,7 @@ def segment_text_by_id(conn, segment_id: str) -> str:
     row = conn.execute("SELECT text_path FROM segments WHERE id = ?", (segment_id,)).fetchone()
     if not row:
         raise ValueError(f"Segment not found: {segment_id}")
-    return read_text(corpus_dir().parent / row["text_path"])
+    return _read_corpus_text_with_timeout(row["text_path"], error_prefix="segment")
 
 
 def perform_label_audit(conn, job, *, model: str) -> str:
@@ -1166,14 +1285,18 @@ def _delete_label_derivatives(conn, label_id: str) -> None:
     ]
     if claim_ids:
         claim_placeholders = ", ".join("?" for _ in claim_ids)
-        conn.execute(
-            f"DELETE FROM agreement_edges WHERE source_claim_id IN ({claim_placeholders}) OR target_claim_id IN ({claim_placeholders})",
-            (*claim_ids, *claim_ids),
-        )
-        conn.execute(
-            f"DELETE FROM disagreement_edges WHERE source_claim_id IN ({claim_placeholders}) OR target_claim_id IN ({claim_placeholders})",
-            (*claim_ids, *claim_ids),
-        )
+        for table in [
+            "claim_cluster_members",
+            "claim_subject_members",
+            "claim_position_observations",
+            "forecast_outcome_checks",
+        ]:
+            conn.execute(f"DELETE FROM {table} WHERE claim_id IN ({claim_placeholders})", claim_ids)
+        for table in ["agreement_edges", "disagreement_edges"]:
+            conn.execute(
+                f"DELETE FROM {table} WHERE source_claim_id IN ({claim_placeholders}) OR target_claim_id IN ({claim_placeholders})",
+                (*claim_ids, *claim_ids),
+            )
     observation_ids = [
         row["id"]
         for row in conn.execute("SELECT id FROM coded_observations WHERE label_id = ?", (label_id,)).fetchall()
@@ -1196,6 +1319,11 @@ def _delete_label_derivatives(conn, label_id: str) -> None:
             conn.execute(f"DELETE FROM {table} WHERE observation_id IN ({observation_placeholders})", observation_ids)
     if discourse_event_ids:
         discourse_placeholders = ", ".join("?" for _ in discourse_event_ids)
+        for table in ["claim_position_observations", "claim_subject_event_observations"]:
+            conn.execute(
+                f"DELETE FROM {table} WHERE discourse_event_id IN ({discourse_placeholders})",
+                discourse_event_ids,
+            )
         for table in ["raw_speaker_mentions", "raw_actor_mentions", "person_person_mentions"]:
             conn.execute(f"DELETE FROM {table} WHERE discourse_event_id IN ({discourse_placeholders})", discourse_event_ids)
         for table in ["term_usages", "frame_usages", "actor_positions"]:

@@ -1,18 +1,15 @@
 {
-  "$id": "memory_candidate_v1",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["schema_version", "segment_id", "episode_id", "durable_facts", "workflow_patterns", "skill_candidates", "overall_confidence", "needs_review", "review_reason"],
+  "$id": "https://podcast-intelligence-factory.local/schemas/memory_candidate_v1",
   "properties": {
-    "schema_version": {"type": "string", "enum": ["memory_candidate_v1"]},
-    "segment_id": {"type": "string"},
-    "episode_id": {"type": "string"},
-    "durable_facts": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["fact", "target_surface", "evidence", "confidence"], "properties": {"fact": {"type": "string"}, "target_surface": {"type": "string", "enum": ["user_memory", "system_memory", "project_memory", "runbook", "daily_note", "none"]}, "evidence": {"type": "string"}, "confidence": {"type": "number"}}}},
-    "workflow_patterns": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["pattern", "reuse_context", "evidence", "confidence"], "properties": {"pattern": {"type": "string"}, "reuse_context": {"type": "string"}, "evidence": {"type": "string"}, "confidence": {"type": "number"}}}},
-    "skill_candidates": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["skill_name", "trigger", "reason", "confidence"], "properties": {"skill_name": {"type": "string"}, "trigger": {"type": "string"}, "reason": {"type": "string"}, "confidence": {"type": "number"}}}},
-    "overall_confidence": {"type": "number"},
-    "needs_review": {"type": "boolean"},
-    "review_reason": {"type": ["string", "null"]}
-  }
+    "schema_version": {
+      "enum": [
+        "memory_candidate_v1"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version"
+  ],
+  "type": "object"
 }
-
