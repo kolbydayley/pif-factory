@@ -40,20 +40,37 @@ Deterministic; no model calls, no network, no disk. Inputs:
 
 Merge rule: an escape is **merged** when one of its atomic claims sits in an
 *identifying* canonical group that also contains an atomic claim owned by a
-different candidate. That co-membership is the observable form of
+**corroborating** candidate. That co-membership is the observable form of
 `merged_duplicate_retained`. If the escape declares a `duplicate_of`, that
-specific candidate must be in the group.
+specific candidate must be a corroborating peer in the group.
+
+**Corroborating peers.** A peer certifies a merge only if it is *not itself a
+relational-junk escape* and its `ledger_category`, when known, is in
+`VALUE_LEDGER_CATEGORIES`. Without the first condition two co-grouped escapes
+would certify each other — A "merges into" B, B "merges into" A, `unmerged` comes
+back empty, and the verifier reports zero contamination while both junk claims are
+still in the corpus. That is the exact failure this check exists to catch, and a
+duplicate pair of repetition junk is the case that makes it most likely: two
+near-identical junk claims are precisely what canonicalization co-groups. The
+second condition stops a held or rejected co-member standing in for a real
+retained original. An unknown `ledger_category` is accepted, since the field is
+optional on the `atomics` interface and the escape-set exclusion already closes
+the mutual-junk path.
 
 Output `RelationalMergeReport` carries per-escape
-`{candidate_id, merged, canonical_group_id, duplicate_of, duplicate_candidate_ids,
-atomic_claim_ids, ledger_category, junk_reason, reason}` and the aggregate
+`{candidate_id, junk_reason, merged, canonical_group_id, duplicate_of,
+duplicate_candidate_ids, excluded_peer_candidate_ids, atomic_claim_ids,
+ledger_category, reason}` and the aggregate
 `{relational_escapes, merged_count, unmerged, contamination_zero,
 non_identifying_groups}`. An empty escape list is vacuously
 `contamination_zero: true` with `relational_escapes: 0`.
+`excluded_peer_candidate_ids` names every co-member disqualified as a peer, so an
+exclusion is always visible rather than silent.
 
 Non-merge outcomes are named rather than collapsed: `no_atomic_claims`,
 `no_canonical_group`, `non_identifying_canonical_group`,
-`singleton_canonical_group`, `declared_duplicate_not_in_canonical_group`.
+`singleton_canonical_group`, `only_junk_peers_in_canonical_group`,
+`declared_duplicate_not_in_canonical_group`.
 
 **Identifying keys.** A canonical group whose subject or proposition key is a
 placeholder (`unmapped`, `unassigned`, `unknown`, `none`, `other`, … — see
@@ -189,4 +206,4 @@ PYTHONDONTWRITEBYTECODE=1 python3 -B -m pytest -p no:cacheprovider \
   tests/test_true_north.py tests/test_true_north_relational_merge.py
 ```
 
-68 passed (46 pre-existing true-north tests untouched, 22 new).
+72 passed (46 pre-existing true-north tests untouched, 26 new).

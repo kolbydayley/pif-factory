@@ -88,6 +88,7 @@ _NO_ATOMICS = "no_atomic_claims"
 _NO_GROUP = "no_canonical_group"
 _NON_IDENTIFYING = "non_identifying_canonical_group"
 _SINGLETON = "singleton_canonical_group"
+_ONLY_JUNK_PEERS = "only_junk_peers_in_canonical_group"
 _DECLARED_MISMATCH = "declared_duplicate_not_in_canonical_group"
 
 
@@ -128,6 +129,7 @@ class EscapeMergeStatus:
     canonical_group_id: str | None
     duplicate_of: str | None
     duplicate_candidate_ids: tuple[str, ...]
+    excluded_peer_candidate_ids: tuple[str, ...]
     atomic_claim_ids: tuple[str, ...]
     ledger_category: str | None
     reason: str
@@ -140,6 +142,7 @@ class EscapeMergeStatus:
             "canonical_group_id": self.canonical_group_id,
             "duplicate_of": self.duplicate_of,
             "duplicate_candidate_ids": list(self.duplicate_candidate_ids),
+            "excluded_peer_candidate_ids": list(self.excluded_peer_candidate_ids),
             "atomic_claim_ids": list(self.atomic_claim_ids),
             "ledger_category": self.ledger_category,
             "reason": self.reason,
@@ -319,12 +322,33 @@ def verify_relational_merges(
 
     An escape counts as merged only when one of its atomic claims sits in an
     *identifying* canonical group that also contains an atomic claim belonging
-    to a different candidate.  An empty escape list is vacuously clean.
+    to a **corroborating** candidate: one that is not itself a relational-junk
+    escape, and whose ledger category (when known) admitted it to the corpus.
+    Two co-grouped escapes cannot certify each other.  An empty escape list is
+    vacuously clean.
     """
 
     owner_of, atomics_by_candidate, ledger_by_candidate = _index_atomics(atomics)
     group_members, group_identifying = _index_groups(canonical_groups)
     rows = _validated_escapes(escapes)
+
+    escape_ids = {row["candidate_id"] for row in rows}
+    declared_category = {
+        row["candidate_id"]: row["ledger_category"]
+        for row in rows
+        if row["ledger_category"] is not None
+    }
+
+    def _is_corroborating_peer(peer_id: str) -> bool:
+        # A relational-junk escape is junk still in the corpus.  It can never be
+        # the duplicate an escape was "merged into", or a duplicate pair of
+        # repetition junk would certify itself and report zero contamination.
+        if peer_id in escape_ids:
+            return False
+        category = declared_category.get(peer_id, ledger_by_candidate.get(peer_id))
+        if category is not None and category not in VALUE_LEDGER_CATEGORIES:
+            return False
+        return True
 
     groups_of_atomic: dict[str, list[str]] = {}
     for group_id in sorted(group_members):
@@ -357,26 +381,37 @@ def verify_relational_merges(
         merged_peers: tuple[str, ...] = ()
         fallback_group: str | None = None
         fallback_peers: tuple[str, ...] = ()
+        excluded_group: str | None = None
+        excluded_peers: tuple[str, ...] = ()
+        saw_corroborating_peer = False
+        declared_mismatch = False
         for group_id in identifying_groups:
-            peers = sorted(
+            all_peers = sorted(
                 {
                     owner_of[atomic_id]
                     for atomic_id in group_members[group_id]
                     if atomic_id in owner_of and owner_of[atomic_id] != candidate_id
                 }
             )
+            peers = tuple(peer for peer in all_peers if _is_corroborating_peer(peer))
+            rejected = tuple(peer for peer in all_peers if peer not in peers)
+            if rejected and excluded_group is None:
+                excluded_group = group_id
+                excluded_peers = rejected
             if fallback_group is None:
                 fallback_group = group_id
-                fallback_peers = tuple(peers)
+                fallback_peers = peers
             if not peers:
                 continue
+            saw_corroborating_peer = True
             if declared is not None and declared not in peers:
+                declared_mismatch = True
                 if not fallback_peers:
                     fallback_group = group_id
-                    fallback_peers = tuple(peers)
+                    fallback_peers = peers
                 continue
             merged_group = group_id
-            merged_peers = tuple(peers)
+            merged_peers = peers
             break
 
         if merged_group is not None:
@@ -389,6 +424,7 @@ def verify_relational_merges(
                     canonical_group_id=merged_group,
                     duplicate_of=duplicate_of,
                     duplicate_candidate_ids=merged_peers,
+                    excluded_peer_candidate_ids=excluded_peers,
                     atomic_claim_ids=own_atomics,
                     ledger_category=ledger_category,
                     reason=_MERGED,
@@ -402,22 +438,29 @@ def verify_relational_merges(
             reason = _NO_GROUP
         elif not identifying_groups:
             reason = _NON_IDENTIFYING
-        elif declared is not None and fallback_peers:
+        elif not saw_corroborating_peer and excluded_peers:
+            reason = _ONLY_JUNK_PEERS
+        elif declared_mismatch:
             reason = _DECLARED_MISMATCH
         else:
             reason = _SINGLETON
+        if reason in {_SINGLETON, _DECLARED_MISMATCH}:
+            group_id_for_reason = fallback_group
+        elif reason == _ONLY_JUNK_PEERS:
+            group_id_for_reason = excluded_group
+        elif reason == _NON_IDENTIFYING:
+            group_id_for_reason = candidate_groups[0]
+        else:
+            group_id_for_reason = None
         statuses.append(
             EscapeMergeStatus(
                 candidate_id=candidate_id,
                 junk_reason=row["junk_reason"],
                 merged=False,
-                canonical_group_id=(
-                    fallback_group
-                    if reason in {_SINGLETON, _DECLARED_MISMATCH}
-                    else (candidate_groups[0] if reason == _NON_IDENTIFYING else None)
-                ),
+                canonical_group_id=group_id_for_reason,
                 duplicate_of=None,
                 duplicate_candidate_ids=fallback_peers,
+                excluded_peer_candidate_ids=excluded_peers,
                 atomic_claim_ids=own_atomics,
                 ledger_category=ledger_category,
                 reason=reason,

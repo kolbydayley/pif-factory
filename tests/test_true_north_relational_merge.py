@@ -143,6 +143,100 @@ class VerifyRelationalMergesTest(unittest.TestCase):
         self.assertEqual(entry.reason, "declared_duplicate_not_in_canonical_group")
         self.assertEqual(entry.duplicate_candidate_ids, ("cand_unrelated",))
 
+    def test_two_co_grouped_escapes_cannot_certify_each_other(self) -> None:
+        """A duplicate pair of repetition junk must fail closed.
+
+        Two near-identical junk claims are exactly what canonicalization would
+        co-group.  If each counted as the other's duplicate, ``unmerged`` would
+        be empty and the verifier would report zero contamination while both
+        junk candidates sit in the corpus.
+        """
+
+        report = trm.verify_relational_merges(
+            atomics=[_atomic("cand_junk_a", "ac_1"), _atomic("cand_junk_b", "ac_2")],
+            canonical_groups=[_group("subject_a::prop_a", "ac_1", "ac_2")],
+            escapes=[
+                {"candidate_id": "cand_junk_a", "junk_reason": "non_useful_repetition"},
+                {"candidate_id": "cand_junk_b", "junk_reason": "non_useful_repetition"},
+            ],
+        )
+        self.assertFalse(report.contamination_zero)
+        self.assertEqual(report.merged_count, 0)
+        self.assertEqual(report.unmerged, ("cand_junk_a", "cand_junk_b"))
+        for entry in report.escapes:
+            self.assertFalse(entry.merged)
+            self.assertIsNone(entry.duplicate_of)
+            self.assertEqual(entry.duplicate_candidate_ids, ())
+            self.assertEqual(entry.reason, "only_junk_peers_in_canonical_group")
+            self.assertEqual(entry.canonical_group_id, "subject_a::prop_a")
+        by_id = {entry.candidate_id: entry for entry in report.escapes}
+        self.assertEqual(
+            by_id["cand_junk_a"].excluded_peer_candidate_ids, ("cand_junk_b",)
+        )
+        self.assertEqual(
+            by_id["cand_junk_b"].excluded_peer_candidate_ids, ("cand_junk_a",)
+        )
+
+    def test_a_retained_peer_still_certifies_a_group_holding_another_escape(self) -> None:
+        report = trm.verify_relational_merges(
+            atomics=[
+                _atomic("cand_junk_a", "ac_1"),
+                _atomic("cand_junk_b", "ac_2"),
+                _atomic("cand_retained", "ac_3"),
+            ],
+            canonical_groups=[_group("subject_a::prop_a", "ac_1", "ac_2", "ac_3")],
+            escapes=[
+                {"candidate_id": "cand_junk_a", "junk_reason": "non_useful_repetition"},
+                {"candidate_id": "cand_junk_b", "junk_reason": "non_useful_repetition"},
+            ],
+        )
+        self.assertTrue(report.contamination_zero)
+        self.assertEqual(report.merged_count, 2)
+        for entry in report.escapes:
+            self.assertEqual(entry.duplicate_of, "cand_retained")
+            self.assertEqual(entry.duplicate_candidate_ids, ("cand_retained",))
+        by_id = {entry.candidate_id: entry for entry in report.escapes}
+        self.assertEqual(
+            by_id["cand_junk_a"].excluded_peer_candidate_ids, ("cand_junk_b",)
+        )
+
+    def test_peer_that_never_entered_the_corpus_cannot_certify_a_merge(self) -> None:
+        report = trm.verify_relational_merges(
+            atomics=[
+                _atomic("cand_junk", "ac_1"),
+                _atomic("cand_held", "ac_2", ledger_category="held_needs_review"),
+            ],
+            canonical_groups=[_group("subject_a::prop_a", "ac_1", "ac_2")],
+            escapes=[{"candidate_id": "cand_junk", "junk_reason": "non_useful_repetition"}],
+        )
+        self.assertFalse(report.contamination_zero)
+        entry = report.escapes[0]
+        self.assertEqual(entry.reason, "only_junk_peers_in_canonical_group")
+        self.assertEqual(entry.excluded_peer_candidate_ids, ("cand_held",))
+
+    def test_declared_duplicate_that_is_itself_an_escape_fails_closed(self) -> None:
+        report = trm.verify_relational_merges(
+            atomics=[
+                _atomic("cand_junk_a", "ac_1"),
+                _atomic("cand_junk_b", "ac_2"),
+            ],
+            canonical_groups=[_group("subject_a::prop_a", "ac_1", "ac_2")],
+            escapes=[
+                {
+                    "candidate_id": "cand_junk_a",
+                    "junk_reason": "non_useful_repetition",
+                    "duplicate_of": "cand_junk_b",
+                },
+                {"candidate_id": "cand_junk_b", "junk_reason": "non_useful_repetition"},
+            ],
+        )
+        self.assertFalse(report.contamination_zero)
+        by_id = {entry.candidate_id: entry for entry in report.escapes}
+        self.assertFalse(by_id["cand_junk_a"].merged)
+        self.assertEqual(
+            by_id["cand_junk_a"].reason, "only_junk_peers_in_canonical_group"
+        )
+
     def test_non_relational_reason_code_is_rejected(self) -> None:
         with self.assertRaises(trm.RelationalMergeError):
             trm.verify_relational_merges(
