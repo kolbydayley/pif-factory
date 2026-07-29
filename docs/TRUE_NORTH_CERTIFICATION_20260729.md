@@ -1,4 +1,4 @@
-# True-North Development-Fold Hybrid Certification
+# True-North Development-Fold GLM-Only Certification
 
 Date: 2026-07-29
 
@@ -6,7 +6,7 @@ Suite: `ai-safety-v1`
 
 Measurement contract: `pif_true_north_measurement_contract_v8`
 
-Certification: **HYBRID ARCHITECTURE, DEVELOPMENT FOLD ONLY**
+Certification: **GLM-ONLY RUNTIME ARCHITECTURE, DEVELOPMENT FOLD ONLY**
 
 Benchmark progression: **not cleared; sealed transfer episodes remain closed**
 
@@ -27,9 +27,10 @@ transfer execution.
 
 Ruling 4 re-referenced candidate-state macro F1 to `0.790664`, derived as
 `min(0.90, 0.830664 - 0.04)` under the exact scorer. The 0.90 aspiration and
-raw disposition agreement remain diagnostics. The certified stack's
-`0.863223` therefore passes this gate, moving the certification baseline to
-**6/9 gates** without changing any model output.
+raw disposition agreement remain diagnostics. The then-certified C2 stack's
+`0.863223` therefore passed this gate, moving that historical certification
+baseline to **6/9 gates** without changing any model output. Ruling 7's
+current GLM-only composition scores `0.873162`.
 
 The subsequent Phase C A/B/C cheap-consensus run is reported separately in
 `docs/TRUE_NORTH_PHASE_C_CHEAP_CONSENSUS_RESULTS_20260729.md`. It also passed
@@ -45,9 +46,11 @@ therefore permanently closed. See
 `docs/TRUE_NORTH_C2_SCHEMA_FREE_FINAL_RESULTS_20260729.md`.
 
 Phase D subsequently added a zero-call actor-emission suppression rule. The
-definitive zero-call composition applies that frozen rule to C2's actor-span
-output. It reaches 0.810345 atomicity, 0.782101 actor exactness, and 0.040323
-hallucination, so the coherent development stack passes 7/9 gates.
+historical best-of-lanes composition applied that frozen rule to C2's
+actor-span output. It reached 0.810345 atomicity, 0.782101 actor exactness,
+and 0.040323 hallucination, so that coherent development stack passed 7/9
+gates. Ruling 7 supersedes it as the recommendation because it crossed no
+additional gate despite requiring the Codex lane.
 
 Ruling 6 is terminal for the quality program. It records the matched-pair
 diagnostic showing faithfulness at 0.751302 when atomic count is acceptable
@@ -56,23 +59,33 @@ emitted and candidate-verbatim wording reaches only 0.736442. Faithfulness is
 therefore the same decomposition-alignment limitation as atomicity, receives
 no rewriting lane, and is not re-referenced. The program closes at **7/9**.
 
+Ruling 7 corrects the certification objective. The prior C2 best-of-lanes
+stack was selected on quality alone, even though its 21 Codex-lane calls
+crossed no additional gate. The recommended runtime is now the best frozen
+GLM-only composition: split-default on validated compound packets, frozen
+Task-5 fallback on the two invalid development packets, Phase-D actor
+suppression, speaker prior adoption, and a two-GLM option-2 disposition
+composition with no Spark tiebreaker. It also passes **7/9**, with zero runtime
+Codex-lane calls.
+
 ## Final nine-gate table
 
-The table is component-based because Ruling 3 certifies a hybrid architecture.
-Disposition metrics come from the option-2 certified ensemble, actor and
-speaker from their contract-normative zero-call lanes, and decomposition,
-faithfulness, and hallucination from the final frozen hybrid composition.
+The table is component-based. Disposition uses two GLM passes with a
+deterministic value-state OR on disagreements, followed by the option-2
+intrinsic, hold, and relational safety rules. Decomposition uses the frozen
+GLM split-default outputs with Task-5 fallback. Actor and speaker use their
+contract-normative deterministic/prior lanes.
 
 | Gate | Result | Final gate | Calibration margin | Coupled diagnostic | Pass |
 |---|---:|---:|---:|---:|:---:|
-| Candidate-state macro F1 | 0.863223 | >= 0.790664 | 0.040000 below 0.830664 ceiling | raw agreement 0.807018; aspiration 0.900000 | Yes |
-| Retained-value recall | 0.970711 | >= 0.900000 | none; option-2 contract | n/a | Yes |
+| Candidate-state macro F1 | 0.873162 | >= 0.790664 | 0.040000 below 0.830664 ceiling | gold A/B raw agreement 0.807018; aspiration 0.900000 | Yes |
+| Retained-value recall | 0.974895 | >= 0.900000 | none; option-2 contract | n/a | Yes |
 | Intrinsic junk escape rate | 0.000000 | <= 0.020000 | none; option-2 contract | contamination 0 | Yes |
-| Acceptable atomic-count rate | 0.810345 | >= 0.900000 | none; explicitly not re-referenced | n/a | No |
-| Claim-text faithfulness | 0.732059 | >= 0.744435 | 0.040000 below 0.784435 ceiling | 0.562784 | No |
-| Speaker exactness | 0.992218 | >= 0.954615 | 0.040000 below 0.994615 ceiling | 0.732759 | Yes |
-| Reported-actor exactness | 0.782101 | >= 0.735385 | 0.040000 below 0.775385 ceiling | 0.577586 | Yes |
-| Hallucination rate | 0.040323 | <= 0.093684 | 0.020000 above 0.073684 gold-vs-gold rate | 0.100806 live reading; 0.020000 aspiration | Yes |
+| Acceptable atomic-count rate | 0.802575 | >= 0.900000 | none; explicitly not re-referenced | n/a | No |
+| Claim-text faithfulness | 0.729336 | >= 0.744435 | 0.040000 below 0.784435 ceiling | 0.541858 | No |
+| Speaker exactness | 0.991561 | >= 0.954615 | 0.040000 below 0.994615 ceiling | 0.701493 | Yes |
+| Reported-actor exactness | 0.793249 | >= 0.735385 | 0.040000 below 0.775385 ceiling | 0.561194 | Yes |
+| Hallucination rate | 0.040323 | <= 0.093684 | 0.020000 above 0.073684 gold-vs-gold rate | 0.048387 live reading; 0.020000 aspiration | Yes |
 | Schema parse success | 1.000000 | >= 0.990000 | none; original mechanical target | n/a | Yes |
 
 Result: **7/9 gates pass.** The architecture is certified with limitations;
@@ -83,8 +96,8 @@ the benchmark as a whole has not passed.
 | Gate | Authority | Measured basis |
 |---|---|---|
 | Candidate-state macro F1 | Ruling 4, under explicit owner delegation | Exact three-class gold-vs-gold macro F1 ceiling 0.830664 minus 0.04; original 0.90 aspiration retained as diagnostic |
-| Retained-value recall | Task 4d option 2 and hold-resolution ruling | 232/239 gold-value candidates reach the corpus; terminal-hold reading remains 0.899582 |
-| Intrinsic junk | Task 4d option 2 | Zero intrinsic escapes plus blocking canonical merge certification; relational contamination is zero and one duplicate is materially merged |
+| Retained-value recall | Task 4d option 2, hold-resolution ruling, and Ruling 7 | GLM-only OR composition retains 233/239 gold-value candidates |
+| Intrinsic junk | Task 4d option 2 plus Ruling 7 | Zero intrinsic escapes; one relational duplicate materially merges, one relational item contributes zero atomics, and contamination is zero |
 | Atomic count | Rulings 2 and 3 | Gate remains 0.90 because pass C reaches 1132/1140 = 0.992982 under range acceptance |
 | Faithfulness | Ruling 1 | Matched-pair ceiling 0.784435 minus 0.04 |
 | Speaker | Ruling 1 | Matched-pair ceiling 0.994615 minus 0.04; the authoritative formula yields 0.954615 |
@@ -101,7 +114,8 @@ gate.
 
 ### Decomposition alignment: atomicity and faithfulness
 
-Atomicity is **0.810345 against 0.90**, an 8.97-point shortfall. The single-pass
+Recommended-stack atomicity is **0.802575 against 0.90**, a 9.74-point
+shortfall. The single-pass
 GLM Task-5 result was 0.780172. Count-first framing did not change it. Spark
 tied GLM on its direct measured subset. The sol-class probe scored 0.631579 on
 its 96 validated flagged candidates versus 0.652632 for the GLM/Task-5 control
@@ -127,7 +141,7 @@ Sol-adjudicated consensus—converged between 0.780 and 0.811 atomicity against
 the fair 0.90 gate. This convergence across three model families closes the
 implementation lane.
 
-Matched-pair faithfulness is **0.732059 against 0.744435**, 1.24 points low.
+Matched-pair faithfulness is **0.729336 against 0.744435**, 1.51 points low.
 On acceptable-count pairs it is 0.751302 and passes; on unacceptable-count
 pairs it is 0.652774. The 9.85-point alignment penalty, plus the failed
 0.736442 wording oracle, establishes one root cause rather than a separate
@@ -136,10 +150,10 @@ ceiling-referenced gate.
 
 ### Hallucination
 
-Phase D's deterministic actor-emission suppression on the definitive C2
-composition moves the matched-pair reading to **0.040323 against 0.093684**, a
-pass. The live coupled diagnostic is **0.100806**, and the original aspiration
-remains 0.02.
+Phase D's deterministic actor-emission suppression on the GLM-only composition
+moves the matched-pair reading to **0.040323 against 0.093684**, a pass. The
+live coupled diagnostic is **0.048387**, and the original aspiration remains
+0.02.
 
 ### Scope
 
@@ -147,14 +161,14 @@ All measurements are development-only. The two sealed transfer episodes have
 not been opened. This certification cannot establish transfer performance,
 production reliability, or production economics.
 
-## Hybrid production architecture recommendation
+## GLM-only runtime architecture recommendation
 
 ```text
 Frozen candidate bundles
         |
         v
 GLM 5.2 disposition ensemble
-  + deterministic composition
+  + deterministic value-state OR
   + intrinsic chrome rule
   + canonical merge contamination check
         |
@@ -162,28 +176,27 @@ GLM 5.2 disposition ensemble
         |
         +--> actor: deterministic evidence-span rule
         |
-        +--> non-compound candidates: retain frozen minimal-edit path
+        +--> base decomposition: frozen Task-5 GLM contract
         |
-        `--> compound candidates: Codex-class decomposition lane
-              with atomicity limitation disclosed
+        `--> flagged compounds: GLM split-default contract
+              with Task-5 fallback on validation failure
 ```
 
 Recommended component responsibilities:
 
-- **GLM 5.2:** disposition workhorse. Certified result: zero intrinsic
-  escapes, zero contamination, one materialized relational merge, and 0.970711
-  retained-value recall.
+- **GLM 5.2:** disposition and decomposition workhorse. The disposition result
+  is zero intrinsic escapes, zero contamination, one materialized relational
+  merge, and 0.974895 retained-value recall. Split-default plus Task-5 fallback
+  is the best frozen GLM-only decomposition at 0.802575 atomicity.
 - **Deterministic harness:** hold resolution, intrinsic chrome filtering,
   relational merge verification, speaker-prior carriage, and actor span
   enforcement. These require zero provider calls at composition.
-- **Codex-class lane:** compound-candidate decomposition. This is a designed
-  production component because the reference process requires Codex-class
-  independent judgment and adjudication. The measured single-pass sol probe
-  does not itself qualify as a passing implementation.
+- **Codex/Sol runtime lane:** none. C2 remains a diagnostic variant only. Its
+  0.810345 atomicity and 0.732059 faithfulness cross no additional gate and do
+  not justify 21 Codex-lane calls.
 
-The compound screen selected 106/256 Search candidates, or **41.41%**. That is
-the current measured upper bound on the fraction routed away from the cheap
-base lane under this design.
+The compound screen selected 106/256 Search candidates, or **41.41%**. Those
+candidates remain on the subsidized GLM lane.
 
 ## Measured cost picture
 
@@ -191,12 +204,13 @@ These are subscription-token measurements, not dollar-equivalent prices.
 
 | Stage or reference | Model/route | Calls | Known tokens | Outcome |
 |---|---|---:|---:|---|
-| Certified Phase-C disposition inputs | GLM 5.2 plus one Spark conflict packet | 43 | 311,822 | Inputs later recovered by deterministic option-2 composition |
+| Ruling-7 disposition source passes | GLM 5.2 | 42 | 281,418 | Deterministic value-state OR; no Spark runtime dependency |
 | Option-2 intrinsic, hold, merge certification | Deterministic | 0 | 0 | Pass |
 | Speaker prior adoption | Deterministic | 0 | 0 | Pass |
-| Actor evidence-span rule | Deterministic | 0 | 0 | Pass |
+| Actor span plus Phase-D suppression | Deterministic | 0 | 0 | Pass |
 | Frozen Task-5 all-candidate decomposition | GLM 5.2 | 21 | 242,878 | 0.780172 atomicity; fail |
-| Sol flagged-candidate probe | `gpt-5.6-sol` | 14 | 455,902 | 96/106 candidates validated; incomplete and fail |
+| GLM split-default | GLM 5.2 | 28 | 328,682 | Selected with Task-5 fallback; 0.802575 coherent atomicity |
+| C2 best-of-lanes variant | GLM plus `gpt-5.6-sol` | historical only | historical only | 0.810345 atomicity, 7/9, not recommended |
 | Gold reference A/B/C, direct base receipts | `gpt-5.6-sol` | 207 | 9,552,192 | Reference construction, not campaign or production cost |
 
 The direct gold-reference receipt count is 69 packets for each of A, B, and C.
@@ -204,17 +218,16 @@ It demonstrates why blindly reproducing the full reference process in
 production would be expensive. It does not price the smaller, untested
 compound-only consensus design.
 
-The practical split remains approximately 58.59% cheap/non-compound handling
-and at most 41.41% compound routing, plus zero-call speaker and actor rules.
-The completed Sol adjudication recipe did not clear atomicity or faithfulness,
-so no passing compound recipe has been established. Actual production cost is
-not yet certified. After hydration, Phase E passed its executable read-only
-isolation preflight and selected three episodes from the July 20 snapshot.
-The exact certified packet topology then failed its whole-run budget
-preflight: 48 segments require at least 144 provider calls for the two
-disposition passes plus frozen GLM decomposition, before any compound Sol
-work, against the authorized 60-call ceiling. No provider calls were made and
-neither stage drift nor amortized cost was measured.
+For the median Syntax episode, the recommended composition has an optimistic
+floor of **56 GLM calls and zero Codex calls**: 28 disposition, 14 Task-5 base,
+and 14 split-default. The historical production baseline used 17 all-Codex
+calls. By call count, Ruling 7 moves 100% of runtime work off the Codex lane
+while adding 56 subsidized GLM calls.
+
+Actual token and per-atomic production cost remain unmeasured. The July 20
+snapshot contains 17 readable GPT-5.5 outputs but zero token-usage receipts,
+184 upstream claim rows, and zero atomic-claim rows. It cannot support a true
+token ratio or downstream drift comparison.
 
 ## Campaign ledger summary
 
@@ -261,6 +274,7 @@ option-2 hold/merge correction. Their receipt reports overlap the grouped
 | Phase-E production shadow (initial) | 0 | 0 | Isolation preflight blocked on unreadable dataless production database |
 | Phase-E production shadow (hydrated final) | 0 | 0 | Isolation passed; exact-contract 144-call floor exceeded 60-call ceiling |
 | Phase-E production discovery | 0 | 0 | Local SQLite identified as corpus authority; Railway is observer/broker only |
+| Ruling-7 GLM-only recertification | 0 | 0 | 7/9 preserved; runtime Codex lane eliminated |
 | **Post-160 total** | **149** | **2,406,177** | Includes the final terminal decomposition result and accepted Phase D |
 
 ### Ruling provenance chain
@@ -290,6 +304,9 @@ option-2 hold/merge correction. Their receipt reports overlap the grouped
     decomposition-alignment limitation, prohibited a wording lane, retained
     both gates, closed the quality program at 7/9, and authorized the hydrated
     Phase-E attempt under the existing ceiling.
+12. Ruling 7 corrected the optimization objective: the best-scoring frozen
+    GLM-only composition replaces C2 as the recommendation because both pass
+    7/9 while only the GLM-only runtime eliminates Codex-lane calls.
 
 ## Post-certification experiment result
 
@@ -310,39 +327,34 @@ packet-only risk score reaches 2. It passes actor and hallucination
 simultaneously and moves the stack to 7/9 gates. See
 `docs/TRUE_NORTH_PHASE_D_ACTOR_SUPPRESSION_20260729.md`.
 
-The definitive composition applies the frozen rule to C2 and records the
-faithfulness-headroom finding plus Phase-E readiness in
-`docs/TRUE_NORTH_BEST_STACK_AND_PHASE_E_READINESS_20260729.md`.
+The recommended composition applies the frozen rule to the GLM split-default
+plus Task-5-fallback output. C2 remains documented in
+`docs/TRUE_NORTH_BEST_STACK_AND_PHASE_E_READINESS_20260729.md` as the
+higher-quality-but-costlier variant that crosses no additional gate.
 
 ### Production shadow trial
 
-After the file was hydrated at Kolby's request, the executable preflight
-verified `mode=ro`, `query_only=ON`, rejected writes, a distinct shadow root,
-schema version 245, and unchanged production identity. Three eligible episodes
-were selected: 48 segments, 714 discourse-event candidates, and 511 existing
-GPT-5.5 claims. The snapshot contains no production atomic claims and its
-label receipts do not record token usage.
+After hydration, isolation passed in strict read-only mode. The final
+one-episode preflight then established that the July 20 Syntax baseline has 16
+label calls and one context call, all on GPT-5.5, but **0/17 token receipts**.
+It has **184 upstream claims and 0 atomic claims**. End-to-end downstream drift,
+tokens per retained atomic, and a true hybrid/all-Codex token ratio are
+therefore not recoverable. No provider call was spent.
 
-Dispatch then stopped at the whole-run budget preflight. The certified
-segment-scoped contract has a 144-call fixed floor before compound Sol work,
-more than double the 60-call ceiling. Cross-segment batching would be a new
-input contract, so it was not substituted silently. Agreement, drift, and
-amortized cost remain unmeasured; provider spend and all production mutation
-remain zero. See `docs/TRUE_NORTH_PHASE_E_SHADOW_RESULTS_20260729.md`.
+A valid measurement requires instrumented per-call token receipts for both
+lanes, an all-Codex baseline that actually emits downstream atomic and
+canonical outputs under the same contract, identical episode/candidate scope,
+and retained-valid-atomic lineage on both sides. See
+`docs/TRUE_NORTH_PHASE_E_EXECUTION_STOP_20260729.md`.
 
 ### Future work
 
-The decomposition problem is open research, not an unimplemented prompt or
-model swap. Gold quality came from a two-pass-plus-adjudication process.
-Reproducing that process in production would require paying for the process,
-not merely choosing a different single model. Phase E was intended to measure
-that economics, but the exact contract cannot fit the authorized 60-call
-envelope for three full episodes.
-
-Any later production-cost experiment must make one explicit choice: authorize
-the measured exact-contract call requirement, or separately benchmark and
-certify a cross-segment batching contract. The latter is architecture work,
-not a transport optimization.
+The decomposition problem remains open research, not an implementation gap.
+Gold quality came from a two-pass-plus-adjudication process; every tested
+practical approximation still fails the same two gates. A future cost trial
+should instrument a fresh, comparable all-Codex downstream baseline rather
+than attempting to reconstruct missing usage or atomics from the July 20
+snapshot.
 
 ### Actor value residual
 
@@ -373,6 +385,8 @@ remains closed.
   `f9b99c77045e0ad5daa183badc49426a17fdc9510bc7d414298479fc4c877ed8`
 - Final hybrid diagnostic SHA-256:
   `11ce7d70d3c090d7b717e66cf4e33e668067115a81b567efa6e4b89165d2ea6f`
+- Ruling-7 GLM-only certification SHA-256:
+  `40265922d904ce6b56596c8c5080f1a3f208bdfb1851b379fc68537b5cb1c1f6`
 - Phase-E executable isolation preflight SHA-256:
   `b6687e42c6e13566b2b9b859fea1f35806ee5cb3b0393794e814487363eecd67`
 - Phase-E exact-contract budget preflight SHA-256:
@@ -380,6 +394,7 @@ remains closed.
 - Provider calls for Ruling 4 contract migration: `0`
 - Provider calls for Phase C: `23`
 - Provider calls for Ruling 6 and Phase E final attempt: `0`
+- Provider calls for Ruling 7 recertification: `0`
 - Provider calls for final schema-free C2: `19`
 - Phase-D frontier result SHA-256:
   `0b804f327282baee0ff2be08a9282c4c8f5ba58705ae51ddeeb278433a53e201`

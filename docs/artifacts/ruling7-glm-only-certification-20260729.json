@@ -1,0 +1,133 @@
+{
+  "schema_version": "pif_true_north_ruling7_glm_only_v1",
+  "ruling": "review_loop_ruling_7",
+  "selected_lane": "ruling7-glm-split-default-phase-d",
+  "selection_basis": "highest acceptable atomic-count rate, then faithfulness, among frozen GLM-only decompositions",
+  "calibration_diagnostics": {
+    "candidate_state_gold_a_b_raw_agreement": 0.807018,
+    "candidate_state_aspirational_gate": 0.9
+  },
+  "candidate_lanes": {
+    "task5_glm_only_phase_d": {
+      "acceptable_atomic_count_rate": 0.776824,
+      "claim_text_faithfulness_proxy": 0.726634,
+      "reported_actor_exactness": 0.788793,
+      "hallucination_rate_proxy": 0.040323,
+      "passed_gate_count": 7
+    },
+    "split_default_task5_fallback_glm_only_phase_d": {
+      "acceptable_atomic_count_rate": 0.802575,
+      "claim_text_faithfulness_proxy": 0.729336,
+      "reported_actor_exactness": 0.793249,
+      "hallucination_rate_proxy": 0.040323,
+      "passed_gate_count": 7
+    }
+  },
+  "nine_gate_table": [
+    {
+      "metric": "consensus_candidate_state_macro_f1",
+      "result": 0.873162,
+      "comparison": ">=",
+      "gate": 0.790664,
+      "coupled_diagnostic": null,
+      "passed": true
+    },
+    {
+      "metric": "retained_value_recall",
+      "result": 0.974895,
+      "comparison": ">=",
+      "gate": 0.9,
+      "coupled_diagnostic": null,
+      "passed": true
+    },
+    {
+      "metric": "consensus_junk_escape_rate",
+      "result": 0.0,
+      "comparison": "<=",
+      "gate": 0.02,
+      "coupled_diagnostic": null,
+      "passed": true
+    },
+    {
+      "metric": "acceptable_atomic_count_rate",
+      "result": 0.802575,
+      "comparison": ">=",
+      "gate": 0.9,
+      "coupled_diagnostic": null,
+      "passed": false
+    },
+    {
+      "metric": "claim_text_faithfulness_proxy",
+      "result": 0.729336,
+      "comparison": ">=",
+      "gate": 0.744435,
+      "coupled_diagnostic": 0.541858,
+      "passed": false
+    },
+    {
+      "metric": "speaker_exactness",
+      "result": 0.991561,
+      "comparison": ">=",
+      "gate": 0.954615,
+      "coupled_diagnostic": 0.701493,
+      "passed": true
+    },
+    {
+      "metric": "reported_actor_exactness",
+      "result": 0.793249,
+      "comparison": ">=",
+      "gate": 0.735385,
+      "coupled_diagnostic": 0.561194,
+      "passed": true
+    },
+    {
+      "metric": "hallucination_rate_proxy",
+      "result": 0.040323,
+      "comparison": "<=",
+      "gate": 0.093684,
+      "coupled_diagnostic": 0.048387,
+      "passed": true
+    },
+    {
+      "metric": "schema_parse_success_rate",
+      "result": 1.0,
+      "comparison": ">=",
+      "gate": 0.99,
+      "coupled_diagnostic": null,
+      "passed": true
+    }
+  ],
+  "disposition": {
+    "route": "two_glm_passes_value_state_or_no_codex_tiebreaker",
+    "disagreement_count": 17,
+    "false_reject_count": 6,
+    "intrinsic_junk_escape_count": 0,
+    "relational_junk_escape_count": 2,
+    "relational_contamination_count": 0,
+    "materialized_merge_count": 1,
+    "zero_atomic_relational_candidate_count": 1
+  },
+  "syntax_runtime_lane_accounting": {
+    "glm_disposition_calls": 28,
+    "glm_task5_base_calls": 14,
+    "glm_split_default_calls": 14,
+    "glm_call_floor": 56,
+    "codex_lane_calls": 0,
+    "historical_all_codex_calls": 17,
+    "codex_call_reduction": 1.0,
+    "token_ratio": null,
+    "token_ratio_reason": "historical production outputs contain zero usage receipts"
+  },
+  "best_of_lanes_variant": {
+    "acceptable_atomic_count_rate": 0.810345,
+    "claim_text_faithfulness_proxy": 0.732059,
+    "passed_gate_count": 7,
+    "codex_lane_call_floor": 21,
+    "additional_gates_crossed": 0
+  },
+  "provider_calls": 0,
+  "provider_tokens": 0,
+  "holdout_opened": false,
+  "production_mutation": false,
+  "result_sha256": "40265922d904ce6b56596c8c5080f1a3f208bdfb1851b379fc68537b5cb1c1f6"
+}

@@ -377,6 +377,28 @@
         "queue_mutation_forbidden": true,
         "release_or_label_publication_forbidden": true
       }
+    },
+    {
+      "decision_id": "review-loop-ruling-7-glm-only-recertification-20260729-v1",
+      "owner": "true_north_review_loop",
+      "recorded_at": "2026-07-29",
+      "source_kind": "review_thread_directive_in_active_codex_thread",
+      "delegation": {
+        "delegated_by": "Kolby Dayley",
+        "delegated_to": "true_north_review_loop",
+        "explicit": true
+      },
+      "provenance": {
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Correct the quality-only certification objective by selecting the best frozen GLM-only 7-of-9 composition and eliminating all runtime Codex-lane calls."
+      },
+      "ruling": {
+        "recommended_runtime": "glm_only_plus_deterministic_composition",
+        "best_of_lanes_status": "documented_costlier_variant_not_recommended",
+        "reason": "C2 adds 21 Codex-lane calls, 0.030 atomicity, and zero additional passing gates",
+        "provider_calls_authorized": 0,
+        "sealed_holdouts_forbidden": true
+      }
     }
   ],
   "post_certification_phase_results": [
@@ -1348,6 +1370,48 @@
         "release_or_label_published": false,
         "agreement_metrics": null,
         "lane_cost_per_retained_valid_atomic": null,
+        "cumulative_calls_after": 309,
+        "known_cumulative_tokens_after": 3583991
+      }
+    },
+    {
+      "experiment_id": "ruling7-glm-only-recertification-20260729-v1",
+      "sequence": 17,
+      "architecture": "glm_only_split_default_task5_fallback_phase_d",
+      "max_calls": 0,
+      "max_tokens": 0,
+      "status": "complete_passed_7_of_9_zero_codex_runtime",
+      "cumulative_before": {
+        "calls": 309,
+        "known_tokens": 3583991
+      },
+      "provenance": {
+        "source_kind": "review_thread_directive_in_active_codex_thread",
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Re-score frozen GLM-only lanes, adopt only if all seven current passing gates survive, and report lane-level runtime cost."
+      },
+      "actual": {
+        "calls": 0,
+        "tokens": 0,
+        "selected_lane": "ruling7-glm-split-default-phase-d",
+        "passed_gate_count": 7,
+        "acceptable_atomic_count_rate": 0.802575,
+        "claim_text_faithfulness_proxy": 0.729336,
+        "speaker_exactness": 0.991561,
+        "reported_actor_exactness": 0.793249,
+        "hallucination_rate_proxy": 0.040323,
+        "candidate_state_macro_f1": 0.873162,
+        "retained_value_recall": 0.974895,
+        "intrinsic_junk_escape_rate": 0.0,
+        "relational_contamination": 0,
+        "schema_parse_success_rate": 1.0,
+        "syntax_glm_call_floor": 56,
+        "syntax_codex_lane_calls": 0,
+        "historical_all_codex_calls": 17,
+        "codex_call_reduction": 1.0,
+        "result_sha256": "40265922d904ce6b56596c8c5080f1a3f208bdfb1851b379fc68537b5cb1c1f6",
+        "production_mutated": false,
+        "holdout_opened": false,
         "cumulative_calls_after": 309,
         "known_cumulative_tokens_after": 3583991
       }
