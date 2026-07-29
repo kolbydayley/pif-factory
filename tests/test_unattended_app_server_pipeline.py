@@ -11,6 +11,10 @@ from unittest.mock import patch
 from research_factory.app_server_evaluation import (
     APP_SERVER_EPISODE_BATCH_SCHEMA_VERSION,
 )
+from research_factory.app_server_expanded_cap_episode_batch import (
+    WINNER_SYSTEM_ID,
+    build_frozen_configuration,
+)
 from research_factory.app_server_holdout import FROZEN_WINNER_VERSION
 from research_factory.codex_app_server import APP_SERVER_CLIENT_VERSION
 from research_factory.unattended_app_server_pipeline import (
@@ -308,22 +312,10 @@ class UnattendedAppServerPipelineTest(unittest.TestCase):
                 captured.append((module, list(arguments)))
                 output = self.paths.frozen_winner
                 output.parent.mkdir(parents=True, exist_ok=True)
-                config = {
-                    "variant_id": "batch_3_new_thread",
-                    "batch_size": 3,
-                    "thread_mode": "new_thread",
-                    "model": "gpt-5.6-sol",
-                    "reasoning_effort": "low",
-                    "concurrency": 1,
-                    "retry_count": 0,
-                    "window_count": 4,
-                    "context_chars": 900,
-                    "max_events_per_segment": 32,
-                    "output_schema_version": APP_SERVER_EPISODE_BATCH_SCHEMA_VERSION,
-                    "transport_client_version": APP_SERVER_CLIENT_VERSION,
-                    "guideline_artifact_sha256": "1" * 64,
-                    "core_instructions_sha256": "2" * 64,
-                }
+                config = build_frozen_configuration(
+                    batch_size=3,
+                    thread_mode="new_thread",
+                )
                 config_sha256 = hashlib.sha256(
                     json.dumps(
                         config,
@@ -339,21 +331,34 @@ class UnattendedAppServerPipelineTest(unittest.TestCase):
                             "selection_status": "frozen_winner",
                             "winner_frozen": True,
                             "winner": {
-                                "variant_id": config["variant_id"],
+                                "variant_id": "batch_3_new_thread",
+                                "winner_system_id": WINNER_SYSTEM_ID,
                                 "batch_size": config["batch_size"],
                                 "thread_mode": config["thread_mode"],
                                 "model": config["model"],
-                                "reasoning_effort": config["reasoning_effort"],
-                                "config": config,
-                                "config_sha256": config_sha256,
+                                "reasoning_effort": config["effort"],
+                                "concurrency": 1,
+                                "retry_count": config["retry_count"],
+                                "window_count": 4,
+                                "context_chars": 900,
+                                "max_events_per_segment": config[
+                                    "max_events_per_segment"
+                                ],
+                                "frozen_configuration": config,
+                                "frozen_configuration_sha256": config_sha256,
                                 "report_sha256": "3" * 64,
                             },
                             "gates": {
                                 "quality_noninferior": True,
                                 "production_amortized_total_token_ratio_lte_0_28": True,
                             },
-                            "frozen_artifact_hashes": {"fixture": "4" * 64},
+                            "frozen_artifact_hashes": {
+                                "fixture": "4" * 64,
+                                "arm_configuration_batch_3_new_thread": config_sha256,
+                                "arm_report_batch_3_new_thread": "3" * 64,
+                            },
                             "production_changed": False,
+                            "production_mutated": False,
                             "holdout_preparation_authorized": True,
                             "holdout_model_calls_authorized": False,
                         }
