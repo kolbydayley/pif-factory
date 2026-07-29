@@ -36,14 +36,14 @@ The subsequent Phase C A/B/C cheap-consensus run is reported separately in
 6/9 gates but failed its atomicity, faithfulness, and hallucination acceptance
 criteria, so it does not clear benchmark progression.
 
-The single authorized C2 revision attempted to put `gpt-5.6-sol` in the
-adjudicator seat using the exact Phase C packets. Codex's response-format API
-rejected the frozen schema and one bounded compatibility adapter before model
-execution. C2 therefore has no semantic metrics. The full gold-class recipe
-did not transfer operationally through the current structured-output harness;
-this is not represented as a Sol quality result. Per the terminal ruling, the
-decomposition experiment lane is permanently closed. See
-`docs/TRUE_NORTH_C2_SOL_ADJUDICATOR_RESULTS_20260729.md`.
+The first C2 attempt put `gpt-5.6-sol` in the adjudicator seat using the exact
+Phase C packets, but Codex's response-format API rejected both schema forms
+before inference. Ruling 5 voided that attempt and reversed its lane closure.
+The authorized re-attempt then failed its mandatory one-packet smoke before
+inference because the flat schema's `schema_version` property lacked an
+explicit JSON `type`. It dispatched no batch and produced no semantic metrics.
+Neither attempt is represented as a Sol quality result. No third schema shape
+was authorized. See `docs/TRUE_NORTH_C2_REATTEMPT_RESULTS_20260729.md`.
 
 ## Final nine-gate table
 
@@ -107,8 +107,11 @@ C2 then attempted the gold-author-class adjudicator, but the Codex
 structured-output API rejected `oneOf` and the single bounded flattened-schema
 adapter rejected `uniqueItems`, both before model execution. Consequently the
 gold-class adjudicator's semantic quality remains unmeasured. The recipe failed
-to transfer operationally under the authorized frozen harness, and the
-decomposition lane is permanently closed rather than adapted again.
+to transfer operationally under that harness. Ruling 5 voided it and
+authorized one smoke-gated flat-schema re-attempt. That smoke was also rejected
+before inference because a `const` property lacked an explicit JSON `type`.
+The batch was not dispatched, no third schema was attempted, and no semantic
+lane-closure condition fired.
 
 ### Faithfulness
 
@@ -189,13 +192,16 @@ compound-only consensus design.
 The practical split is therefore approximately 58.59% cheap/non-compound
 handling and at most 41.41% Codex-class compound routing, plus zero-call
 speaker and actor rules. Actual production cost is not yet certified because
-the Codex-class compound recipe remains untested.
+the Codex-class compound recipe remains semantically untested. The Phase-E
+production shadow trial was stopped before dispatch because the production
+database was an unreadable APFS dataless placeholder, so neither stage drift
+nor amortized cost could be measured.
 
 ## Campaign ledger summary
 
 Authoritative cumulative campaign spend:
 
-- **289 calls**
+- **290 calls**
 - **3,029,113 known tokens**
 - token total excludes the 45-call actor-gold-repair stage because its
   historical ledger did not capture tokens
@@ -229,8 +235,10 @@ option-2 hold/merge correction. Their receipt reports overlap the grouped
 | Spark split-default | 14 | 309,122 | Partial; budget breach; no measured advantage |
 | Sol split-default | 14 | 455,902 | Partial; below GLM control; decomposition lane stopped |
 | A/B/C cheap consensus | 23 | 246,443 | Complete; 0.801724 atomicity; failed acceptance |
-| C2 Sol adjudicator | 2 | 0 | Structured-output schema rejected before inference; lane closed |
-| **Post-160 total** | **129** | **1,851,299** | All negative, ineligible, or operationally blocked |
+| C2 Sol adjudicator | 2 | 0 | Structured-output schema rejected before inference; void under Ruling 5 |
+| C2 provider-compatible smoke | 1 | 0 | Flat schema rejected before inference; no batch dispatched |
+| Phase-E production shadow | 0 | 0 | Isolation preflight blocked on unreadable dataless production database |
+| **Post-160 total** | **130** | **1,851,299** | All negative, ineligible, or operationally blocked |
 
 ### Ruling provenance chain
 
@@ -249,6 +257,9 @@ option-2 hold/merge correction. Their receipt reports overlap the grouped
 8. Ruling 4 created contract v8 and re-referenced candidate-state macro F1 to
    0.790664 against its measured ceiling, retaining the 0.90 aspiration and
    raw agreement as diagnostics.
+9. Ruling 5 voided pre-inference C2, reversed its lane closure, authorized one
+   smoke-gated provider-compatible re-attempt, and independently dispatched
+   Phase E under strict production isolation.
 
 ## Post-certification experiment result
 
@@ -260,7 +271,19 @@ faithfulness and hallucination also below gate. The design is frozen as a
 terminal quality failure; no self-iteration occurred. The one authorized C2
 revision could not invoke the Sol adjudicator because the frozen structured
 output schema and one bounded compatibility form were rejected before
-inference. The lane is permanently closed.
+inference. Ruling 5 voided that attempt. Its single authorized re-attempt also
+ended before inference at the mandatory schema smoke and did not dispatch the
+batch. No semantic conclusion about Sol adjudication is available, and no
+third schema form was attempted.
+
+### Production shadow trial
+
+Phase E stopped before provider dispatch because `data/factory.sqlite` was an
+unreadable APFS dataless placeholder. No episode could be safely selected or
+matched to a production Codex baseline, so agreement, drift, and amortized
+cost remain unmeasured. Production state was not opened or mutated; no queue,
+canonical, release, or label action occurred. See
+`docs/TRUE_NORTH_PHASE_E_SHADOW_RESULTS_20260729.md`.
 
 ### Actor value residual
 

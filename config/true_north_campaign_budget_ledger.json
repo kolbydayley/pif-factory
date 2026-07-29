@@ -223,6 +223,49 @@
         "sealed_holdouts_forbidden": true,
         "production_mutation_forbidden": true
       }
+    },
+    {
+      "decision_id": "review-loop-ruling-5-c2-void-and-reattempt-20260729-v1",
+      "owner": "true_north_review_loop",
+      "recorded_at": "2026-07-29",
+      "source_kind": "review_thread_directive_in_active_codex_thread",
+      "delegation": {
+        "delegated_by": "Kolby Dayley",
+        "delegated_to": "true_north_review_loop",
+        "explicit": true
+      },
+      "provenance": {
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Ruling 5 classifies the pre-inference C2 schema rejection as void and authorizes one provider-compatible re-attempt after a mandatory one-packet smoke test; Phase E is independently dispatched."
+      },
+      "corrects": {
+        "experiment_id": "phase-c2-sol-adjudicator-20260729-v1",
+        "old_status": "terminal_operational_failure_lane_closed",
+        "new_status": "void_operationally_ineligible",
+        "semantic_result_produced": false,
+        "lane_closure_reversed": true
+      },
+      "authorizes": {
+        "c2_reattempt": {
+          "mandatory_smoke_test_first": true,
+          "max_calls": 24,
+          "max_tokens": 700000,
+          "provider_schema": "flat_decision_plus_claim_list_without_oneOf_or_uniqueItems"
+        },
+        "phase_e": {
+          "episode_count": 3,
+          "max_calls": 60,
+          "max_tokens": 1500000,
+          "production_access": "read_only",
+          "writes": "isolated_shadow_store_only"
+        }
+      },
+      "terminal_rule": {
+        "c2_semantic_result_closes_decomposition_lane": true,
+        "c2_schema_rejection_stops_without_third_shape": true,
+        "phase_d_undispatched": true,
+        "sealed_holdouts_forbidden": true
+      }
     }
   ],
   "post_certification_phase_results": [
@@ -278,7 +321,7 @@
     {
       "phase": "C2",
       "name": "sol_adjudicator_single_revision",
-      "status": "terminal_operational_failure_lane_closed",
+      "status": "void_operationally_ineligible",
       "provider_calls": 2,
       "known_tokens": 0,
       "run_id": "task5-c2-sol-adjudicator-20260729-v1",
@@ -290,7 +333,44 @@
       "result_sha256": "86f991d45b12919d286f03e9897fab46534a0fa8338020b84ff16fccceee440c",
       "sealed_holdout_opened": false,
       "production_mutated": false,
-      "decomposition_lane_closed_permanently": true
+      "decomposition_lane_closed_permanently": false,
+      "ruling": "review-loop-ruling-5-c2-void-and-reattempt-20260729-v1"
+    },
+    {
+      "phase": "C2-reattempt",
+      "name": "sol_adjudicator_provider_compatible_schema_reattempt",
+      "status": "void_operationally_ineligible_smoke_schema_rejected",
+      "provider_calls": 1,
+      "known_tokens": 0,
+      "run_id": "task5-c2-sol-adjudicator-reattempt-20260729-v1",
+      "validated_provider_envelopes": 0,
+      "expected_provider_envelopes": 19,
+      "semantic_metrics_available": false,
+      "terminal_reason": "mandatory_smoke_test_failed_no_batch_dispatched",
+      "schema_rejection": "schema_version_const_missing_explicit_type",
+      "result_sha256": "2370d516f10b7b80bdf90bfbed3076daa394f336970bcbd55cb087fbc7a2e752",
+      "sealed_holdout_opened": false,
+      "production_mutated": false,
+      "decomposition_lane_closed_permanently": false,
+      "no_third_schema_shape_authorized": true,
+      "ruling": "review-loop-ruling-5-c2-void-and-reattempt-20260729-v1"
+    },
+    {
+      "phase": "E",
+      "name": "three_episode_production_shadow_trial",
+      "status": "blocked_before_dispatch_isolation_not_provable",
+      "provider_calls": 0,
+      "known_tokens": 0,
+      "episode_count_measured": 0,
+      "production_database_accessed": false,
+      "production_database_dataless": true,
+      "production_mutated": false,
+      "queue_mutated": false,
+      "release_or_label_published": false,
+      "terminal_reason": "production_database_is_dataless_and_unreadable",
+      "preflight_sha256": "385b7ad2555e946a55cf7414befe6897ed3fccad40d0d406ea6c4931455f4ab6",
+      "agreement_metrics_available": false,
+      "cost_comparison_available": false
     }
   ],
   "cumulative_before_new_authorization": {
@@ -535,7 +615,7 @@
       "max_tokens": 700000,
       "max_wall_seconds": 14400,
       "reserved_tokens_per_envelope": 35000,
-      "status": "terminal_operational_failure_lane_closed",
+      "status": "void_operationally_ineligible",
       "one_run_only": true,
       "source_adjudication_packets": "task5-ab-c-cheap-consensus-20260729-v1",
       "adjudication_contract": "exact_phase_c_union_selection_contract_no_third_structures",
@@ -579,7 +659,109 @@
         "within_call_ceiling": true,
         "within_token_ceiling": true,
         "result_sha256": "86f991d45b12919d286f03e9897fab46534a0fa8338020b84ff16fccceee440c",
-        "decomposition_lane_closed_permanently": true
+        "decomposition_lane_closed_permanently": false,
+        "ruling_5_void": true
+      }
+    },
+    {
+      "experiment_id": "phase-c2-sol-adjudicator-reattempt-20260729-v1",
+      "sequence": 8,
+      "models": {
+        "pass_a": "zai-coding-plan/glm-5.2_frozen_task5",
+        "pass_b": "gpt-5.6-sol_completed_phase_c",
+        "pass_c2": "gpt-5.6-sol"
+      },
+      "provider_lane": "codex_subscription_ephemeral",
+      "max_calls": 24,
+      "max_tokens": 700000,
+      "max_wall_seconds": 14400,
+      "reserved_tokens_per_envelope": 35000,
+      "status": "void_operationally_ineligible_smoke_schema_rejected",
+      "one_run_only": true,
+      "mandatory_smoke_test_first": true,
+      "schema_contract": "flat_decision_chose_a_chose_b_merged_plus_claim_list_no_oneOf_no_uniqueItems",
+      "semantic_contract": "exact_phase_c_union_selection_contract_no_third_structures",
+      "unflagged_control": "reuse_frozen_task5_outputs",
+      "cumulative_before": {
+        "calls": 289,
+        "known_tokens": 3029113
+      },
+      "provenance": {
+        "source_kind": "review_thread_directive_in_active_codex_thread",
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Ruling 5 voided the pre-inference C2 attempt and authorized one smoke-gated re-attempt with a provider-compatible flat decision schema."
+      },
+      "acceptance": {
+        "acceptable_atomic_count_rate": ">=0.90",
+        "matched_faithfulness": ">=0.744435",
+        "matched_hallucination_rate": "<=0.093684",
+        "candidate_state_macro_f1": ">=0.790664",
+        "intrinsic_junk_escapes": 0,
+        "relational_contamination": 0
+      },
+      "actual": {
+        "run_id": "task5-c2-sol-adjudicator-reattempt-20260729-v1",
+        "complete": false,
+        "acceptance_eligible": false,
+        "calls": 1,
+        "tokens": 0,
+        "smoke_passed": false,
+        "batch_dispatched": false,
+        "validated_provider_envelopes": 0,
+        "expected_provider_envelopes": 19,
+        "semantic_metrics": null,
+        "decision_distribution": null,
+        "flagged_subset_accuracy": null,
+        "terminal_reason": "mandatory_smoke_test_failed_no_batch_dispatched",
+        "provider_error": "invalid_json_schema_schema_version_const_missing_explicit_type",
+        "no_third_schema_shape_attempted": true,
+        "cumulative_calls_after": 290,
+        "known_cumulative_tokens_after": 3029113,
+        "result_sha256": "2370d516f10b7b80bdf90bfbed3076daa394f336970bcbd55cb087fbc7a2e752"
+      }
+    },
+    {
+      "experiment_id": "phase-e-three-episode-production-shadow-20260729-v1",
+      "sequence": 9,
+      "architecture": "certified_hybrid_stack",
+      "episode_count": 3,
+      "max_calls": 60,
+      "max_tokens": 1500000,
+      "max_wall_seconds": 21600,
+      "status": "blocked_before_dispatch_isolation_not_provable",
+      "production_database_access": "read_only",
+      "writes": "isolated_shadow_store_only",
+      "canonical_mutation": false,
+      "release_publication": false,
+      "label_publication": false,
+      "queue_mutation": false,
+      "cumulative_before": {
+        "calls": 290,
+        "known_tokens": 3029113
+      },
+      "provenance": {
+        "source_kind": "review_thread_directive_in_active_codex_thread",
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Run the certified hybrid on three recent real production episodes in strict read-only shadow mode and compare stage drift plus amortized cost against existing all-Codex outputs."
+      },
+      "actual": {
+        "calls": 0,
+        "tokens": 0,
+        "episodes_measured": 0,
+        "eligible_to_dispatch": false,
+        "production_database_accessed": false,
+        "production_database_dataless": true,
+        "production_database_size_bytes": 4052508672,
+        "production_database_flags": 1073741920,
+        "stop_reason": "production_database_is_dataless_and_unreadable",
+        "production_mutated": false,
+        "queue_mutated": false,
+        "release_or_label_published": false,
+        "agreement_metrics": null,
+        "cost_comparison": null,
+        "preflight_sha256": "385b7ad2555e946a55cf7414befe6897ed3fccad40d0d406ea6c4931455f4ab6",
+        "cumulative_calls_after": 290,
+        "known_cumulative_tokens_after": 3029113
       }
     }
   ]

@@ -6,7 +6,7 @@ Suite: `ai-safety-v1`
 
 Run: `task5-c2-sol-adjudicator-20260729-v1`
 
-Status: **terminal operational failure; decomposition lane permanently closed**
+Status: **VOID; operationally ineligible under Ruling 5**
 
 ## Frozen design
 
@@ -58,7 +58,7 @@ of harness revisions as the same one-run experiment.
 Adjudicator selection statistics are unavailable: Sol produced zero semantic
 outputs, so it did not choose A, B, or a merged union for any candidate.
 
-## Finding and permanent closure
+## Ruling 5 correction
 
 The gold-class adjudicator recipe did **not transfer operationally through the
 current Codex structured-output harness**. This is not evidence that Sol's
@@ -66,9 +66,11 @@ semantic adjudication quality is poor; the model never ran. It is evidence
 that the full recipe was not reproducible under the frozen one-revision
 envelope without additional harness adaptation.
 
-Per the review-loop terminal ruling, the decomposition experiment lane is now
-**permanently closed regardless of outcome**. No further decomposition design,
-schema adapter, retry, or holdout execution is authorized.
+Ruling 5 voided this attempt because both failures occurred before inference
+and no semantic adjudication was produced. The associated lane closure was
+reversed, and one smoke-gated provider-compatible re-attempt was authorized.
+That re-attempt is reported in
+`docs/TRUE_NORTH_C2_REATTEMPT_RESULTS_20260729.md`.
 
 ## Spend and isolation
 
