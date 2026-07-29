@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import math
 import os
 import sqlite3
 from pathlib import Path
@@ -44,6 +45,9 @@ def strict_isolation_preflight(
     *,
     production_database: str | Path,
     shadow_root: str | Path,
+    max_calls: int = MAX_CALLS,
+    max_tokens: int = MAX_TOKENS,
+    experiment_id: str = EXPERIMENT_ID,
 ) -> dict[str, Any]:
     """Prove the minimum prerequisites before any production shadow call."""
     database = database_identity(production_database)
@@ -60,10 +64,10 @@ def strict_isolation_preflight(
         reasons.append("shadow_store_overlaps_production_database")
     result = {
         "schema_version": SCHEMA_VERSION,
-        "experiment_id": EXPERIMENT_ID,
+        "experiment_id": experiment_id,
         "budget": {
-            "max_calls": MAX_CALLS,
-            "max_tokens": MAX_TOKENS,
+            "max_calls": int(max_calls),
+            "max_tokens": int(max_tokens),
         },
         "production_database": database,
         "requested_access": "sqlite_uri_mode_ro_plus_query_only",
@@ -136,11 +140,17 @@ def executable_isolation_preflight(
     *,
     production_database: str | Path,
     shadow_root: str | Path,
+    max_calls: int = MAX_CALLS,
+    max_tokens: int = MAX_TOKENS,
+    experiment_id: str = EXPERIMENT_ID,
 ) -> dict[str, Any]:
     """Executable post-hydration gate; never call before production access is authorized."""
     preflight = strict_isolation_preflight(
         production_database=production_database,
         shadow_root=shadow_root,
+        max_calls=max_calls,
+        max_tokens=max_tokens,
+        experiment_id=experiment_id,
     )
     require_dispatch_eligibility(preflight)
     production_before = database_identity(production_database)
@@ -440,3 +450,111 @@ def require_hybrid_budget_eligibility(preflight: dict[str, Any]) -> None:
             "Phase E stopped before provider dispatch: "
             + str(preflight.get("stop_reason"))
         )
+
+
+def certified_hybrid_episode_budget_preflight(
+    connection: sqlite3.Connection,
+    *,
+    episode_id: str,
+    max_calls: int = MAX_CALLS,
+    max_tokens: int = 1_200_000,
+) -> dict[str, Any]:
+    """Size one episode through every provider-bearing certified lane.
+
+    Empty stored segments do not form downstream packets. Sol pass B may use
+    the already-validated transport packing of at most two immutable semantic
+    packets per envelope. Schema-free C2 adjudication remains one semantic
+    packet per call. Operational retries and disposition conflict escalation
+    are excluded, making this a strict optimistic floor rather than a reserve.
+    """
+    from .true_north_input_split_default import compound_flag
+
+    if int(connection.execute("PRAGMA query_only").fetchone()[0]) != 1:
+        raise PhaseEShadowError("episode budget preflight requires query_only")
+    present = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT name FROM sqlite_schema WHERE type='table'"
+        )
+    }
+    required = {"segments", "discourse_events"}
+    if not required.issubset(present):
+        raise PhaseEShadowError(
+            "production schema lacks episode budget dependencies"
+        )
+    segment_rows = connection.execute(
+        """
+        SELECT
+          s.id,
+          s.segment_index,
+          d.id,
+          d.claim_text
+        FROM segments AS s
+        LEFT JOIN discourse_events AS d ON d.segment_id = s.id
+        WHERE s.episode_id = ?
+        ORDER BY s.segment_index, d.event_index
+        """,
+        (episode_id,),
+    ).fetchall()
+    if not segment_rows:
+        raise PhaseEShadowError("episode budget preflight found no segments")
+    stored_segments = {str(row[0]) for row in segment_rows}
+    candidate_segments = {
+        str(row[0]) for row in segment_rows if row[2] is not None
+    }
+    flagged_segments = {
+        str(row[0])
+        for row in segment_rows
+        if row[2] is not None and compound_flag(str(row[3] or ""))
+    }
+    candidate_count = sum(row[2] is not None for row in segment_rows)
+    flagged_candidate_count = sum(
+        row[2] is not None and compound_flag(str(row[3] or ""))
+        for row in segment_rows
+    )
+    candidate_packet_count = len(candidate_segments)
+    flagged_packet_count = len(flagged_segments)
+    sol_b_envelope_floor = math.ceil(flagged_packet_count / 2)
+    stages = {
+        "disposition_glm_pass_a": candidate_packet_count,
+        "disposition_glm_pass_b": candidate_packet_count,
+        "task5_glm_decomposition": candidate_packet_count,
+        "compound_sol_pass_b_envelopes": sol_b_envelope_floor,
+        "compound_sol_c2_adjudication": flagged_packet_count,
+    }
+    call_floor = sum(stages.values())
+    result = {
+        "schema_version": (
+            "pif_true_north_phase_e_episode_budget_preflight_v1"
+        ),
+        "experiment_id": (
+            "phase-e-one-episode-production-shadow-20260729-v1"
+        ),
+        "episode_id": episode_id,
+        "stored_segment_count": len(stored_segments),
+        "candidate_segment_count": candidate_packet_count,
+        "candidate_count": candidate_count,
+        "compound_candidate_count": flagged_candidate_count,
+        "compound_segment_count": flagged_packet_count,
+        "exact_contract_optimistic_call_floor": stages,
+        "minimum_provider_calls": call_floor,
+        "excluded_from_floor": [
+            "disposition_operational_tiebreaker",
+            "provider_retry",
+            "validation_retry",
+        ],
+        "max_calls": int(max_calls),
+        "max_tokens": int(max_tokens),
+        "eligible_to_dispatch": call_floor <= int(max_calls),
+        "stop_reason": (
+            None
+            if call_floor <= int(max_calls)
+            else "certified_single_episode_call_floor_exceeds_ceiling"
+        ),
+        "provider_calls_made": 0,
+        "provider_tokens": 0,
+    }
+    result["preflight_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(result)
+    )
+    return result

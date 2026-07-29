@@ -228,3 +228,56 @@ def test_certified_hybrid_budget_preflight_fails_before_dispatch(
         match="certified_exact_contract_exceeds_declared_call_ceiling",
     ):
         phase_e.require_hybrid_budget_eligibility(result)
+
+
+def test_one_episode_budget_preflight_counts_complete_certified_lanes(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "production.sqlite"
+    connection = sqlite3.connect(database)
+    connection.executescript(
+        """
+        CREATE TABLE segments (
+            id TEXT PRIMARY KEY,
+            episode_id TEXT NOT NULL,
+            segment_index INTEGER NOT NULL
+        );
+        CREATE TABLE discourse_events (
+            id TEXT PRIMARY KEY,
+            segment_id TEXT NOT NULL,
+            event_index INTEGER NOT NULL,
+            claim_text TEXT
+        );
+        """
+    )
+    for index in range(16):
+        connection.execute(
+            "INSERT INTO segments VALUES (?, 'episode', ?)",
+            (f"seg_{index}", index),
+        )
+        if index < 14:
+            connection.execute(
+                "INSERT INTO discourse_events VALUES (?, ?, 0, ?)",
+                (f"candidate_{index}", f"seg_{index}", "A and B"),
+            )
+    connection.commit()
+    connection.close()
+
+    with phase_e.open_read_only_database(database) as read_only:
+        result = phase_e.certified_hybrid_episode_budget_preflight(
+            read_only,
+            episode_id="episode",
+        )
+
+    assert result["stored_segment_count"] == 16
+    assert result["candidate_segment_count"] == 14
+    assert result["compound_segment_count"] == 14
+    assert result["exact_contract_optimistic_call_floor"] == {
+        "disposition_glm_pass_a": 14,
+        "disposition_glm_pass_b": 14,
+        "task5_glm_decomposition": 14,
+        "compound_sol_pass_b_envelopes": 7,
+        "compound_sol_c2_adjudication": 14,
+    }
+    assert result["minimum_provider_calls"] == 63
+    assert result["eligible_to_dispatch"] is False

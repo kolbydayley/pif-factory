@@ -1,0 +1,67 @@
+{
+  "budget": {
+    "candidate_count": 261,
+    "candidate_segment_count": 14,
+    "compound_candidate_count": 104,
+    "compound_segment_count": 14,
+    "eligible_to_dispatch": false,
+    "episode_id": "ep_7edbaadb04dc6b1ec57bfb70",
+    "exact_contract_optimistic_call_floor": {
+      "compound_sol_c2_adjudication": 14,
+      "compound_sol_pass_b_envelopes": 7,
+      "disposition_glm_pass_a": 14,
+      "disposition_glm_pass_b": 14,
+      "task5_glm_decomposition": 14
+    },
+    "excluded_from_floor": [
+      "disposition_operational_tiebreaker",
+      "provider_retry",
+      "validation_retry"
+    ],
+    "experiment_id": "phase-e-one-episode-production-shadow-20260729-v1",
+    "max_calls": 60,
+    "max_tokens": 1200000,
+    "minimum_provider_calls": 63,
+    "preflight_sha256": "f295ffa987eb08f58af71f2d5dc0aa42ed1575da641a32eb5bf3202204a8379a",
+    "provider_calls_made": 0,
+    "provider_tokens": 0,
+    "schema_version": "pif_true_north_phase_e_episode_budget_preflight_v1",
+    "stop_reason": "certified_single_episode_call_floor_exceeds_ceiling",
+    "stored_segment_count": 16
+  },
+  "isolation": {
+    "budget": {
+      "max_calls": 60,
+      "max_tokens": 1200000
+    },
+    "eligible_to_dispatch": true,
+    "experiment_id": "phase-e-one-episode-production-shadow-20260729-v1",
+    "preflight_sha256": "4ca869d2166ff82bfb67a49b3c7470184bed53fc3bb4d3b8371e0ae1f0a85665",
+    "production_database": {
+      "dataless": false,
+      "flags": 64,
+      "inode": 115122724,
+      "mtime_ns": 1784559916107748508,
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/data/factory.sqlite",
+      "size_bytes": 4052508672
+    },
+    "production_writes_allowed": false,
+    "provider_calls_made": 0,
+    "provider_tokens": 0,
+    "queue_mutation_allowed": false,
+    "release_or_label_publication_allowed": false,
+    "requested_access": "sqlite_uri_mode_ro_plus_query_only",
+    "schema_version": "pif_true_north_phase_e_shadow_v1",
+    "shadow_root": "/Users/kolbydayley/Library/Application Support/Podcast Intelligence Factory/phase-e-shadow/phase-e-one-episode-20260729-v1",
+    "stop_reasons": [],
+    "executable_checks": {
+      "production_identity_stable": true,
+      "query_only": 1,
+      "schema_version_observed": 245,
+      "shadow_device_relation": "same_device_distinct_path",
+      "shadow_write_probe_passed": true,
+      "sqlite_uri_mode": "ro",
+      "write_probe_rejected": true
+    }
+  }
+}

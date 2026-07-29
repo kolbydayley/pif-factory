@@ -1235,6 +1235,64 @@
         "cumulative_calls_after": 309,
         "known_cumulative_tokens_after": 3583991
       }
+    },
+    {
+      "experiment_id": "phase-e-one-episode-production-shadow-20260729-v1",
+      "sequence": 15,
+      "architecture": "c2_phase_d_certified_best_of_lanes",
+      "episode_count": 1,
+      "max_calls": 60,
+      "max_tokens": 1200000,
+      "status": "stopped_pre_dispatch_complete_stack_floor_exceeds_ceiling",
+      "production_database_access": "sqlite_uri_mode_ro_plus_query_only",
+      "writes": "isolated_shadow_store_only",
+      "canonical_mutation": false,
+      "release_publication": false,
+      "label_publication": false,
+      "queue_mutation": false,
+      "snapshot_label": "July 20 local snapshot; not live production state",
+      "cumulative_before": {
+        "calls": 309,
+        "known_tokens": 3583991
+      },
+      "provenance": {
+        "source_kind": "review_thread_directive_in_active_codex_thread",
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Run one median-sized recent episode only if the complete certified stack fits a ceiling of 60 calls and 1.2M tokens; otherwise stop and report the true floor."
+      },
+      "selection": {
+        "episode_id": "ep_7edbaadb04dc6b1ec57bfb70",
+        "show": "Syntax",
+        "title": "1017, We need to stop calling it “AI”",
+        "published_at": "2026-07-01",
+        "representative_reason": "16 stored segments is the exact median of the prior 13, 16, and 19 segment selections"
+      },
+      "actual": {
+        "calls": 0,
+        "tokens": 0,
+        "production_database_accessed": true,
+        "production_access_mode": "sqlite_uri_mode_ro_plus_query_only",
+        "isolation_preflight_passed": true,
+        "isolation_preflight_sha256": "4ca869d2166ff82bfb67a49b3c7470184bed53fc3bb4d3b8371e0ae1f0a85665",
+        "stored_segment_count": 16,
+        "candidate_segment_count": 14,
+        "candidate_count": 261,
+        "compound_candidate_count": 104,
+        "compound_segment_count": 14,
+        "exact_contract_optimistic_call_floor": 63,
+        "eligible_to_dispatch": false,
+        "stop_reason": "certified_single_episode_call_floor_exceeds_ceiling",
+        "budget_preflight_sha256": "f295ffa987eb08f58af71f2d5dc0aa42ed1575da641a32eb5bf3202204a8379a",
+        "production_mutated": false,
+        "queue_mutated": false,
+        "release_or_label_published": false,
+        "agreement_metrics": null,
+        "hybrid_cost_per_retained_valid_atomic": null,
+        "all_codex_cost_per_retained_valid_atomic": null,
+        "all_codex_cost_reason": "production_label_receipts_do_not_record_token_usage",
+        "cumulative_calls_after": 309,
+        "known_cumulative_tokens_after": 3583991
+      }
     }
   ]
 }
