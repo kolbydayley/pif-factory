@@ -62,7 +62,19 @@
       "max_tokens": 400000,
       "max_wall_seconds": 7200,
       "dispatch_condition": "experiment_1_result_frozen",
-      "status": "declared"
+      "status": "reproducible_validation_failure_partial",
+      "actual": {
+        "run_id": "task6-actor-two-stage-20260729-v1",
+        "calls": 23,
+        "tokens": 261654,
+        "emission_decisions": 243,
+        "validated_values": 60,
+        "missing_values": 16,
+        "unused_call_capacity": 7,
+        "result_sha256": "f3ad1319a23973dee6c87253ac48c2603789d470e756d4cb781d4943392dc374",
+        "cumulative_calls_after": 208,
+        "known_cumulative_tokens_after": 1688964
+      }
     }
   ]
 }

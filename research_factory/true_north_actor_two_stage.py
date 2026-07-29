@@ -692,3 +692,315 @@ def score_actor_two_stage_experiment(
     path = run_root / "actor-two-stage-score.private.json"
     true_north._write_json(path, document, immutable=False)
     return {**document, "score_path": str(path)}
+
+
+def _account_preserved_failures(
+    *,
+    run_root: Path,
+    state: dict[str, Any],
+) -> dict[str, Any]:
+    newly_accounted_calls = 0
+    newly_accounted_tokens = 0
+    for output_dir in sorted((run_root / "outputs").glob("*/*/*")):
+        if (output_dir / "validated.private.json").is_file():
+            continue
+        for attempt_path in sorted(
+            output_dir.glob("attempt-*.private.jsonl")
+        ):
+            attempt_sha = true_north._sha256_file(attempt_path)
+            marker = (
+                output_dir
+                / f"failed-attempt-{attempt_sha}.accounted.json"
+            )
+            if marker.is_file():
+                continue
+            _answer, finish, _events = true_north._parse_opencode_stream(
+                attempt_path.read_text(encoding="utf-8")
+            )
+            usage = true_north._usage(finish)
+            token_count = int(usage.get("total_tokens") or 14_000)
+            record = {
+                "schema_version": SCHEMA_VERSION,
+                "attempt_sha256": attempt_sha,
+                "usage": usage,
+                "conservative_tokens_used": token_count,
+                "reason": "provider_answer_failed_local_validation",
+                "paid_retry_suppressed": True,
+            }
+            true_north._write_json(marker, record, immutable=True)
+            newly_accounted_calls += 1
+            newly_accounted_tokens += token_count
+    if newly_accounted_calls:
+        state["usage"]["calls"] += newly_accounted_calls
+        state["usage"]["tokens"] += newly_accounted_tokens
+        true_north._multipass_state_write(
+            run_root / "state.json", state
+        )
+    return {
+        "calls": newly_accounted_calls,
+        "tokens": newly_accounted_tokens,
+    }
+
+
+def _alignment_index(
+    pair: Mapping[str, Any],
+    *,
+    integer_key: str,
+    reference_key: str,
+) -> int:
+    if integer_key in pair:
+        return int(pair[integer_key])
+    reference = str(pair[reference_key])
+    _prefix, separator, ordinal = reference.partition(":")
+    if not separator:
+        raise ActorTwoStageError("invalid alignment reference")
+    return int(ordinal) - 1
+
+
+def finalize_partial_actor_two_stage_experiment(
+    *,
+    suite_root: str | Path,
+    run_id: str,
+) -> dict[str, Any]:
+    """Freeze complete emission and partial value evidence without more calls."""
+
+    root = Path(suite_root).expanduser().resolve()
+    run_root = root / "multipass" / "runs" / run_id
+    configuration = true_north._read_json(run_root / "configuration.json")
+    state = true_north._read_json(run_root / "state.json")
+    if configuration.get("schema_version") != SCHEMA_VERSION:
+        raise ActorTwoStageError("run is not actor two-stage")
+    if state.get("complete") is True:
+        raise ActorTwoStageError("complete run uses the normal scorer")
+    accounted = _account_preserved_failures(
+        run_root=run_root, state=state
+    )
+    state = true_north._read_json(run_root / "state.json")
+    if int(state["usage"]["calls"]) > MAX_CALLS:
+        raise ActorTwoStageError("partial actor usage exceeded ceiling")
+
+    source_outputs, candidates, provenance = _campaign_context(root)
+    rows = _actor_claim_rows(
+        outputs=source_outputs, candidates=candidates
+    )
+    expected = {
+        (str(row["candidate_id"]), int(row["claim_index"]))
+        for row in rows
+    }
+    emission: dict[tuple[str, int], bool] = {}
+    for path in sorted(
+        (run_root / "outputs" / "actor-emission").glob(
+            "*/*/validated.private.json"
+        )
+    ):
+        for row in true_north._read_json(path)["items"]:
+            emission[(str(row["candidate_id"]), int(row["claim_index"]))] = (
+                bool(row["emit"])
+            )
+    if set(emission) != expected:
+        raise ActorTwoStageError(
+            "partial finalizer requires complete emission decisions"
+        )
+    values: dict[tuple[str, int], str] = {}
+    valid_value_batches = 0
+    for path in sorted(
+        (run_root / "outputs" / "actor-value-two-stage").glob(
+            "*/*/validated.private.json"
+        )
+    ):
+        valid_value_batches += 1
+        for row in true_north._read_json(path)["items"]:
+            values[(str(row["candidate_id"]), int(row["claim_index"]))] = (
+                str(row["reported_actor"])
+            )
+    emitted = {ref for ref, decision in emission.items() if decision}
+    missing_value_refs = emitted - set(values)
+
+    predictions: list[dict[str, Any]] = []
+    for key, source in source_outputs.items():
+        output = copy.deepcopy(source)
+        for item in output["items"]:
+            candidate_id = str(item["candidate_id"])
+            for claim_index, atomic in enumerate(item["atomic_claims"]):
+                atomic["reported_actor"] = values.get(
+                    (candidate_id, claim_index)
+                )
+        predictions.extend(output["items"])
+        true_north._write_json(
+            run_root
+            / "outputs"
+            / "composed-partial-null-fallback"
+            / key[0]
+            / key[1]
+            / "validated.private.json",
+            output,
+            immutable=False,
+        )
+    ids = {str(row["candidate_id"]) for row in predictions}
+    consensus_document = true_north._read_json(
+        root / "gold" / "development" / "final" / "consensus.private.json"
+    )
+    preferred_document = true_north._read_json(
+        root / "gold" / "development" / "final" / "gold.private.json"
+    )
+    consensus = [
+        row for row in consensus_document["items"]
+        if str(row["candidate_id"]) in ids
+    ]
+    preferred = [
+        row for row in preferred_document["items"]
+        if str(row["candidate_id"]) in ids
+    ]
+    score = score_campaign(
+        predictions,
+        consensus,
+        preferred,
+        speaker_maps_by_candidate=_speaker_maps(
+            root, provenance["episode_ids"]
+        ),
+    )
+    prediction_map = {
+        str(row["candidate_id"]): row for row in predictions
+    }
+    preferred_map = {
+        str(row["candidate_id"]): row for row in preferred
+    }
+    emission_correct = 0
+    emission_denominator = 0
+    gold_non_null = 0
+    value_correct = 0
+    validated_value_gold_non_null = 0
+    validated_value_correct = 0
+    for candidate_score in score["candidates"]:
+        if not candidate_score["strictly_scoreable"]:
+            continue
+        candidate_id = str(candidate_score["candidate_id"])
+        predicted_claims = prediction_map[candidate_id]["atomic_claims"]
+        gold_claims = preferred_map[candidate_id]["atomic_claims"]
+        emission_denominator += max(
+            len(predicted_claims), len(gold_claims)
+        )
+        matched_gold: set[int] = set()
+        for pair in candidate_score["alignment"]:
+            predicted_index = _alignment_index(
+                pair,
+                integer_key="predicted_index",
+                reference_key="predicted_ref",
+            )
+            gold_index = _alignment_index(
+                pair,
+                integer_key="gold_index",
+                reference_key="gold_ref",
+            )
+            matched_gold.add(gold_index)
+            ref = (candidate_id, predicted_index)
+            gold_actor = gold_claims[gold_index].get("reported_actor")
+            emission_correct += int(
+                emission[ref] == (gold_actor is not None)
+            )
+            if gold_actor is not None:
+                gold_non_null += 1
+                value_correct += int(values.get(ref) == gold_actor)
+                if ref in values:
+                    validated_value_gold_non_null += 1
+                    validated_value_correct += int(
+                        values[ref] == gold_actor
+                    )
+        for gold_index, gold_claim in enumerate(gold_claims):
+            if (
+                gold_index not in matched_gold
+                and gold_claim.get("reported_actor") is not None
+            ):
+                gold_non_null += 1
+    null_floor = measure_always_null_floor(suite_root=root)
+    composite = float(
+        score["aggregate"]["reported_actor_exactness"]
+    )
+    document = {
+        "schema_version": SCHEMA_VERSION,
+        "experiment_id": EXPERIMENT_ID,
+        "run_id": run_id,
+        "complete": False,
+        "acceptance_eligible": False,
+        "terminal_reason": (
+            "reproducible_exact_span_failures_after_three_attempts"
+        ),
+        "coverage": {
+            "emission_decision_count": len(emission),
+            "expected_emission_decision_count": len(expected),
+            "emitted_claim_count": len(emitted),
+            "validated_value_count": len(values),
+            "missing_value_count": len(missing_value_refs),
+            "validated_value_batch_count": valid_value_batches,
+            "expected_value_batch_count": 8,
+        },
+        "stage_metrics": {
+            "emission_accuracy": (
+                emission_correct / emission_denominator
+                if emission_denominator
+                else 1.0
+            ),
+            "emission_correct": emission_correct,
+            "emission_denominator": emission_denominator,
+            "value_accuracy_given_all_gold_non_null": (
+                value_correct / gold_non_null
+                if gold_non_null
+                else 1.0
+            ),
+            "value_correct": value_correct,
+            "gold_non_null_denominator": gold_non_null,
+            "validated_value_accuracy_given_gold_non_null": (
+                validated_value_correct
+                / validated_value_gold_non_null
+                if validated_value_gold_non_null
+                else 1.0
+            ),
+            "validated_value_correct": validated_value_correct,
+            "validated_value_gold_non_null_denominator": (
+                validated_value_gold_non_null
+            ),
+        },
+        "partial_null_fallback_composition": {
+            "definition": (
+                "validated exact values where available; null for emitted "
+                "claims in the two repeatedly invalid value batches"
+            ),
+            "composite_reported_actor_exactness": composite,
+            "hallucination_rate_proxy": score["aggregate"][
+                "hallucination_rate_proxy"
+            ],
+            "always_null_exact_scorer_floor": null_floor[
+                "exact_scorer_reported_actor_floor"
+            ],
+            "beats_null_floor": (
+                composite
+                > float(
+                    null_floor["exact_scorer_reported_actor_floor"]
+                )
+            ),
+        },
+        "paid_retry_policy": {
+            "last_failures_accounted_without_dispatch": accounted,
+            "unused_call_capacity": (
+                MAX_CALLS - int(state["usage"]["calls"])
+            ),
+            "further_identical_retries_suppressed": True,
+        },
+        "usage": state["usage"],
+        "cumulative_calls_after_run": (
+            CUMULATIVE_CALLS_BEFORE_RUN + int(state["usage"]["calls"])
+        ),
+        "known_cumulative_tokens_after_run": (
+            KNOWN_CUMULATIVE_TOKENS_BEFORE_RUN
+            + int(state["usage"]["tokens"])
+        ),
+        "known_token_accounting_excludes_actor_gold_repair": True,
+        "holdout_opened": False,
+        "production_mutation": False,
+    }
+    document["result_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(document)
+    )
+    path = run_root / "terminal-partial-result.private.json"
+    true_north._write_json(path, document, immutable=False)
+    return {**document, "result_path": str(path)}
