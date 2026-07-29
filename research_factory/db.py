@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fcntl
 import os
+import re
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -3093,16 +3094,61 @@ SCHEMA_MIGRATIONS: tuple[tuple[int, str, tuple[str, ...]], ...] = (
     (4, "accepted_pipeline_run_authority_v4", ACCEPTED_PIPELINE_RUN_AUTHORITY_V4),
 )
 
+VERSIONED_INTELLIGENCE_V1_SUPERSEDED_CHECKSUM = (
+    "0ea8dd4afc02b1a668dc872a0a0f9f445c75da53833ebc7bca5144229b94e0fa"
+)
+VERSIONED_INTELLIGENCE_V1_DIVERGENT_VIEWS = (
+    "current_accepted_atomic_claims",
+    "current_accepted_claim_relations",
+    "current_accepted_claim_subjects",
+    "current_accepted_consensus_snapshots",
+    "current_accepted_contrarian_snapshots",
+    "current_accepted_corpus_releases",
+    "current_accepted_identity_resolutions",
+    "current_accepted_outcome_resolutions",
+    "current_accepted_person_appearances",
+    "current_accepted_position_observations",
+    "current_accepted_proposition_variants",
+    "current_accepted_source_affiliations",
+)
+VERSIONED_INTELLIGENCE_V1_ADOPTION_JUSTIFICATION = (
+    "Migration 1 source evolved after production application. Read-only schema "
+    "forensics verified that all 90 declared objects exist, that all 18 tables, "
+    "22 indexes, and 34 triggers are equivalent, and that exactly 12 derived "
+    "accepted-state views require forward reconciliation by pending migration 4."
+)
+
 
 def init_db(conn: sqlite3.Connection | None = None) -> None:
+    _init_db(conn, record_verified_v1_baseline=False)
+
+
+def init_db_adopting_verified_versioned_intelligence_v1_baseline(
+    conn: sqlite3.Connection | None = None,
+) -> None:
+    """Initialize after recording the one exact, audited production V1 baseline."""
+
+    _init_db(conn, record_verified_v1_baseline=True)
+
+
+def _init_db(
+    conn: sqlite3.Connection | None,
+    *,
+    record_verified_v1_baseline: bool,
+) -> None:
     own_conn = conn is None
     conn = conn or connect()
     try:
         with init_db_lock(conn):
             conn.executescript(SCHEMA)
             migrate_schema(conn)
+            if record_verified_v1_baseline:
+                adopt_versioned_intelligence_v1_baseline(conn)
             apply_schema_migrations(conn)
             conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         if own_conn:
             conn.close()
@@ -3191,9 +3237,7 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     )
 
 
-def apply_schema_migrations(conn: sqlite3.Connection) -> list[int]:
-    """Apply known migrations once, in increasing order, without rewriting history."""
-
+def _ensure_schema_migration_history(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -3201,6 +3245,30 @@ def apply_schema_migrations(conn: sqlite3.Connection) -> list[int]:
           name TEXT NOT NULL UNIQUE,
           checksum_sha256 TEXT NOT NULL CHECK(length(checksum_sha256) = 64),
           applied_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_migration_baseline_adoptions (
+          migration_version INTEGER PRIMARY KEY CHECK(migration_version > 0),
+          migration_name TEXT NOT NULL,
+          superseded_checksum_sha256 TEXT NOT NULL
+            CHECK(length(superseded_checksum_sha256) = 64),
+          adopted_checksum_sha256 TEXT NOT NULL
+            CHECK(length(adopted_checksum_sha256) = 64),
+          adopted_at TEXT NOT NULL,
+          declared_object_count INTEGER NOT NULL CHECK(declared_object_count > 0),
+          present_object_count INTEGER NOT NULL
+            CHECK(present_object_count = declared_object_count),
+          declared_objects_json TEXT NOT NULL,
+          divergent_views_json TEXT NOT NULL,
+          justification TEXT NOT NULL CHECK(length(trim(justification)) > 0),
+          UNIQUE (
+            migration_version,
+            superseded_checksum_sha256,
+            adopted_checksum_sha256
+          )
         )
         """
     )
@@ -3220,6 +3288,212 @@ def apply_schema_migrations(conn: sqlite3.Connection) -> list[int]:
         END
         """
     )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS schema_migration_baseline_adoptions_no_update
+        BEFORE UPDATE ON schema_migration_baseline_adoptions BEGIN
+          SELECT RAISE(ABORT, 'schema migration baseline adoption history is immutable');
+        END
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS schema_migration_baseline_adoptions_no_delete
+        BEFORE DELETE ON schema_migration_baseline_adoptions BEGIN
+          SELECT RAISE(ABORT, 'schema migration baseline adoption history is immutable');
+        END
+        """
+    )
+
+
+def schema_migration_checksum(name: str, statements: Iterable[str]) -> str:
+    return sha256_text(name + "\n" + "\n".join(statement.strip() for statement in statements))
+
+
+def record_schema_migration_baseline_adoption(
+    conn: sqlite3.Connection,
+    *,
+    migration_version: int,
+    migration_name: str,
+    superseded_checksum_sha256: str,
+    adopted_checksum_sha256: str,
+    declared_objects: Iterable[str],
+    divergent_views: Iterable[str],
+    justification: str,
+) -> None:
+    """Record one exact, immutable migration-checksum transition."""
+
+    _ensure_schema_migration_history(conn)
+    declared = tuple(sorted(set(str(value) for value in declared_objects)))
+    divergent = tuple(sorted(set(str(value) for value in divergent_views)))
+    if not declared:
+        raise ValueError("baseline adoption requires declared schema objects")
+    if not justification.strip():
+        raise ValueError("baseline adoption requires a justification")
+    if len(superseded_checksum_sha256) != 64 or len(adopted_checksum_sha256) != 64:
+        raise ValueError("baseline adoption checksums must be sha256 hex digests")
+
+    applied = conn.execute(
+        """
+        SELECT name, checksum_sha256
+        FROM schema_migrations
+        WHERE version = ?
+        """,
+        (int(migration_version),),
+    ).fetchone()
+    if (
+        applied is None
+        or applied["name"] != migration_name
+        or applied["checksum_sha256"] != superseded_checksum_sha256
+    ):
+        raise RuntimeError(
+            f"schema migration {migration_version} baseline does not match applied history"
+        )
+
+    expected = {
+        "migration_version": int(migration_version),
+        "migration_name": migration_name,
+        "superseded_checksum_sha256": superseded_checksum_sha256,
+        "adopted_checksum_sha256": adopted_checksum_sha256,
+        "declared_object_count": len(declared),
+        "present_object_count": len(declared),
+        "declared_objects_json": dumps_json(list(declared)),
+        "divergent_views_json": dumps_json(list(divergent)),
+        "justification": justification.strip(),
+    }
+    existing = conn.execute(
+        """
+        SELECT *
+        FROM schema_migration_baseline_adoptions
+        WHERE migration_version = ?
+        """,
+        (int(migration_version),),
+    ).fetchone()
+    if existing is not None:
+        if any(existing[key] != value for key, value in expected.items()):
+            raise RuntimeError(
+                f"schema migration {migration_version} already has a different baseline adoption"
+            )
+        return
+
+    conn.execute(
+        """
+        INSERT INTO schema_migration_baseline_adoptions (
+          migration_version,
+          migration_name,
+          superseded_checksum_sha256,
+          adopted_checksum_sha256,
+          adopted_at,
+          declared_object_count,
+          present_object_count,
+          declared_objects_json,
+          divergent_views_json,
+          justification
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            expected["migration_version"],
+            expected["migration_name"],
+            expected["superseded_checksum_sha256"],
+            expected["adopted_checksum_sha256"],
+            now_iso(),
+            expected["declared_object_count"],
+            expected["present_object_count"],
+            expected["declared_objects_json"],
+            expected["divergent_views_json"],
+            expected["justification"],
+        ),
+    )
+
+
+def _declared_schema_objects(statements: Iterable[str]) -> dict[str, tuple[str, str]]:
+    objects: dict[str, tuple[str, str]] = {}
+    create_pattern = re.compile(
+        r"^\s*CREATE\s+(?:UNIQUE\s+)?"
+        r"(TABLE|INDEX|VIEW|TRIGGER)\s+(?:IF\s+NOT\s+EXISTS\s+)?"
+        r"([A-Za-z_][A-Za-z0-9_]*)",
+        re.IGNORECASE,
+    )
+    for statement in statements:
+        match = create_pattern.search(statement)
+        if match is None:
+            continue
+        kind, name = match.groups()
+        objects[name] = (kind.lower(), statement.strip())
+    return objects
+
+
+def _normalized_schema_ddl(statement: str) -> str:
+    normalized = re.sub(
+        r"\bIF\s+NOT\s+EXISTS\b",
+        "",
+        statement.strip().rstrip(";"),
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(r"\s+", " ", normalized).strip().lower()
+    return re.sub(r"\s*([(),=])\s*", r"\1", normalized)
+
+
+def adopt_versioned_intelligence_v1_baseline(conn: sqlite3.Connection) -> None:
+    """Adopt the one verified production V1 baseline after exact schema checks."""
+
+    _ensure_schema_migration_history(conn)
+    version, name, statements = SCHEMA_MIGRATIONS[0]
+    if version != 1 or name != "versioned_intelligence_v1":
+        raise RuntimeError("versioned intelligence V1 is not migration 1")
+    adopted_checksum = schema_migration_checksum(name, statements)
+    declared = _declared_schema_objects(statements)
+    live_rows = {
+        str(row["name"]): (str(row["type"]), str(row["sql"] or ""))
+        for row in conn.execute(
+            """
+            SELECT type, name, sql
+            FROM sqlite_master
+            WHERE type IN ('table', 'index', 'view', 'trigger')
+            """
+        ).fetchall()
+    }
+    missing = sorted(set(declared) - set(live_rows))
+    if missing:
+        raise RuntimeError(
+            "versioned intelligence V1 baseline is missing declared objects: "
+            + ", ".join(missing)
+        )
+    divergent: list[str] = []
+    for object_name, (kind, statement) in declared.items():
+        live_kind, live_statement = live_rows[object_name]
+        if live_kind != kind:
+            raise RuntimeError(
+                f"versioned intelligence V1 object {object_name} has unexpected type"
+            )
+        if _normalized_schema_ddl(statement) != _normalized_schema_ddl(live_statement):
+            divergent.append(object_name)
+    divergent.sort()
+    if len(declared) != 90:
+        raise RuntimeError(
+            f"versioned intelligence V1 baseline expected 90 objects, found {len(declared)}"
+        )
+    if tuple(divergent) != VERSIONED_INTELLIGENCE_V1_DIVERGENT_VIEWS:
+        raise RuntimeError(
+            "versioned intelligence V1 divergence set does not match audited evidence"
+        )
+    record_schema_migration_baseline_adoption(
+        conn,
+        migration_version=version,
+        migration_name=name,
+        superseded_checksum_sha256=VERSIONED_INTELLIGENCE_V1_SUPERSEDED_CHECKSUM,
+        adopted_checksum_sha256=adopted_checksum,
+        declared_objects=declared,
+        divergent_views=divergent,
+        justification=VERSIONED_INTELLIGENCE_V1_ADOPTION_JUSTIFICATION,
+    )
+
+
+def apply_schema_migrations(conn: sqlite3.Connection) -> list[int]:
+    """Apply known migrations once, in increasing order, without rewriting history."""
+
+    _ensure_schema_migration_history(conn)
 
     ordered = sorted(SCHEMA_MIGRATIONS, key=lambda item: item[0])
     versions = [version for version, _name, _statements in ordered]
@@ -3234,13 +3508,29 @@ def apply_schema_migrations(conn: sqlite3.Connection) -> list[int]:
     }
     applied_now: list[int] = []
     for version, name, statements in ordered:
-        checksum = sha256_text(name + "\n" + "\n".join(statement.strip() for statement in statements))
+        checksum = schema_migration_checksum(name, statements)
         existing = applied_rows.get(version)
         if existing is not None:
-            if existing["name"] != name or existing["checksum_sha256"] != checksum:
+            if existing["name"] != name:
                 raise RuntimeError(
                     f"schema migration {version} differs from immutable applied history"
                 )
+            if existing["checksum_sha256"] != checksum:
+                adoption = conn.execute(
+                    """
+                    SELECT 1
+                    FROM schema_migration_baseline_adoptions
+                    WHERE migration_version = ?
+                      AND migration_name = ?
+                      AND superseded_checksum_sha256 = ?
+                      AND adopted_checksum_sha256 = ?
+                    """,
+                    (version, name, existing["checksum_sha256"], checksum),
+                ).fetchone()
+                if adoption is None:
+                    raise RuntimeError(
+                        f"schema migration {version} differs from immutable applied history"
+                    )
             continue
 
         savepoint = f"schema_migration_{version}"
