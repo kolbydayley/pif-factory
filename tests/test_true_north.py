@@ -1133,6 +1133,303 @@ class TrueNorthTest(unittest.TestCase):
         ):
             true_north.validate_multipass_attribution(invalid, packet)
 
+    def _adjudication_job(self) -> dict:
+        """A base job whose candidate carries the frozen upstream priors."""
+        job = self._multipass_job()
+        job["input"]["candidates"][0].update(
+            {
+                "claim_text": "The system requires independent evaluation.",
+                "speaker": {"name": "Jane Doe"},
+                "actor_name": "Safety Lab",
+                "reported_actor": {"name": "Safety Lab"},
+                "stance": "supportive",
+                "certainty": "high",
+                "time_horizon": "present",
+                "polarity": "positive",
+                "confidence": 0.62,
+                "candidate_concept": "independent evaluation",
+                "event_type": "policy",
+                "frame": "governance",
+            }
+        )
+        return job
+
+    def _adjudication_disposition(self) -> dict:
+        return {
+            "schema_version": true_north.MULTIPASS_SCHEMA_VERSION,
+            "items": [
+                {
+                    "candidate_id": "candidate_1",
+                    "disposition": "retain",
+                    "junk_reason": None,
+                }
+            ],
+        }
+
+    def _adjudication_output(self, **overrides) -> dict:
+        item = {
+            "candidate_id": "candidate_1",
+            "split": False,
+            "atomic_claims": [
+                {"claim_text": "The system requires independent evaluation."}
+            ],
+            "edit_reason": "none",
+        }
+        item.update(overrides)
+        return {
+            "schema_version": true_north.MULTIPASS_SCHEMA_VERSION,
+            "items": [item],
+        }
+
+    def test_multipass_adjudication_prompt_is_the_approved_contract(self) -> None:
+        prompt = true_north.MULTIPASS_SYSTEM_PROMPTS["adjudication"]
+        expected = (
+            "You are a claim adjudication editor for a private podcast research "
+            "corpus. Do not use tools. Each candidate arrives with a proposed "
+            "claim_text hypothesis and its exact evidence. Your default action "
+            "is to adopt the proposed claim_text verbatim as one atomic claim; "
+            "most candidates need exactly this. Depart from the proposal only "
+            "for a concrete, evidence-grounded reason. Split into multiple "
+            "claims only when the proposal asserts two or more conclusions that "
+            "could independently be true or false — separate list items, "
+            "separate forecasts, a separately asserted cause and effect, or "
+            "distinct stances; when you split, reuse the proposal's own wording "
+            "for each part, changing only what grammar requires. Edit wording "
+            "only to expand an unclear pronoun to its explicit referent from "
+            "the evidence, to repair a qualifier the proposal dropped or added "
+            "relative to the evidence, or to remove content the evidence does "
+            "not state. Never introduce vocabulary absent from both the "
+            "proposal and the evidence, and never compress or restyle wording "
+            "that is already accurate. Report the edit reason for every claim. "
+            "Return only the exact schema-valid JSON requested by the packet."
+        )
+        self.assertEqual(" ".join(prompt.split()), expected)
+        self.assertNotIn("gold", prompt.casefold())
+        # The default committed pipeline still runs the decomposition contract.
+        self.assertEqual(
+            true_north.MULTIPASS_STAGES,
+            ("disposition", "decomposition", "attribution"),
+        )
+        self.assertEqual(
+            true_north.DEFAULT_MULTIPASS_STAGE_B_MODE, "decomposition"
+        )
+        self.assertEqual(
+            true_north.MULTIPASS_EDIT_REASONS,
+            (
+                "none",
+                "pronoun_expansion",
+                "attribution_embed",
+                "compound_split",
+                "qualifier_repair",
+            ),
+        )
+
+    def test_multipass_adjudication_packet_carries_the_proposal(self) -> None:
+        base = self._adjudication_job()
+        packet = true_north.build_multipass_adjudication_packet(
+            base, self._adjudication_disposition()
+        )
+        self.assertIsNotNone(packet)
+        self.assertEqual(packet["multipass_stage"], "adjudication")
+        row = packet["input"]["candidates"][0]
+        self.assertEqual(
+            row["proposed_claim_text"],
+            "The system requires independent evaluation.",
+        )
+        self.assertEqual(
+            row["evidence_text"],
+            base["input"]["candidates"][0]["evidence_text"],
+        )
+        # The proposal must precede the evidence so the adopt-by-default
+        # instruction lands on a visible hypothesis.
+        keys = list(row)
+        self.assertLess(
+            keys.index("proposed_claim_text"), keys.index("evidence_text")
+        )
+        # No gold-derived field may reach the packet.
+        serialized = json.dumps(packet).casefold()
+        for forbidden in ("gold", "answer_key", "reference_atomic"):
+            self.assertNotIn(forbidden, serialized)
+        rejected = {
+            "schema_version": true_north.MULTIPASS_SCHEMA_VERSION,
+            "items": [
+                {
+                    "candidate_id": "candidate_1",
+                    "disposition": "reject",
+                    "junk_reason": "banter",
+                }
+            ],
+        }
+        self.assertIsNone(
+            true_north.build_multipass_adjudication_packet(base, rejected)
+        )
+
+    def test_multipass_adjudication_edit_reason_is_a_closed_set(self) -> None:
+        base = self._adjudication_job()
+        packet = true_north.build_multipass_adjudication_packet(
+            base, self._adjudication_disposition()
+        )
+        true_north.validate_multipass_adjudication(
+            self._adjudication_output(), packet
+        )
+        invalid = self._adjudication_output(edit_reason="tightened")
+        with self.assertRaises(Exception):
+            true_north.validate_multipass_adjudication(invalid, packet)
+        missing = self._adjudication_output()
+        del missing["items"][0]["edit_reason"]
+        with self.assertRaises(Exception):
+            true_north.validate_multipass_adjudication(missing, packet)
+
+    def test_multipass_adjudication_split_flag_binds_claim_count(self) -> None:
+        base = self._adjudication_job()
+        packet = true_north.build_multipass_adjudication_packet(
+            base, self._adjudication_disposition()
+        )
+        too_many = self._adjudication_output(
+            split=False,
+            edit_reason="compound_split",
+            atomic_claims=[
+                {"claim_text": "The system requires independent evaluation."},
+                {"claim_text": "The system is unevaluated today."},
+            ],
+        )
+        with self.assertRaisesRegex(true_north.TrueNorthError, "exactly one"):
+            true_north.validate_multipass_adjudication(too_many, packet)
+        too_few = self._adjudication_output(
+            split=True,
+            edit_reason="compound_split",
+            atomic_claims=[
+                {"claim_text": "The system requires independent evaluation."}
+            ],
+        )
+        with self.assertRaisesRegex(
+            true_north.TrueNorthError, "two or more"
+        ):
+            true_north.validate_multipass_adjudication(too_few, packet)
+        good_split = self._adjudication_output(
+            split=True,
+            edit_reason="compound_split",
+            atomic_claims=[
+                {"claim_text": "The system requires independent evaluation."},
+                {"claim_text": "The system is unevaluated today."},
+            ],
+        )
+        true_north.validate_multipass_adjudication(good_split, packet)
+        duplicated = self._adjudication_output(
+            split=True,
+            edit_reason="compound_split",
+            atomic_claims=[
+                {"claim_text": "The system requires independent evaluation."},
+                {"claim_text": "The system requires independent evaluation."},
+            ],
+        )
+        with self.assertRaisesRegex(true_north.TrueNorthError, "duplicate"):
+            true_north.validate_multipass_adjudication(duplicated, packet)
+
+    def test_multipass_adjudication_none_requires_verbatim_adoption(self) -> None:
+        base = self._adjudication_job()
+        packet = true_north.build_multipass_adjudication_packet(
+            base, self._adjudication_disposition()
+        )
+        drifted = self._adjudication_output(
+            atomic_claims=[
+                {"claim_text": "The system requires independent evaluation"}
+            ]
+        )
+        with self.assertRaisesRegex(true_north.TrueNorthError, "verbatim"):
+            true_north.validate_multipass_adjudication(drifted, packet)
+        restyled = self._adjudication_output(
+            atomic_claims=[
+                {"claim_text": " The system requires independent evaluation. "}
+            ]
+        )
+        with self.assertRaisesRegex(true_north.TrueNorthError, "verbatim"):
+            true_north.validate_multipass_adjudication(restyled, packet)
+        split_without_reason = self._adjudication_output(
+            split=True,
+            edit_reason="none",
+            atomic_claims=[
+                {"claim_text": "The system requires independent evaluation."},
+                {"claim_text": "The system is unevaluated today."},
+            ],
+        )
+        with self.assertRaisesRegex(true_north.TrueNorthError, "verbatim"):
+            true_north.validate_multipass_adjudication(
+                split_without_reason, packet
+            )
+        edited = self._adjudication_output(
+            edit_reason="pronoun_expansion",
+            atomic_claims=[{"claim_text": "The system requires review."}],
+        )
+        true_north.validate_multipass_adjudication(edited, packet)
+        mislabelled_split = self._adjudication_output(
+            split=False,
+            edit_reason="compound_split",
+        )
+        with self.assertRaisesRegex(
+            true_north.TrueNorthError, "compound_split"
+        ):
+            true_north.validate_multipass_adjudication(
+                mislabelled_split, packet
+            )
+        blank = self._adjudication_output(
+            edit_reason="qualifier_repair",
+            atomic_claims=[{"claim_text": "   "}],
+        )
+        with self.assertRaises(Exception):
+            true_north.validate_multipass_adjudication(blank, packet)
+
+    def test_multipass_adjudication_composes_on_candidate_priors(self) -> None:
+        base = self._adjudication_job()
+        disposition = self._adjudication_disposition()
+        adjudication = self._adjudication_output()
+        attribution_packet = true_north.build_multipass_attribution_packet(
+            base, adjudication
+        )
+        jane_id = next(
+            row["speaker_id"]
+            for row in attribution_packet["input"]["speaker_roster"]
+            if row["canonical_name"] == "Jane Doe"
+        )
+        attribution = {
+            "schema_version": true_north.MULTIPASS_SCHEMA_VERSION,
+            "items": [
+                {
+                    "candidate_id": "candidate_1",
+                    "claim_index": 0,
+                    "speaker_id": jane_id,
+                    "attribution_mode": "direct",
+                    "actor_presence": "absent",
+                    "reported_actor_id": None,
+                    "reported_actor_freetext": None,
+                }
+            ],
+        }
+        composed = true_north.compose_multipass_output(
+            base,
+            disposition,
+            adjudication,
+            attribution,
+            stage_b_mode="adjudication",
+        )
+        atomic = composed["items"][0]["atomic_claims"][0]
+        self.assertEqual(
+            atomic["claim_text"],
+            base["input"]["candidates"][0]["claim_text"],
+        )
+        self.assertEqual(atomic["raw_speaker"], "Jane Doe")
+        self.assertEqual(atomic["stance"], "supportive")
+        self.assertEqual(atomic["certainty"], "high")
+        self.assertEqual(atomic["time_horizon"], "present")
+        self.assertEqual(atomic["polarity"], "positive")
+        self.assertEqual(atomic["subject_text"], "independent evaluation")
+        self.assertEqual(atomic["domain"], "governance")
+        self.assertAlmostEqual(atomic["confidence"], 0.62)
+        self.assertEqual(
+            atomic["evidence_text"],
+            base["input"]["candidates"][0]["evidence_text"],
+        )
+
     def _multipass_suite(self) -> Path:
         suite = self.root / true_north.SUITE_ID
         bundle_path = suite / "bundles" / "fixture.private.json"
@@ -1250,6 +1547,20 @@ class TrueNorthTest(unittest.TestCase):
         self.assertTrue(first["complete"])
         self.assertEqual(first["usage"]["calls"], 3)
         self.assertEqual(calls, list(true_north.MULTIPASS_STAGES))
+        # The default run configuration must stay byte-identical to the one
+        # frozen before stage_b_mode existed, or in-flight runs stop resuming.
+        default_configuration = json.loads(
+            (Path(first["run_root"]) / "configuration.json").read_text()
+        )
+        self.assertNotIn("stage_b_mode", default_configuration)
+        self.assertEqual(
+            default_configuration["stages"],
+            ["disposition", "decomposition", "attribution"],
+        )
+        self.assertEqual(
+            sorted(default_configuration["system_prompt_sha256"]),
+            ["attribution", "decomposition", "disposition"],
+        )
         second = true_north.run_multipass(
             output_root=self.root,
             episode_ids=["ep_90c3b5c995bce501c9aef55c"],
@@ -1329,6 +1640,108 @@ class TrueNorthTest(unittest.TestCase):
                 },
             )
         self.assertEqual(stages, ["disposition", "decomposition"])
+
+    def test_multipass_stage_b_mode_is_opt_in_and_leaves_default_frozen(
+        self,
+    ) -> None:
+        self._multipass_suite()
+        stages: list[str] = []
+
+        def fake_runner(**kwargs):
+            packet = json.loads(Path(kwargs["packet_path"]).read_text())
+            stage = packet["multipass_stage"]
+            stages.append(stage)
+            if stage == "disposition":
+                output = {
+                    "schema_version": true_north.MULTIPASS_SCHEMA_VERSION,
+                    "items": [
+                        {
+                            "candidate_id": "candidate_1",
+                            "disposition": "retain",
+                            "junk_reason": None,
+                        }
+                    ],
+                }
+            elif stage == "adjudication":
+                proposal = packet["input"]["candidates"][0][
+                    "proposed_claim_text"
+                ]
+                output = {
+                    "schema_version": true_north.MULTIPASS_SCHEMA_VERSION,
+                    "items": [
+                        {
+                            "candidate_id": "candidate_1",
+                            "split": False,
+                            "atomic_claims": [{"claim_text": proposal}],
+                            "edit_reason": "none",
+                        }
+                    ],
+                }
+            else:
+                roster_id = packet["input"]["speaker_roster"][0]["speaker_id"]
+                output = {
+                    "schema_version": true_north.MULTIPASS_SCHEMA_VERSION,
+                    "items": [
+                        {
+                            "candidate_id": "candidate_1",
+                            "claim_index": 0,
+                            "speaker_id": roster_id,
+                            "attribution_mode": "direct",
+                            "actor_presence": "absent",
+                            "reported_actor_id": None,
+                            "reported_actor_freetext": None,
+                        }
+                    ],
+                }
+            return (
+                output,
+                [{"elapsed_seconds": 1.0, "usage": {"total_tokens": 100}}],
+                true_north.MULTIPASS_MODEL,
+            )
+
+        result = true_north.run_multipass(
+            output_root=self.root,
+            episode_ids=["ep_90c3b5c995bce501c9aef55c"],
+            run_id="adjudication-run",
+            runner=fake_runner,
+            workers=1,
+            stage_b_mode="adjudication",
+        )
+        self.assertTrue(result["complete"])
+        self.assertEqual(
+            stages, ["disposition", "adjudication", "attribution"]
+        )
+        self.assertEqual(result["stage_b_mode"], "adjudication")
+        configuration = json.loads(
+            (Path(result["run_root"]) / "configuration.json").read_text()
+        )
+        self.assertEqual(
+            configuration["stages"],
+            ["disposition", "adjudication", "attribution"],
+        )
+        composed = json.loads(
+            (
+                Path(result["run_root"])
+                / "outputs"
+                / "composed"
+                / "ep_90c3b5c995bce501c9aef55c"
+                / "segment_1"
+                / "validated.private.json"
+            ).read_text()
+        )
+        self.assertEqual(
+            composed["items"][0]["atomic_claims"][0]["claim_text"],
+            "The system requires independent evaluation.",
+        )
+        with self.assertRaises(true_north.TrueNorthError):
+            true_north.run_multipass(
+                output_root=self.root,
+                episode_ids=["ep_90c3b5c995bce501c9aef55c"],
+                run_id="bad-mode-run",
+                runner=fake_runner,
+                workers=1,
+                stage_b_mode="freeform",
+            )
 
     def test_semantic_packets_require_total_accounting_and_bind_transport(self) -> None:
         packet = {

@@ -61,6 +61,27 @@ PROMPT_OPTIMIZATION_MODEL = "zai-coding-plan/glm-5.2"
 MULTIPASS_SCHEMA_VERSION = "pif_true_north_multipass_v1"
 MULTIPASS_MODEL = "zai-coding-plan/glm-5.2"
 MULTIPASS_STAGES = ("disposition", "decomposition", "attribution")
+# Stage B has two contracts.  "decomposition" is the committed default, and its
+# frozen run configuration stays byte-identical so in-flight runs still resume.
+# "adjudication" is the opt-in split/no-split minimal-edit contract: it anchors
+# on the frozen upstream claim_text proposal rather than re-deriving
+# propositions from clipped evidence.
+DEFAULT_MULTIPASS_STAGE_B_MODE = "decomposition"
+MULTIPASS_STAGE_B_MODES = ("decomposition", "adjudication")
+MULTIPASS_ADJUDICATION_STAGES = ("disposition", "adjudication", "attribution")
+MULTIPASS_ALL_STAGES = (
+    "disposition",
+    "decomposition",
+    "adjudication",
+    "attribution",
+)
+MULTIPASS_EDIT_REASONS = (
+    "none",
+    "pronoun_expansion",
+    "attribution_embed",
+    "compound_split",
+    "qualifier_repair",
+)
 MULTIPASS_JUNK_REASONS = (
     "metadata",
     "introduction_or_bio",
@@ -247,6 +268,25 @@ the evidence; do not add a rationale, timing detail, actor, or mechanism merely
 because it appears elsewhere in the segment. Do not merge rows with different truth conditions
 and do not split one conclusion into fragments. Return only the exact
 schema-valid JSON requested by the packet.""",
+    # Approved verbatim in docs/plans/2026-07-28-true-north-gate-closure-v2.md
+    # (Task 5).  Do not reflow or reword: the run configuration pins its
+    # SHA-256.
+    "adjudication": """You are a claim adjudication editor for a private podcast research corpus. Do
+not use tools. Each candidate arrives with a proposed claim_text hypothesis
+and its exact evidence. Your default action is to adopt the proposed
+claim_text verbatim as one atomic claim; most candidates need exactly this.
+Depart from the proposal only for a concrete, evidence-grounded reason. Split
+into multiple claims only when the proposal asserts two or more conclusions
+that could independently be true or false — separate list items, separate
+forecasts, a separately asserted cause and effect, or distinct stances; when
+you split, reuse the proposal's own wording for each part, changing only what
+grammar requires. Edit wording only to expand an unclear pronoun to its
+explicit referent from the evidence, to repair a qualifier the proposal
+dropped or added relative to the evidence, or to remove content the evidence
+does not state. Never introduce vocabulary absent from both the proposal and
+the evidence, and never compress or restyle wording that is already accurate.
+Report the edit reason for every claim. Return only the exact schema-valid
+JSON requested by the packet.""",
     "attribution": """You are a speaker-attribution resolver for a private podcast research corpus.
 Do not use tools. For each atomic claim, decide who directly asserted it in
 the exact evidence, selecting the speaker strictly from the numbered roster
@@ -1759,6 +1799,115 @@ def multipass_decomposition_schema(
     }
 
 
+def multipass_adjudication_schema(
+    candidate_ids: Sequence[str],
+) -> dict[str, Any]:
+    """Schema for the split/no-split minimal-edit stage-B contract."""
+    atomic = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["claim_text"],
+        "properties": {
+            "claim_text": {"type": "string", "minLength": 1},
+        },
+    }
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["schema_version", "items"],
+        "properties": {
+            "schema_version": {
+                "type": "string",
+                "const": MULTIPASS_SCHEMA_VERSION,
+            },
+            "items": {
+                "type": "array",
+                "minItems": len(candidate_ids),
+                "maxItems": len(candidate_ids),
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": [
+                        "candidate_id",
+                        "split",
+                        "atomic_claims",
+                        "edit_reason",
+                    ],
+                    "properties": {
+                        "candidate_id": {
+                            "type": "string",
+                            "enum": list(candidate_ids),
+                        },
+                        "split": {"type": "boolean"},
+                        "atomic_claims": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 8,
+                            "items": atomic,
+                        },
+                        "edit_reason": {
+                            "type": "string",
+                            "enum": list(MULTIPASS_EDIT_REASONS),
+                        },
+                    },
+                },
+            },
+        },
+    }
+
+
+def validate_multipass_adjudication(
+    output: Mapping[str, Any],
+    packet: Mapping[str, Any],
+) -> None:
+    """Bind split, claim count, and verbatim adoption to each other.
+
+    The contract's whole value is that ``edit_reason="none"`` is a *checkable*
+    promise: the emitted claim is the frozen upstream proposal byte for byte.
+    A model that silently restyles an already-accurate claim fails here rather
+    than quietly eroding faithfulness on the run.
+    """
+    _validate_schema(packet["output_schema"], output, path="$")
+    proposals = {
+        str(row["candidate_id"]): str(row["proposed_claim_text"])
+        for row in packet["input"]["candidates"]
+    }
+    items = _validate_multipass_scope(output, list(proposals))
+    for candidate_id, item in items.items():
+        edit_reason = str(item["edit_reason"])
+        if edit_reason not in MULTIPASS_EDIT_REASONS:
+            raise TrueNorthError(
+                f"edit_reason is outside the closed set: {candidate_id}"
+            )
+        claims = [str(row["claim_text"]) for row in item["atomic_claims"]]
+        if any(not claim.strip() for claim in claims):
+            raise TrueNorthError(f"atomic claim is blank: {candidate_id}")
+        if len(claims) != len({claim.strip() for claim in claims}):
+            raise TrueNorthError(
+                f"duplicate atomic claim text: {candidate_id}"
+            )
+        split = bool(item["split"])
+        if not split and len(claims) != 1:
+            raise TrueNorthError(
+                f"split=false requires exactly one atomic claim: {candidate_id}"
+            )
+        if split and len(claims) < 2:
+            raise TrueNorthError(
+                "split=true requires two or more atomic claims: "
+                f"{candidate_id}"
+            )
+        if edit_reason == "compound_split" and not split:
+            raise TrueNorthError(
+                f"compound_split requires split=true: {candidate_id}"
+            )
+        adopted_verbatim = not split and claims[0] == proposals[candidate_id]
+        if edit_reason == "none" and not adopted_verbatim:
+            raise TrueNorthError(
+                "edit_reason=none requires the proposal adopted verbatim as "
+                f"one claim: {candidate_id}"
+            )
+
+
 def _speaker_map_name(entry: Mapping[str, Any] | str) -> str:
     if isinstance(entry, str):
         return entry
@@ -2228,6 +2377,72 @@ def build_multipass_decomposition_packet(
     }
 
 
+def _adjudication_candidate_projection(
+    candidate: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Expose the frozen upstream proposal alongside its exact evidence.
+
+    The v2 plan's global constraints make candidate priors legitimate model
+    inputs: they are frozen upstream hypotheses produced without gold access.
+    ``proposed_claim_text`` is emitted first so the adopt-by-default contract
+    lands on a visible hypothesis rather than being buried after the evidence.
+    """
+    proposal = " ".join(str(candidate.get("claim_text") or "").split())
+    if not proposal:
+        raise TrueNorthError(
+            "adjudication requires a candidate claim_text proposal: "
+            f"{candidate.get('candidate_id')}"
+        )
+    return {
+        "candidate_id": str(candidate["candidate_id"]),
+        "proposed_claim_text": proposal,
+        "segment_id": str(candidate["segment_id"]),
+        "evidence_text": str(candidate["evidence_text"]),
+        "evidence_start": int(candidate["evidence_start"]),
+        "evidence_end": int(candidate["evidence_end"]),
+    }
+
+
+def build_multipass_adjudication_packet(
+    base_job: Mapping[str, Any],
+    disposition_output: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Build the opt-in stage-B packet for value candidates only."""
+    decisions = {
+        str(row["candidate_id"]): row for row in disposition_output["items"]
+    }
+    candidates = [
+        _adjudication_candidate_projection(row)
+        for row in base_job["input"]["candidates"]
+        if decisions[str(row["candidate_id"])]["disposition"]
+        in {"retain", "revise"}
+    ]
+    if not candidates:
+        return None
+    candidate_ids = [str(row["candidate_id"]) for row in candidates]
+    return {
+        "schema_version": MULTIPASS_SCHEMA_VERSION,
+        "suite_id": SUITE_ID,
+        "multipass_stage": "adjudication",
+        "task": "Adopt, split, or minimally repair each proposed claim.",
+        "instructions": [
+            "Do not change disposition or attribute speakers.",
+            "Adopt proposed_claim_text verbatim unless the evidence forces a change.",
+            "split=false requires exactly one atomic claim; split=true requires two or more.",
+            "edit_reason=none means the single claim byte-matches proposed_claim_text.",
+        ],
+        "output_schema": multipass_adjudication_schema(candidate_ids),
+        "input": {
+            "episode": base_job["input"]["episode"],
+            "segment": base_job["input"]["segment"],
+            "candidates": candidates,
+            "stage_a_decisions": [
+                decisions[candidate_id] for candidate_id in candidate_ids
+            ],
+        },
+    }
+
+
 def build_multipass_attribution_packet(
     base_job: Mapping[str, Any],
     decomposition_output: Mapping[str, Any],
@@ -2281,12 +2496,77 @@ def build_multipass_attribution_packet(
     }
 
 
+_ADJUDICATION_ABSENT_TEXT = frozenset(
+    {"", "none", "null", "n/a", "na", "unknown", "unspecified"}
+)
+
+
+def _adjudication_prior(candidate: Mapping[str, Any], field: str) -> str | None:
+    text = " ".join(str(candidate.get(field) or "").split())
+    return None if text.casefold() in _ADJUDICATION_ABSENT_TEXT else text
+
+
+def _adjudication_prior_fields(
+    candidate: Mapping[str, Any],
+    fallback_subject: str,
+) -> dict[str, Any]:
+    """Carry the frozen candidate priors the adjudication contract never asks
+    the model to re-derive.
+
+    This deliberately mirrors the Task 1 prior-adoption floor field for field,
+    so the only difference between the floor and this stage is ``claim_text``
+    and its split.  Any gate that moves is therefore attributable to stage B.
+    """
+    from .true_north_semantic_scoring import normalize_enum_field
+
+    stance = normalize_enum_field(
+        "stance", _adjudication_prior(candidate, "stance") or "neutral"
+    )
+    subject_text = (
+        _adjudication_prior(candidate, "candidate_concept")
+        or _adjudication_prior(candidate, "target_raw")
+        or _adjudication_prior(candidate, "claim_text")
+        or fallback_subject
+    )
+    return {
+        "claim_type": normalize_enum_field(
+            "claim_type",
+            _adjudication_prior(candidate, "claim_type") or "assertion",
+        ),
+        "stance": stance,
+        "certainty": normalize_enum_field(
+            "certainty",
+            _adjudication_prior(candidate, "certainty") or "unspecified",
+        ),
+        "time_horizon": normalize_enum_field(
+            "time_horizon",
+            _adjudication_prior(candidate, "time_horizon") or "unspecified",
+        ),
+        "polarity": normalize_enum_field(
+            "polarity",
+            _adjudication_prior(candidate, "polarity") or "neutral",
+        ),
+        "confidence": max(
+            0.0, min(1.0, float(candidate.get("confidence") or 0.0))
+        ),
+        "subject_text": subject_text,
+        "subject_type": _adjudication_prior(candidate, "event_type") or "topic",
+        "domain": _adjudication_prior(candidate, "frame"),
+        "position": stance,
+    }
+
+
 def compose_multipass_output(
     base_job: Mapping[str, Any],
     disposition_output: Mapping[str, Any],
     decomposition_output: Mapping[str, Any] | None,
     attribution_output: Mapping[str, Any] | None,
+    *,
+    stage_b_mode: str = DEFAULT_MULTIPASS_STAGE_B_MODE,
 ) -> dict[str, Any]:
+    if stage_b_mode not in MULTIPASS_STAGE_B_MODES:
+        raise TrueNorthError(f"unknown multipass stage-B mode: {stage_b_mode}")
+    adjudicating = stage_b_mode == "adjudication"
     decisions = {
         str(row["candidate_id"]): row for row in disposition_output["items"]
     }
@@ -2316,10 +2596,14 @@ def compose_multipass_output(
                 raise TrueNorthError(
                     f"accepted candidate lacks decomposition: {candidate_id}"
                 )
-            inventory = {
-                int(row["index"]): row
-                for row in decomposition["proposition_inventory"]
-            }
+            inventory = (
+                {}
+                if adjudicating
+                else {
+                    int(row["index"]): row
+                    for row in decomposition["proposition_inventory"]
+                }
+            )
             for claim_index, claim in enumerate(decomposition["atomic_claims"]):
                 attribution = attributions.get((candidate_id, claim_index))
                 if attribution is None:
@@ -2339,10 +2623,24 @@ def compose_multipass_output(
                         if attribution["reported_actor_id"] is not None
                         else attribution["reported_actor_freetext"]
                     )
+                claim_text = str(claim["claim_text"])
+                if adjudicating:
+                    atomics.append(
+                        {
+                            "claim_text": claim_text,
+                            "raw_speaker": str(speaker["canonical_name"]),
+                            "reported_actor": actor,
+                            "proposition_text": claim_text,
+                            **_adjudication_prior_fields(
+                                candidate, claim_text
+                            ),
+                        }
+                    )
+                    continue
                 inventory_row = inventory[int(claim["inventory_index"])]
                 atomics.append(
                     {
-                        "claim_text": str(claim["claim_text"]),
+                        "claim_text": claim_text,
                         "claim_type": "assertion",
                         "raw_speaker": str(speaker["canonical_name"]),
                         "reported_actor": actor,
@@ -2353,7 +2651,7 @@ def compose_multipass_output(
                         "subject_text": str(inventory_row["subject"]),
                         "subject_type": "topic",
                         "domain": None,
-                        "proposition_text": str(claim["claim_text"]),
+                        "proposition_text": claim_text,
                         "polarity": str(claim["polarity"]),
                         "position": "asserts",
                     }
@@ -8197,11 +8495,12 @@ def _multipass_execute_stage(
     opencode_binary: str,
     runner: Any | None,
 ) -> dict[tuple[str, str], dict[str, Any]]:
-    if stage not in MULTIPASS_STAGES:
+    if stage not in MULTIPASS_ALL_STAGES:
         raise TrueNorthError(f"unknown multipass stage: {stage}")
     validators = {
         "disposition": validate_multipass_disposition,
         "decomposition": validate_multipass_decomposition,
+        "adjudication": validate_multipass_adjudication,
         "attribution": validate_multipass_attribution,
     }
     validate = validators[stage]
@@ -8353,10 +8652,31 @@ def run_multipass(
     max_packets: int | None = None,
     runner: Any | None = None,
     budget: Mapping[str, Any] | None = None,
+    stage_b_mode: str = DEFAULT_MULTIPASS_STAGE_B_MODE,
 ) -> dict[str, Any]:
-    """Run the bounded disposition -> decomposition -> attribution stack."""
+    """Run the bounded disposition -> stage B -> attribution stack.
+
+    ``stage_b_mode`` selects the stage-B contract and defaults to the committed
+    ``decomposition`` behaviour.  Because the mode is carried by ``stages`` and
+    ``system_prompt_sha256`` rather than a new configuration key, a default run
+    hashes exactly as it did before this option existed and in-flight runs stay
+    resumable.
+    """
     if workers < 1 or workers > 4:
         raise TrueNorthError("multipass workers must be between 1 and 4")
+    if stage_b_mode not in MULTIPASS_STAGE_B_MODES:
+        raise TrueNorthError(f"unknown multipass stage-B mode: {stage_b_mode}")
+    # The mode names are the stage names, so no separate mapping is needed.
+    stage_sequence = (
+        MULTIPASS_STAGES
+        if stage_b_mode == "decomposition"
+        else MULTIPASS_ADJUDICATION_STAGES
+    )
+    build_stage_b_packet = (
+        build_multipass_decomposition_packet
+        if stage_b_mode == "decomposition"
+        else build_multipass_adjudication_packet
+    )
     if run_id and resume_run_id:
         raise TrueNorthError("choose run_id or resume_run_id, not both")
     suite_root = _suite_root(output_root, suite)
@@ -8394,10 +8714,10 @@ def run_multipass(
         "suite_manifest_sha256": manifest["manifest_sha256"],
         "episode_ids": requested,
         "model": MULTIPASS_MODEL,
-        "stages": list(MULTIPASS_STAGES),
+        "stages": list(stage_sequence),
         "system_prompt_sha256": {
             stage: sha256_text(MULTIPASS_SYSTEM_PROMPTS[stage])
-            for stage in MULTIPASS_STAGES
+            for stage in stage_sequence
         },
         "budget": effective_budget,
         "holdout_access_allowed": False,
@@ -8478,14 +8798,12 @@ def run_multipass(
     )
     stage_b_jobs = []
     for key in ordered_keys:
-        packet = build_multipass_decomposition_packet(
-            base_jobs[key], stage_a[key]
-        )
+        packet = build_stage_b_packet(base_jobs[key], stage_a[key])
         if packet is not None:
             stage_b_jobs.append((*key, packet))
     stage_b = _multipass_execute_stage(
         run_root=run_root,
-        stage="decomposition",
+        stage=stage_b_mode,
         jobs=stage_b_jobs,
         state=state,
         workers=workers,
@@ -8521,6 +8839,7 @@ def run_multipass(
             stage_a[key],
             stage_b.get(key),
             stage_c.get(key),
+            stage_b_mode=stage_b_mode,
         )
         destination = (
             run_root
@@ -8544,6 +8863,7 @@ def run_multipass(
         "run_id": resolved_run_id,
         "configuration_sha256": configuration["configuration_sha256"],
         "episode_ids": requested,
+        "stage_b_mode": stage_b_mode,
         "packet_count": len(ordered_keys),
         "candidate_count": state["candidate_count"],
         "usage": state["usage"],
