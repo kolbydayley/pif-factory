@@ -170,6 +170,20 @@ MULTIPASS_DEFAULT_BUDGET = {
     "max_tokens": 4_000_000,
     "max_wall_seconds": 6 * 60 * 60,
 }
+TASK5_SCHEMA_VERSION = "pif_true_north_task5_adjudication_v1"
+TASK5_PHASE_C_RUN_ID = "phase-c-junk-verify-20260728-v1"
+TASK5_CHECKPOINT_FILENAME = (
+    "phase-c-option2-development-v5-zero-atomic-safety.json"
+)
+TASK5_PRIOR_FLOOR_SCORE = (
+    "prior-adoption/pif_true_north_prior_adoption_v1/"
+    "tnpa-20260728-approved-v2-rescore/score.private.json"
+)
+TASK5_DEFAULT_BUDGET = {
+    "max_calls": 25,
+    "max_tokens": 800_000,
+    "max_wall_seconds": 2 * 60 * 60,
+}
 APPROVED_GATE_POLICY_VERSION = "pif_true_north_gate_policy_v2"
 APPROVED_GATE_POLICY = {
     "consensus_candidate_state_macro_f1": (">=", 0.90),
@@ -2503,9 +2517,20 @@ _ADJUDICATION_ABSENT_TEXT = frozenset(
 )
 
 
-def _adjudication_prior(candidate: Mapping[str, Any], field: str) -> str | None:
-    text = " ".join(str(candidate.get(field) or "").split())
+def _adjudication_text(value: Any) -> str | None:
+    text = " ".join(str(value or "").split())
     return None if text.casefold() in _ADJUDICATION_ABSENT_TEXT else text
+
+
+def _adjudication_prior(candidate: Mapping[str, Any], field: str) -> str | None:
+    return _adjudication_text(candidate.get(field))
+
+
+def _adjudication_named(value: Any) -> str | None:
+    """Flatten a structured ``{"name": ...}`` prior the way the floor does."""
+    if isinstance(value, Mapping):
+        return _adjudication_text(value.get("name"))
+    return _adjudication_text(value)
 
 
 def _adjudication_prior_fields(
@@ -2515,12 +2540,35 @@ def _adjudication_prior_fields(
     """Carry the frozen candidate priors the adjudication contract never asks
     the model to re-derive.
 
-    This deliberately mirrors the Task 1 prior-adoption floor field for field,
-    so the only difference between the floor and this stage is ``claim_text``
-    and its split.  Any gate that moves is therefore attributable to stage B.
+    This mirrors ``true_north_prior_adoption._atomic_from_candidate`` field for
+    field -- including ``raw_speaker`` and ``reported_actor`` -- so the only
+    difference between the Task 1 prior-adoption floor and this stage is
+    ``claim_text`` and its split.  Any gate that moves is therefore
+    attributable to stage B rather than to attribution.
+
+    Speaker in particular must not come from a model here: the plan's fact
+    table measures prior adoption at 99.4% speaker exactness against 58-63%
+    for multipass attribution, so sourcing it from stage C would let an
+    attribution regression be misread as a stage-B failure.  Actor
+    confirmation is Task 6's separate, conditional pass.
+
+    ``true_north_prior_adoption`` imports this module, so it cannot be
+    imported here without a cycle.  ``tests/test_true_north.py`` pins the two
+    implementations together with an explicit parity test instead.
     """
     from .true_north_semantic_scoring import normalize_enum_field
 
+    raw_speaker = _adjudication_named(
+        candidate.get("speaker")
+    ) or _adjudication_prior(candidate, "actor_name")
+    if raw_speaker is None:
+        raise TrueNorthError(
+            "adjudication requires a candidate speaker prior: "
+            f"{candidate.get('candidate_id')}"
+        )
+    reported_actor = _adjudication_named(
+        candidate.get("reported_actor")
+    ) or _adjudication_prior(candidate, "actor_name")
     stance = normalize_enum_field(
         "stance", _adjudication_prior(candidate, "stance") or "neutral"
     )
@@ -2535,6 +2583,8 @@ def _adjudication_prior_fields(
             "claim_type",
             _adjudication_prior(candidate, "claim_type") or "assertion",
         ),
+        "raw_speaker": raw_speaker,
+        "reported_actor": reported_actor,
         "stance": stance,
         "certainty": normalize_enum_field(
             "certainty",
@@ -2607,6 +2657,18 @@ def compose_multipass_output(
                 }
             )
             for claim_index, claim in enumerate(decomposition["atomic_claims"]):
+                claim_text = str(claim["claim_text"])
+                if adjudicating:
+                    atomics.append(
+                        {
+                            "claim_text": claim_text,
+                            "proposition_text": claim_text,
+                            **_adjudication_prior_fields(
+                                candidate, claim_text
+                            ),
+                        }
+                    )
+                    continue
                 attribution = attributions.get((candidate_id, claim_index))
                 if attribution is None:
                     raise TrueNorthError(
@@ -2625,20 +2687,6 @@ def compose_multipass_output(
                         if attribution["reported_actor_id"] is not None
                         else attribution["reported_actor_freetext"]
                     )
-                claim_text = str(claim["claim_text"])
-                if adjudicating:
-                    atomics.append(
-                        {
-                            "claim_text": claim_text,
-                            "raw_speaker": str(speaker["canonical_name"]),
-                            "reported_actor": actor,
-                            "proposition_text": claim_text,
-                            **_adjudication_prior_fields(
-                                candidate, claim_text
-                            ),
-                        }
-                    )
-                    continue
                 inventory_row = inventory[int(claim["inventory_index"])]
                 atomics.append(
                     {
@@ -8986,6 +9034,496 @@ def score_multipass_run(
     }
 
 
+def _task5_resolved_dispositions(
+    *,
+    suite_root: Path,
+    manifest: Mapping[str, Any],
+    candidate_by_id: Mapping[str, Mapping[str, Any]],
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """Recompose the certified Phase-C decisions without reading gold."""
+
+    from .true_north_option2 import (
+        CONTRACT_VERSION,
+        apply_phase_c_hold_resolution,
+    )
+
+    checkpoint_path = (
+        suite_root / "certification" / TASK5_CHECKPOINT_FILENAME
+    )
+    checkpoint = _read_json(checkpoint_path)
+    if checkpoint.get("schema_version") != CONTRACT_VERSION:
+        raise TrueNorthError(
+            "Task 5 requires the current option-2 measurement contract"
+        )
+    if checkpoint.get("manifest_sha256") != manifest.get(
+        "manifest_sha256"
+    ):
+        raise TrueNorthError(
+            "Task 5 checkpoint is not bound to the current suite manifest"
+        )
+    if (
+        checkpoint.get("passed") is not True
+        or checkpoint.get("task_5_authorized") is not True
+        or checkpoint.get("holdout_opened") is not False
+        or checkpoint.get("production_mutation") is not False
+    ):
+        raise TrueNorthError(
+            "Task 5 is not authorized by the development checkpoint"
+        )
+    combined_path = (
+        suite_root
+        / "phase-c"
+        / "runs"
+        / TASK5_PHASE_C_RUN_ID
+        / "outputs"
+        / "combined.private.json"
+    )
+    raw_document = _read_json(combined_path)
+    raw_predictions = {
+        str(row["candidate_id"]): row
+        for row in raw_document["items"]
+        if str(row["candidate_id"]) in candidate_by_id
+    }
+    if set(raw_predictions) != set(candidate_by_id):
+        raise TrueNorthError(
+            "Task 5 Phase-C dispositions do not cover the Search fold"
+        )
+    intrinsic = apply_phase_c_intrinsic_composition_rules(
+        raw_predictions, candidate_by_id
+    )
+    gate = checkpoint["disposition_gate"]
+    held_candidate_ids = sorted(
+        set(gate["hold_resolution_admitted_candidate_ids"])
+        | set(
+            gate[
+                "hold_resolution_blocked_intrinsic_candidate_ids"
+            ]
+        )
+    )
+    if len(held_candidate_ids) != int(gate["held_candidate_count"]):
+        raise TrueNorthError(
+            "Task 5 checkpoint held population is inconsistent"
+        )
+    resolved = apply_phase_c_hold_resolution(
+        intrinsic["predictions"],
+        candidate_by_id,
+        held_candidate_ids=held_candidate_ids,
+    )
+    for field in (
+        "admitted_candidate_ids",
+        "blocked_intrinsic_candidate_ids",
+        "changed_candidate_ids",
+    ):
+        checkpoint_field = {
+            "admitted_candidate_ids": (
+                "hold_resolution_admitted_candidate_ids"
+            ),
+            "blocked_intrinsic_candidate_ids": (
+                "hold_resolution_blocked_intrinsic_candidate_ids"
+            ),
+            "changed_candidate_ids": (
+                "hold_resolution_changed_candidate_ids"
+            ),
+        }[field]
+        if resolved[field] != gate[checkpoint_field]:
+            raise TrueNorthError(
+                "Task 5 resolved dispositions differ from certification"
+            )
+    provenance = {
+        "checkpoint_path": str(checkpoint_path),
+        "checkpoint_sha256": checkpoint["checkpoint_sha256"],
+        "combined_disposition_path": str(combined_path),
+        "combined_disposition_sha256": _sha256_file(combined_path),
+        "intrinsic_rule_version": intrinsic["rule_version"],
+        "hold_resolution_rule_version": resolved["rule_version"],
+        "holdout_opened": False,
+    }
+    return resolved["predictions"], provenance
+
+
+def _task5_disposition_document(
+    base_job: Mapping[str, Any],
+    resolved_predictions: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for candidate in base_job["input"]["candidates"]:
+        candidate_id = str(candidate["candidate_id"])
+        prediction = resolved_predictions[candidate_id]
+        disposition = str(prediction["disposition"])
+        junk_reason = None
+        if disposition in {"reject", "hold"}:
+            junk_reason = str(
+                prediction.get("junk_reason")
+                or prediction.get("reason_code")
+                or "unsupported_inference"
+            )
+        items.append(
+            {
+                "candidate_id": candidate_id,
+                "disposition": disposition,
+                "junk_reason": junk_reason,
+            }
+        )
+    output = {
+        "schema_version": MULTIPASS_SCHEMA_VERSION,
+        "items": items,
+    }
+    packet = build_multipass_disposition_packet(base_job)
+    validate_multipass_disposition(output, packet)
+    return output
+
+
+def run_task5_adjudication(
+    *,
+    output_root: str | Path | None = None,
+    suite: str = SUITE_ID,
+    workers: int = 4,
+    timeout_seconds: int = 900,
+    opencode_binary: str = "/opt/homebrew/bin/opencode",
+    run_id: str | None = None,
+    resume_run_id: str | None = None,
+    runner: Any | None = None,
+    budget: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run only frozen Stage B against certified Search dispositions."""
+
+    if workers < 1 or workers > 4:
+        raise TrueNorthError("Task 5 workers must be between 1 and 4")
+    if run_id and resume_run_id:
+        raise TrueNorthError("choose run_id or resume_run_id, not both")
+    suite_root = _suite_root(output_root, suite)
+    verification = verify_suite(output_root=output_root, suite=suite)
+    if not verification["ok"]:
+        raise TrueNorthError("suite verification failed before Task 5")
+    manifest = _read_json(suite_root / "manifest.json")
+    search_episode_ids = (
+        "ep_90c3b5c995bce501c9aef55c",
+        "ep_7ec9f808a3955c720aeb94ff",
+    )
+    development = {
+        str(row["episode_id"]): row
+        for row in manifest["bundles"]
+        if row["partition"] == "development"
+    }
+    base_jobs: dict[tuple[str, str], dict[str, Any]] = {}
+    candidate_by_id: dict[str, dict[str, Any]] = {}
+    for episode_id in search_episode_ids:
+        bundle = _read_json(Path(development[episode_id]["bundle_path"]))
+        for candidate in bundle["candidates"]:
+            candidate_by_id[str(candidate["candidate_id"])] = dict(
+                candidate
+            )
+        for job in _segment_jobs(bundle, gold=False):
+            segment_id = str(
+                job["input"]["segment"]["segment_id"]
+            )
+            base_jobs[(episode_id, segment_id)] = job
+    resolved_predictions, disposition_provenance = (
+        _task5_resolved_dispositions(
+            suite_root=suite_root,
+            manifest=manifest,
+            candidate_by_id=candidate_by_id,
+        )
+    )
+    dispositions = {
+        key: _task5_disposition_document(
+            base_job, resolved_predictions
+        )
+        for key, base_job in base_jobs.items()
+    }
+    stage_b_jobs: list[tuple[str, str, Mapping[str, Any]]] = []
+    for key in sorted(base_jobs):
+        packet = build_multipass_adjudication_packet(
+            base_jobs[key], dispositions[key]
+        )
+        if packet is not None:
+            stage_b_jobs.append((*key, packet))
+    effective_budget = {
+        **TASK5_DEFAULT_BUDGET,
+        **dict(budget or {}),
+    }
+    if int(effective_budget["max_calls"]) > 25:
+        raise TrueNorthError("Task 5 call ceiling cannot exceed 25")
+    if len(stage_b_jobs) > int(effective_budget["max_calls"]):
+        raise TrueNorthError(
+            "Task 5 call budget cannot cover frozen Stage B"
+        )
+    configuration = {
+        "schema_version": TASK5_SCHEMA_VERSION,
+        "suite_id": suite,
+        "suite_manifest_sha256": manifest["manifest_sha256"],
+        "episode_ids": list(search_episode_ids),
+        "model": MULTIPASS_MODEL,
+        "stages": ["adjudication"],
+        "system_prompt_sha256": {
+            "adjudication": sha256_text(
+                MULTIPASS_SYSTEM_PROMPTS["adjudication"]
+            )
+        },
+        "disposition_provenance": disposition_provenance,
+        "budget": effective_budget,
+        "holdout_access_allowed": False,
+        "production_database_open_allowed": False,
+    }
+    configuration["configuration_sha256"] = sha256_text(
+        dumps_json(configuration)
+    )
+    resolved_run_id = resume_run_id or run_id or (
+        "task5-adjudication-"
+        + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        + "-"
+        + configuration["configuration_sha256"][:8]
+    )
+    run_root = suite_root / "multipass" / "runs" / resolved_run_id
+    config_path = run_root / "configuration.json"
+    state_path = run_root / "state.json"
+    if config_path.is_file():
+        if _read_json(config_path) != configuration:
+            raise TrueNorthError(
+                "Task 5 resume configuration differs from frozen run"
+            )
+    else:
+        _write_json(config_path, configuration, immutable=True)
+    if state_path.is_file():
+        state = _read_json(state_path)
+        expected_hash = state.get("state_sha256")
+        observed = sha256_text(
+            dumps_json(
+                {
+                    key: value
+                    for key, value in state.items()
+                    if key != "state_sha256"
+                }
+            )
+        )
+        if expected_hash != observed:
+            raise TrueNorthError("Task 5 state hash mismatch")
+    else:
+        state = {
+            "schema_version": TASK5_SCHEMA_VERSION,
+            "run_id": resolved_run_id,
+            "configuration_sha256": configuration[
+                "configuration_sha256"
+            ],
+            "budget": effective_budget,
+            "completed": [],
+            "usage": {
+                "calls": 0,
+                "tokens": 0,
+                "wall_seconds": 0.0,
+            },
+        }
+        _multipass_state_write(state_path, state)
+    adjudication = _multipass_execute_stage(
+        run_root=run_root,
+        stage="adjudication",
+        jobs=stage_b_jobs,
+        state=state,
+        workers=workers,
+        timeout_seconds=timeout_seconds,
+        opencode_binary=opencode_binary,
+        runner=runner,
+    )
+    composed_count = 0
+    for key in sorted(base_jobs):
+        episode_id, segment_id = key
+        output = compose_multipass_output(
+            base_jobs[key],
+            dispositions[key],
+            adjudication.get(key),
+            None,
+            stage_b_mode="adjudication",
+        )
+        destination = (
+            run_root
+            / "outputs"
+            / "composed"
+            / episode_id
+            / segment_id
+            / "validated.private.json"
+        )
+        _write_json(destination, output, immutable=True)
+        composed_count += 1
+    state["complete"] = composed_count == len(base_jobs)
+    state["packet_count"] = len(base_jobs)
+    state["stage_b_packet_count"] = len(stage_b_jobs)
+    state["candidate_count"] = len(candidate_by_id)
+    _multipass_state_write(state_path, state)
+    return {
+        "ok": True,
+        "schema_version": TASK5_SCHEMA_VERSION,
+        "run_id": resolved_run_id,
+        "configuration_sha256": configuration[
+            "configuration_sha256"
+        ],
+        "episode_ids": list(search_episode_ids),
+        "stage_b_mode": "adjudication",
+        "packet_count": len(base_jobs),
+        "stage_b_packet_count": len(stage_b_jobs),
+        "candidate_count": len(candidate_by_id),
+        "usage": state["usage"],
+        "complete": state["complete"],
+        "run_root": str(run_root),
+        "holdout_opened": False,
+        "production_mutation": False,
+    }
+
+
+def score_task5_adjudication(
+    *,
+    run_id: str,
+    output_root: str | Path | None = None,
+    suite: str = SUITE_ID,
+) -> dict[str, Any]:
+    """Score Task 5 and compare its exact cohort with the Task-1 floor."""
+
+    from .true_north_prior_adoption import _score_scope
+
+    suite_root = _suite_root(output_root, suite)
+    run_root = suite_root / "multipass" / "runs" / run_id
+    configuration = _read_json(run_root / "configuration.json")
+    if configuration.get("schema_version") != TASK5_SCHEMA_VERSION:
+        raise TrueNorthError("run is not a Task 5 adjudication run")
+    full_score = score_multipass_run(
+        run_id=run_id, output_root=output_root, suite=suite
+    )
+    predictions: list[dict[str, Any]] = []
+    for episode_id in configuration["episode_ids"]:
+        for path in sorted(
+            (
+                run_root / "outputs" / "composed" / episode_id
+            ).glob("*/validated.private.json")
+        ):
+            predictions.extend(_read_json(path)["items"])
+    floor_path = suite_root / TASK5_PRIOR_FLOOR_SCORE
+    floor = _read_json(floor_path)
+    prior_predictions = _read_json(
+        Path(floor["prediction_path"])
+    )
+    cohort_ids = {
+        str(row["candidate_id"])
+        for row in prior_predictions["items"]
+    }
+    cohort_predictions = [
+        row
+        for row in predictions
+        if str(row["candidate_id"]) in cohort_ids
+    ]
+    if {
+        str(row["candidate_id"]) for row in cohort_predictions
+    } != cohort_ids:
+        raise TrueNorthError(
+            "Task 5 predictions do not cover the Task-1 comparison cohort"
+        )
+    manifest = _read_json(suite_root / "manifest.json")
+    speaker_maps: dict[str, Any] = {}
+    for bundle_row in manifest["bundles"]:
+        if bundle_row["partition"] != "development":
+            continue
+        bundle = _read_json(Path(bundle_row["bundle_path"]))
+        for candidate in bundle["candidates"]:
+            candidate_id = str(candidate["candidate_id"])
+            if candidate_id in cohort_ids:
+                speaker_maps[candidate_id] = (
+                    bundle["episode_context"].get("speaker_map", [])
+                )
+    consensus = _read_json(
+        suite_root
+        / "gold"
+        / "development"
+        / "final"
+        / "consensus.private.json"
+    )
+    preferred = _read_json(
+        suite_root
+        / "gold"
+        / "development"
+        / "final"
+        / "gold.private.json"
+    )
+    cohort_score = _score_scope(
+        cohort_predictions,
+        consensus_document=consensus,
+        preferred_document=preferred,
+        speaker_maps=speaker_maps,
+    )
+    floor_aggregate = floor["scopes"]["comparison_cohort"][
+        "aggregate"
+    ]
+    cohort_aggregate = cohort_score["aggregate"]
+    floor_comparison: dict[str, Any] = {}
+    for metric, (comparison, _threshold) in APPROVED_GATE_POLICY.items():
+        observed = float(cohort_aggregate[metric])
+        baseline = float(floor_aggregate[metric])
+        passed = (
+            observed >= baseline
+            if comparison == ">="
+            else observed <= baseline
+        )
+        floor_comparison[metric] = {
+            "task_5": observed,
+            "task_1_floor": baseline,
+            "comparison": comparison,
+            "passed": passed,
+        }
+    aggregate = full_score["aggregate"]
+    acceptance = {
+        "atomic_count_accuracy_at_least_0_90": (
+            float(aggregate["acceptable_atomic_count_rate"]) >= 0.90
+        ),
+        "faithfulness_at_least_recalibrated_gate": (
+            float(aggregate["claim_text_faithfulness_proxy"])
+            >= APPROVED_GATE_POLICY[
+                "claim_text_faithfulness_proxy"
+            ][1]
+        ),
+        "hallucination_rate_at_most_0_02": (
+            float(aggregate["hallucination_rate_proxy"]) <= 0.02
+        ),
+        "no_gate_below_task_1_prior_floor": all(
+            row["passed"] for row in floor_comparison.values()
+        ),
+    }
+    document = {
+        "schema_version": TASK5_SCHEMA_VERSION,
+        "run_id": run_id,
+        "configuration_sha256": configuration[
+            "configuration_sha256"
+        ],
+        "search_fold": {
+            "candidate_count": full_score["candidate_count"],
+            "atomic_count_accuracy": aggregate[
+                "acceptable_atomic_count_rate"
+            ],
+            "claim_text_faithfulness": aggregate[
+                "claim_text_faithfulness_proxy"
+            ],
+            "faithfulness_gate": APPROVED_GATE_POLICY[
+                "claim_text_faithfulness_proxy"
+            ][1],
+            "hallucination_rate": aggregate[
+                "hallucination_rate_proxy"
+            ],
+            "aggregate": aggregate,
+        },
+        "task_1_comparison_cohort": {
+            "candidate_count": len(cohort_predictions),
+            "floor_score_path": str(floor_path),
+            "floor_report_sha256": floor["report_sha256"],
+            "metrics": floor_comparison,
+        },
+        "acceptance": acceptance,
+        "passed": all(acceptance.values()),
+        "usage": full_score["usage"],
+        "holdout_opened": False,
+        "production_mutation": False,
+    }
+    document["score_sha256"] = sha256_text(dumps_json(document))
+    output_path = run_root / "task5-score.private.json"
+    _write_json(output_path, document, immutable=False)
+    return {**document, "score_path": str(output_path)}
+
+
 def _phase_c_preferred_document(suite_root: Path) -> dict[str, Any]:
     return _read_json(
         suite_root
@@ -12481,6 +13019,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Score a completed multipass extraction run.",
     )
     multipass_score.add_argument("--run-id", required=True)
+    task5_run = sub.add_parser(
+        "task5-run",
+        help="Run frozen split/no-split Stage B on certified dispositions.",
+    )
+    task5_run.add_argument("--workers", type=int, default=4)
+    task5_run.add_argument("--timeout-seconds", type=int, default=900)
+    task5_run.add_argument(
+        "--opencode-binary", default="/opt/homebrew/bin/opencode"
+    )
+    task5_run.add_argument("--run-id")
+    task5_run.add_argument("--resume-run-id")
+    task5_score = sub.add_parser(
+        "task5-score",
+        help="Score Task 5 and compare it with the Task-1 prior floor.",
+    )
+    task5_score.add_argument("--run-id", required=True)
     phase_c_disposition = sub.add_parser(
         "phase-c-disposition",
         help="Run the approved bounded Search-fold disposition stage.",
@@ -12537,6 +13091,8 @@ def build_parser() -> argparse.ArgumentParser:
         prompt_optimize,
         multipass,
         multipass_score,
+        task5_run,
+        task5_score,
         phase_c_disposition,
         phase_c_junk_verify,
         phase_c_marginal_verify,
@@ -12640,6 +13196,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         elif args.command == "multipass-score":
             result = score_multipass_run(
+                run_id=args.run_id,
+                **common,
+            )
+        elif args.command == "task5-run":
+            result = run_task5_adjudication(
+                workers=args.workers,
+                timeout_seconds=args.timeout_seconds,
+                opencode_binary=args.opencode_binary,
+                run_id=args.run_id,
+                resume_run_id=args.resume_run_id,
+                **common,
+            )
+        elif args.command == "task5-score":
+            result = score_task5_adjudication(
                 run_id=args.run_id,
                 **common,
             )

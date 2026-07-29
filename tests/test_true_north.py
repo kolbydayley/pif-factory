@@ -901,6 +901,7 @@ class TrueNorthTest(unittest.TestCase):
             "segment_index": 0,
             "event_index": 0,
             "claim_text": "The system requires independent evaluation.",
+            "speaker": {"name": "Jane Doe"},
             "evidence_text": "Host: The system requires independent evaluation.",
             "evidence_start": 0,
             "evidence_end": 49,
@@ -1428,6 +1429,24 @@ class TrueNorthTest(unittest.TestCase):
         self.assertEqual(
             atomic["evidence_text"],
             base["input"]["candidates"][0]["evidence_text"],
+        )
+
+    def test_multipass_adjudication_needs_no_attribution_call(self) -> None:
+        base = self._adjudication_job()
+        composed = true_north.compose_multipass_output(
+            base,
+            self._adjudication_disposition(),
+            self._adjudication_output(),
+            None,
+            stage_b_mode="adjudication",
+        )
+
+        atomic = composed["items"][0]["atomic_claims"][0]
+        self.assertEqual(atomic["raw_speaker"], "Jane Doe")
+        self.assertEqual(atomic["reported_actor"], "Safety Lab")
+        self.assertEqual(
+            atomic["claim_text"],
+            "The system requires independent evaluation.",
         )
 
     def _multipass_suite(self) -> Path:
