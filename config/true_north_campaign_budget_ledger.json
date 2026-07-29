@@ -162,6 +162,36 @@
       }
     }
   ],
+  "post_certification_phase_results": [
+    {
+      "phase": "A",
+      "name": "consolidation",
+      "status": "completed",
+      "provider_calls": 0,
+      "known_tokens": 0,
+      "result_commit": "092866d",
+      "result_document": "docs/TRUE_NORTH_CONSOLIDATION_20260729.md"
+    },
+    {
+      "phase": "B",
+      "name": "candidate_state_macro_f1_calibration",
+      "status": "completed_pending_review_loop_ruling",
+      "provider_calls": 0,
+      "known_tokens": 0,
+      "candidate_count": 1140,
+      "measured_ceiling": 0.830664,
+      "current_gate": 0.9,
+      "recommended_threshold": 0.790664,
+      "gate_changed": false,
+      "review_recommendation": "ruling_4_re_reference_to_recommended_threshold",
+      "private_artifact": "diagnostics/candidate-state-macro-f1-calibration-v1.json",
+      "private_artifact_sha256": "ebe556e2ff59f34755e82b09e14f6ab435ba0c6ea02a55c1660fd13e415f926f",
+      "source_aggregate_sha256": "e132f68f94452a7072abf38821261b6bf573f2c89e2715e1405a5a173a87705f",
+      "result_document": "docs/TRUE_NORTH_CANDIDATE_STATE_CALIBRATION_20260729.md",
+      "sealed_holdout_opened": false,
+      "production_mutated": false
+    }
+  ],
   "cumulative_before_new_authorization": {
     "calls": 160,
     "known_tokens_excluding_actor_gold_repair": 1177814,
