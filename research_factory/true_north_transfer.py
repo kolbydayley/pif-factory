@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import copy
 import json
+import math
+import shutil
 import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -17,6 +19,7 @@ from typing import Any, Mapping, Sequence
 from . import true_north
 from .true_north_actor_span_rule import apply_actor_span_rule
 from .true_north_actor_suppression import suppress_predictions
+from . import true_north_actor_repair
 from .true_north_input_split_default import (
     FLAGGED_SYSTEM_PROMPT,
     _flagged_packet,
@@ -602,3 +605,432 @@ def verify_blind_freeze(*, suite_root: str | Path) -> dict[str, Any]:
     if true_north._sha256_file(path) != freeze["prediction_file_sha256"]:
         raise TransferError("frozen prediction file hash mismatch")
     return freeze
+
+
+def _authorized_segment_ids(root: Path) -> list[str]:
+    bundle, _path = _authorized_bundle(root)
+    segments = {
+        str(row["segment_id"]): int(row["segment_index"])
+        for row in bundle["segments"]
+    }
+    candidate_segments = {
+        str(row["segment_id"]) for row in bundle["candidates"]
+    }
+    if candidate_segments - set(segments):
+        raise TransferError("candidate references an unknown segment")
+    result = sorted(candidate_segments, key=lambda value: segments[value])
+    if len(result) != 17:
+        raise TransferError("authorized gold segment scope drifted")
+    return result
+
+
+def _selected_gold_root(root: Path) -> Path:
+    return _run_root(root) / "gold" / "atomic"
+
+
+def prepare_selected_gold(*, suite_root: str | Path) -> dict[str, Any]:
+    """Copy only authorized episode jobs after verifying the blind freeze."""
+    root = _root(suite_root)
+    freeze = verify_blind_freeze(suite_root=root)
+    segment_ids = _authorized_segment_ids(root)
+    source = root / "gold" / "sealed-holdout"
+    target = _selected_gold_root(root)
+    copied = 0
+    for pass_name in ("pass-a", "pass-b"):
+        for segment_id in segment_ids:
+            for kind, suffix in (
+                ("jobs", ".private.json"),
+                ("schemas", ".json"),
+            ):
+                source_path = (
+                    source / pass_name / kind / f"{segment_id}{suffix}"
+                )
+                if not source_path.is_file():
+                    raise TransferError(
+                        f"authorized gold scaffold is missing: {segment_id}"
+                    )
+                if kind == "jobs":
+                    document = true_north._read_json(source_path)
+                    episode_id = str(
+                        document["input"]["episode"]["episode_id"]
+                    )
+                    if episode_id != AUTHORIZED_EPISODE_ID:
+                        raise TransferError(
+                            "selected gold job escaped authorized episode"
+                        )
+                destination = (
+                    target / pass_name / kind / source_path.name
+                )
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                if destination.exists():
+                    if (
+                        true_north._sha256_file(destination)
+                        != true_north._sha256_file(source_path)
+                    ):
+                        raise TransferError("selected gold scaffold drift")
+                else:
+                    shutil.copyfile(source_path, destination)
+                copied += 1
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "episode_id": AUTHORIZED_EPISODE_ID,
+        "forbidden_episode_id": FORBIDDEN_EPISODE_ID,
+        "blind_freeze_sha256": freeze["freeze_sha256"],
+        "segment_ids": segment_ids,
+        "pass_a_job_count": len(segment_ids),
+        "pass_b_job_count": len(segment_ids),
+        "gold_model": "gpt-5.6-sol",
+        "gold_entered_extraction_input": False,
+    }
+    manifest["manifest_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(manifest)
+    )
+    true_north._write_json(
+        target / "manifest.json", manifest, immutable=True
+    )
+    return {"copied_files": copied, **manifest}
+
+
+def _gold_usage(root: Path) -> dict[str, int]:
+    calls = tokens = 0
+    for path in (_run_root(root) / "gold").glob(
+        "**/receipt*.json"
+    ):
+        receipt = true_north._read_json(path)
+        if "receipts" in receipt:
+            for inner in receipt["receipts"]:
+                usage = inner.get("usage", {})
+                calls += 1
+                tokens += int(usage.get("total_tokens") or 0)
+        elif receipt.get("ok"):
+            usage = receipt.get("usage", {})
+            calls += 0 if receipt.get("idempotent_replay") else 1
+            tokens += int(usage.get("total_tokens") or 0)
+    return {"calls": calls, "tokens": tokens}
+
+
+def _total_usage(root: Path) -> dict[str, int]:
+    blind = verify_blind_freeze(suite_root=root)["usage"]
+    gold = _gold_usage(root)
+    return {
+        "calls": int(blind["calls"]) + gold["calls"],
+        "tokens": int(blind["tokens"]) + gold["tokens"],
+    }
+
+
+def _check_total_budget(root: Path, *, pending_calls: int = 0) -> None:
+    usage = _total_usage(root)
+    if usage["calls"] + pending_calls > MAX_CALLS:
+        raise TransferError("Ruling-8 call ceiling cannot cover next gold pass")
+    if usage["tokens"] >= MAX_TOKENS:
+        raise TransferError("Ruling-8 token ceiling is exhausted")
+
+
+def execute_selected_atomic_gold_pass(
+    *,
+    suite_root: str | Path,
+    pass_name: str,
+    workers: int = 2,
+    timeout_seconds: int = 1200,
+    codex_binary: str = "codex",
+) -> dict[str, Any]:
+    root = _root(suite_root)
+    prepare_selected_gold(suite_root=root)
+    if pass_name not in {"pass-a", "pass-b", "pass-c"}:
+        raise TransferError("selected gold pass must be A, B, or C")
+    base = _selected_gold_root(root)
+    preparation = None
+    directory = pass_name
+    if pass_name == "pass-c":
+        preparation = prepare_selected_gold_adjudication(suite_root=root)
+        directory = "pass-c-adjudication"
+    pass_root = base / directory
+    jobs = sorted((pass_root / "jobs").glob("*.private.json"))
+    if pass_name in {"pass-a", "pass-b"} and len(jobs) != 17:
+        raise TransferError("selected independent gold job count drifted")
+    _check_total_budget(root, pending_calls=len(jobs))
+    receipts = true_north._execute_gold_jobs(
+        jobs=jobs,
+        pass_root=pass_root,
+        timeout_seconds=timeout_seconds,
+        codex_binary=codex_binary,
+        validator=None,
+        workers=workers,
+    )
+    return {
+        "pass": pass_name,
+        "executed_count": len(receipts),
+        "preparation": preparation,
+        "usage": _total_usage(root),
+    }
+
+
+def prepare_selected_gold_adjudication(
+    *, suite_root: str | Path
+) -> dict[str, Any]:
+    root = _root(suite_root)
+    verify_blind_freeze(suite_root=root)
+    base = _selected_gold_root(root)
+    pass_c = base / "pass-c-adjudication"
+    prepared = agreed = 0
+    for segment_id in _authorized_segment_ids(root):
+        job_path = base / "pass-a" / "jobs" / f"{segment_id}.private.json"
+        a_path = (
+            base / "pass-a" / "outputs" / segment_id
+            / "validated.private.json"
+        )
+        b_path = (
+            base / "pass-b" / "outputs" / segment_id
+            / "validated.private.json"
+        )
+        if not a_path.is_file() or not b_path.is_file():
+            raise TransferError("pass-C requires complete selected A/B outputs")
+        output_a = true_north._read_json(a_path)
+        output_b = true_north._read_json(b_path)
+        a_items = {
+            str(row["candidate_id"]): row for row in output_a["items"]
+        }
+        b_items = {
+            str(row["candidate_id"]): row for row in output_b["items"]
+        }
+        disagreement_ids = [
+            candidate_id
+            for candidate_id in sorted(a_items)
+            if true_north._canonical_json(a_items[candidate_id])
+            != true_north._canonical_json(b_items[candidate_id])
+        ]
+        output_root = pass_c / "outputs" / segment_id
+        if not disagreement_ids:
+            agreed += 1
+            true_north._write_json(
+                output_root / "validated.private.json",
+                output_a,
+                immutable=True,
+            )
+            continue
+        original = true_north._read_json(job_path)
+        disagreement_set = set(disagreement_ids)
+        adjudication = {
+            **original,
+            "task": (
+                "Adjudicate two independent gold annotations for one "
+                "frozen segment."
+            ),
+            "instructions": [
+                "Resolve only the disagreements between pass_a and pass_b "
+                "using the original frozen evidence.",
+                "Neither prior pass is authoritative. Produce the best "
+                "complete decision set.",
+                *true_north._atomic_instructions(gold=True),
+            ],
+            "input": {
+                **original["input"],
+                "candidates": [
+                    row
+                    for row in original["input"]["candidates"]
+                    if str(row["candidate_id"]) in disagreement_set
+                ],
+                "pass_a": {
+                    **output_a,
+                    "items": [
+                        a_items[value] for value in disagreement_ids
+                    ],
+                },
+                "pass_b": {
+                    **output_b,
+                    "items": [
+                        b_items[value] for value in disagreement_ids
+                    ],
+                },
+            },
+            "output_schema": true_north.atomic_output_schema(
+                disagreement_ids
+            ),
+        }
+        true_north._write_json(
+            pass_c / "jobs" / f"{segment_id}.private.json",
+            adjudication,
+            immutable=True,
+        )
+        true_north._write_json(
+            pass_c / "schemas" / f"{segment_id}.json",
+            adjudication["output_schema"],
+            immutable=True,
+        )
+        true_north._write_json(
+            output_root / "agreed.private.json",
+            {
+                "items": [
+                    a_items[candidate_id]
+                    for candidate_id in sorted(a_items)
+                    if candidate_id not in disagreement_set
+                ]
+            },
+            immutable=True,
+        )
+        prepared += 1
+    return {
+        "prepared_disagreement_packets": prepared,
+        "agreed_without_adjudication": agreed,
+    }
+
+
+def compile_selected_gold(*, suite_root: str | Path) -> dict[str, Any]:
+    root = _root(suite_root)
+    base = _selected_gold_root(root)
+    items: list[dict[str, Any]] = []
+    pass_a_items: dict[str, dict[str, Any]] = {}
+    pass_b_items: dict[str, dict[str, Any]] = {}
+    for segment_id in _authorized_segment_ids(root):
+        original = true_north._read_json(
+            base / "pass-a" / "jobs" / f"{segment_id}.private.json"
+        )
+        for pass_name, target in (
+            ("pass-a", pass_a_items),
+            ("pass-b", pass_b_items),
+        ):
+            output = true_north._read_json(
+                base / pass_name / "outputs" / segment_id
+                / "validated.private.json"
+            )
+            target.update(
+                {
+                    str(row["candidate_id"]): dict(row)
+                    for row in output["items"]
+                }
+            )
+        c_root = base / "pass-c-adjudication" / "outputs" / segment_id
+        output = true_north._read_json(
+            c_root / "validated.private.json"
+        )
+        agreed_path = c_root / "agreed.private.json"
+        if agreed_path.is_file():
+            output = {
+                "schema_version": true_north.WORK_OUTPUT_SCHEMA_VERSION,
+                "items": [
+                    *true_north._read_json(agreed_path)["items"],
+                    *output["items"],
+                ],
+            }
+        true_north._validate_atomic_output(output, original)
+        for item in output["items"]:
+            items.append(
+                {
+                    "episode_id": AUTHORIZED_EPISODE_ID,
+                    "segment_id": segment_id,
+                    **item,
+                }
+            )
+    items.sort(key=lambda row: (row["segment_id"], row["candidate_id"]))
+    final = {
+        "schema_version": true_north.GOLD_SCHEMA_VERSION,
+        "suite_id": true_north.SUITE_ID,
+        "partition": "sealed-holdout",
+        "episode_id": AUTHORIZED_EPISODE_ID,
+        "gold_model": "gpt-5.6-sol",
+        "adjudication": "independent_a_b_then_c",
+        "item_count": len(items),
+        "items": items,
+    }
+    final["gold_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(final)
+    )
+    final_path = base / "final" / "gold.private.json"
+    true_north._write_json(final_path, final, immutable=True)
+    consensus_items: list[dict[str, Any]] = []
+    counts: dict[str, int] = {}
+    preferred = {str(row["candidate_id"]): row for row in items}
+    if set(preferred) != set(pass_a_items) or set(preferred) != set(
+        pass_b_items
+    ):
+        raise TransferError("selected gold compilation scope mismatch")
+    for candidate_id in sorted(preferred):
+        a = pass_a_items[candidate_id]
+        b = pass_b_items[candidate_id]
+        c = preferred[candidate_id]
+        a_state = true_north._gold_value_state(str(a["disposition"]))
+        b_state = true_north._gold_value_state(str(b["disposition"]))
+        state = (
+            f"consensus_{a_state}" if a_state == b_state else "contested"
+        )
+        counts[state] = counts.get(state, 0) + 1
+        observed = [
+            true_north._atomic_decomposition_record("pass_a", a),
+            true_north._atomic_decomposition_record("pass_b", b),
+            true_north._atomic_decomposition_record("adjudicated", c),
+        ]
+        value_counts = sorted(
+            {
+                int(row["atomic_count"])
+                for row in observed
+                if row["value_state"] == "value"
+            }
+        )
+        consensus_items.append(
+            {
+                "candidate_id": candidate_id,
+                "episode_id": AUTHORIZED_EPISODE_ID,
+                "segment_id": str(c["segment_id"]),
+                "consensus_state": state,
+                "strictly_scoreable": state != "contested",
+                "stable_exact_disposition": (
+                    str(a["disposition"]) == str(b["disposition"])
+                ),
+                "stable_atomic_count": (
+                    len(a["atomic_claims"]) == len(b["atomic_claims"])
+                ),
+                "acceptable_value_states": sorted(
+                    {str(row["value_state"]) for row in observed}
+                ),
+                "acceptable_dispositions": sorted(
+                    {str(row["disposition"]) for row in observed}
+                ),
+                "acceptable_atomic_counts": value_counts,
+                "minimum_atomic_count": (
+                    min(value_counts) if value_counts else 0
+                ),
+                "maximum_atomic_count": (
+                    max(value_counts) if value_counts else 0
+                ),
+                "preferred_disposition": str(c["disposition"]),
+                "preferred_atomic_count": len(c["atomic_claims"]),
+                "decompositions": observed,
+            }
+        )
+    consensus = {
+        "schema_version": true_north.CONSENSUS_GOLD_SCHEMA_VERSION,
+        "policy_version": true_north.CONSENSUS_GOLD_POLICY_VERSION,
+        "suite_id": true_north.SUITE_ID,
+        "partition": "sealed-holdout",
+        "episode_id": AUTHORIZED_EPISODE_ID,
+        "source_gold_sha256": final["gold_sha256"],
+        "policy": {
+            "exact_retain_versus_revise_is_diagnostic_only": True,
+            "strict_junk_definition": "pass_a_and_pass_b_both_reject",
+            "strict_value_definition": (
+                "pass_a_and_pass_b_both_retain_or_revise"
+            ),
+            "contested_items_are_excluded_from_strict_value_and_junk_gates": True,
+            "contested_hold_is_always_acceptable": True,
+            "atomic_count_rule": (
+                "any_integer_between_independently_observed_minimum_and_maximum"
+            ),
+        },
+        "item_count": len(consensus_items),
+        "counts": dict(sorted(counts.items())),
+        "items": consensus_items,
+    }
+    consensus["consensus_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(consensus)
+    )
+    consensus_path = base / "final" / "consensus.private.json"
+    true_north._write_json(consensus_path, consensus, immutable=True)
+    return {
+        "gold_path": str(final_path),
+        "gold_sha256": final["gold_sha256"],
+        "consensus_path": str(consensus_path),
+        "consensus_sha256": consensus["consensus_sha256"],
+        "item_count": len(items),
+        "atomic_count": sum(len(row["atomic_claims"]) for row in items),
+        "counts": consensus["counts"],
+    }
