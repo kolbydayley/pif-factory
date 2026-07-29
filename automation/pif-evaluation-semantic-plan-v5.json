@@ -1,0 +1,20 @@
+{
+  "schema_version": "pif_evaluation_semantic_plan_v1",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "plan_epoch": 5,
+  "state": "executable",
+  "step": {
+    "step_id": "expanded_cap_full_event_direct_reference_v5",
+    "state": "executable",
+    "max_model_calls": 3,
+    "max_total_tokens": 400000,
+    "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/plan-step-receipt.json",
+    "accepted_receipt_states": [
+      "passed",
+      "rejected",
+      "waiting"
+    ],
+    "directive_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/automation/pif-evaluation-expanded-cap-direct-reference-v5.json",
+    "directive_sha256": "c5c3470a3ca9243aad6a3ecd9e1f5cdbb5b01909d0e4942f31de3c9ed35f4f53"
+  }
+}

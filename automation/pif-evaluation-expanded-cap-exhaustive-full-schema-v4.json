@@ -1,0 +1,329 @@
+{
+  "schema_version": "pif_evaluation_expanded_cap_exhaustive_full_schema_directive_v4",
+  "created_at": "2026-07-18T14:52:07Z",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "plan_epoch": 4,
+  "step_id": "expanded_cap_exhaustive_full_schema_canary_v4",
+  "purpose": "run_one_blind_single_turn_expanded_cap_exhaustive_full_schema_canary_after_the_valid_epoch_3_cost_rejection",
+  "predecessor_receipt": {
+    "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-ordered-recurrent-full-schema-fold-v3/plan-step-receipt.json",
+    "sha256": "4cb12ee1b6d2525918fd55d9cacb6dafc47e26a089b9189e793184df0b43a3ba",
+    "state": "rejected",
+    "terminal_reason": "epoch3_ordered_recurrent_full_schema_fold_structural_or_cost_rejected",
+    "turn_1_total_tokens": 25063,
+    "turn_1_measured_acceptance_ceiling": 24000,
+    "turn_1_overage_tokens": 1063,
+    "turn_2_started": false,
+    "accounting_complete": true,
+    "production_mutated": false
+  },
+  "quality_basis": {
+    "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-true-full-output-shared-reference-v2/shared-reference-score.json",
+    "sha256": "f4e66ab829cb35f40335a191dda08daea4384173ddb4cfe871bd909a1cf4a5e3",
+    "candidate_strict_full_field_macro_f1": 0.963768,
+    "quality_threshold": 0.97,
+    "dense_candidate_strict_f1": 0.927536,
+    "dense_candidate_supported_units": 32,
+    "dense_shared_reference_units": 37,
+    "no_signal_f1": 1.0,
+    "one_additional_supported_dense_unit_projects_macro_f1": 0.971429,
+    "production_amortized_total_token_ratio": 0.192218,
+    "exact_evidence_rate": 1.0,
+    "production_mutated": false
+  },
+  "architecture_contract": {
+    "architecture_id": "single_turn_expanded_cap_exhaustive_full_schema",
+    "architecture_level_change": true,
+    "isolated_field_repair": false,
+    "hypothesis": "the valid v249 candidate stopped at its explicit 32-event ceiling while the blind source design recorded 41 eligible atomic claims; one blind full-schema turn with an additive 48-event safety cap and a general exhaustive-enumeration instruction can recover at least one independently grounded dense proposition without duplicating the fixed context across turns and remain within the production cost gate",
+    "representative_development_canary": {
+      "episode_count": 1,
+      "segment_count": 2,
+      "dense_segment_count": 1,
+      "no_signal_segment_count": 1,
+      "source_packet_identical_to_frozen_v249": true,
+      "reference_visible_to_model": false,
+      "target_count_visible_to_model": false,
+      "prior_candidate_output_visible_to_model": false,
+      "prior_reference_output_visible_to_model": false
+    },
+    "semantic_owner": "gpt-5.6-sol_high",
+    "semantic_decisions": [
+      "event_discovery",
+      "event_boundaries",
+      "exact_evidence_unit_selection",
+      "actor",
+      "reported_actor",
+      "speaker",
+      "claim",
+      "event_type",
+      "stance",
+      "certainty",
+      "temporal_horizon",
+      "causal_mechanism",
+      "target",
+      "metric_applicability_and_values",
+      "all_optional_field_applicability"
+    ],
+    "exhaustive_instruction": "enumerate every independent grounded eligible proposition and do not collapse adjacent recommendations, practical counterclaims, consequences, or tradeoffs",
+    "epoch_4_base_cap_instruction_replacement": {
+      "required_old_phrase_occurrence_count": 1,
+      "old_phrase": "enforce the per-segment 32-event cap",
+      "new_phrase": "enforce the per-segment 48-event safety cap",
+      "historical_v249_base_mutated": false
+    },
+    "dense_per_segment_safety_cap": 48,
+    "prior_dense_per_segment_safety_cap": 32,
+    "deterministic_postprocessing": "schema_enum_exact_evidence_offset_metric_substring_provenance_cap_accounting_validation_only",
+    "deterministic_semantic_pruning_allowed": false,
+    "deterministic_support_filtering_allowed": false,
+    "deterministic_deduplication_allowed": false,
+    "deterministic_relabeling_allowed": false,
+    "exact_identity_duplicate_detection": "diagnostic_only_nonblocking_all_events_flow_to_the_later_llm_equivalence_judge",
+    "all_emitted_events_must_be_preserved": true
+  },
+  "execution_contract": {
+    "extraction_model_call_cap": 1,
+    "semantic_judge_call_cap": 0,
+    "semantic_retry_cap": 0,
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "high",
+    "transport": "official_pinned_codex_0_144_1_persistent_app_server_stdio_managed_chatgpt_auth",
+    "app_server_arguments": [
+      "app-server",
+      "--stdio",
+      "--strict-config"
+    ],
+    "app_server_process_count": 1,
+    "no_model_preflight_app_server_process_count": 1,
+    "no_model_preflight_semantic_turn_count": 0,
+    "no_model_overlay_preflight_required_before_runtime_lock": true,
+    "thread_count": 1,
+    "thread_ephemeral": true,
+    "turn_count": 1,
+    "measured_total_token_acceptance_ceiling": 72891,
+    "preflight_capacity_token_envelope": 72891,
+    "transport_native_maximum_token_field_available": false,
+    "token_ceiling_is_post_completion_acceptance_not_transport_limit": true,
+    "timeout_seconds": 1200,
+    "v249_full_applicability_schema_and_projection_required": true,
+    "all_source_units_reviewed_required": true,
+    "exact_source_evidence_required": true,
+    "complete_usage_cache_reasoning_wall_time_telemetry_required": true,
+    "managed_chatgpt_auth_required": true,
+    "zero_silent_retry": true,
+    "turn_summary_none_if_supported_by_pinned_protocol": true,
+    "context_control_overlay": {
+      "project_doc_max_bytes": 0,
+      "include_permissions_instructions": false,
+      "include_apps_instructions": false,
+      "include_collaboration_mode_instructions": false,
+      "include_environment_context": false,
+      "skills": {
+        "include_instructions": false
+      },
+      "orchestrator": {
+        "skills": {
+          "enabled": false
+        },
+        "mcp": {
+          "enabled": false
+        }
+      },
+      "tools": {
+        "experimental_request_user_input": {
+          "enabled": false
+        }
+      },
+      "web_search": "disabled",
+      "personality": "none",
+      "features": {
+        "multi_agent": false,
+        "apps": false,
+        "plugins": false,
+        "remote_plugin": false,
+        "tool_suggest": false,
+        "image_generation": false,
+        "goals": false,
+        "memories": false,
+        "standalone_web_search": false
+      },
+      "mcp_servers": {
+        "computer-use": {
+          "enabled": false
+        },
+        "node_repl": {
+          "enabled": false
+        },
+        "openaiDeveloperDocs": {
+          "enabled": false
+        }
+      }
+    },
+    "fresh_pre_turn_capacity_probe": {
+      "required": true,
+      "rate_limit_reached_type": null,
+      "minimum_remaining_reserve_percent_after_conservative_projection": 20,
+      "quota_points_per_million_tokens": 17,
+      "projected_phase_quota_points": 2,
+      "thread_started_before_probe": false,
+      "semantic_turn_started_before_probe": false
+    },
+    "instruction_source_contract": {
+      "unoptimized_observed_paths": [
+        "/Users/kolbydayley/.codex/AGENTS.md"
+      ],
+      "unoptimized_observed_content_records": [
+        {
+          "path": "/Users/kolbydayley/.codex/AGENTS.md",
+          "sha256": "d312dd99bba39962891fa7c5eeab50c2918b3188f1b31dc0c99939e3d35d10f7",
+          "size_bytes": 10197
+        }
+      ],
+      "effective_path_order_must_be_discovered_by_no_model_overlay_preflight": true,
+      "effective_path_and_content_records_must_be_bound_by_runtime_lock": true,
+      "effective_path_order_must_match_at_semantic_thread_start": true
+    },
+    "production_cost_projection": {
+      "baseline_end_to_end_tokens": 10065426,
+      "production_amortized_context_tokens": 600538,
+      "production_scale": 30,
+      "extraction_total_token_acceptance_ceiling": 72891,
+      "projected_production_amortized_total_tokens": 2787268,
+      "projected_production_amortized_total_token_ratio": 0.276915,
+      "required_ratio_max": 0.28
+    }
+  },
+  "structural_acceptance_contract": {
+    "both_declared_segments_returned_once": true,
+    "segment_order_preserved": true,
+    "complete_v249_projection_valid": true,
+    "all_source_units_reviewed": true,
+    "unresolved_source_unit_count": 0,
+    "exact_evidence_rate": 1.0,
+    "metric_grounding_error_event_count": 0,
+    "event_cap_violation_count": 0,
+    "exact_identity_duplicate_count_reported_diagnostic_only": true,
+    "all_emitted_events_preserved": true,
+    "event_count_is_not_a_semantic_acceptance_proxy": true,
+    "measured_extraction_total_tokens_max": 72891,
+    "production_amortized_total_token_ratio_max": 0.28,
+    "accounting_complete": true,
+    "instruction_source_path_and_content_contract_passed": true,
+    "production_mutated": false,
+    "holdout_authorized": false,
+    "development_winner_frozen": false
+  },
+  "terminal_contract": {
+    "genuine_app_server_auth_capacity_transport_or_io_failure_state": "waiting",
+    "completed_output_structural_or_cost_failure_state": "rejected",
+    "integrity_or_programming_defect": "raise_without_masking_as_waiting",
+    "structural_pass_state": "passed",
+    "receipt_schema_version": "pif_semantic_plan_step_receipt_v1",
+    "receipt_winner_frozen": false,
+    "receipt_holdout_authorized": false,
+    "receipt_production_mutated": false
+  },
+  "branch_after_receipt": {
+    "passed": "run_the_hardened_direct_all_event_ab_ba_shared_reference_evaluator_over_every_baseline_event_and_every_epoch_4_candidate_event_without_support_or_alignment_prefilter_with_at_most_one_bounded_adjudication",
+    "rejected": "freeze_and_reject_the_expanded_cap_exhaustive_full_schema_architecture_without_field_level_repair",
+    "waiting": "create_no_retry_and_preserve_the_operational_failure_for_operator_review"
+  },
+  "downstream_evaluator_contract": {
+    "logic_source_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/research_factory/app_server_candidate_recurrent_fold_direct_reference.py",
+    "logic_source_sha256": "432500ef7275ba60322f51734fd0b4acdf4db3cef98f1fdcc1664918ea3616ff",
+    "logic_source_size_bytes": 84924,
+    "epoch_4_one_turn_canary_loader_required": true,
+    "rejected_epoch_3_recurrent_terminal_loader_forbidden": true,
+    "judge_launch_before_epoch_4_structural_pass_forbidden": true,
+    "all_baseline_and_all_epoch_4_candidate_events_required": true,
+    "support_or_alignment_prefilter_forbidden": true,
+    "permutation_order": [
+      "AB",
+      "BA"
+    ],
+    "conditional_side_free_adjudication_cap": 1
+  },
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-v4/plan-step-receipt.json",
+  "frozen_inputs": [
+    {
+      "role": "epoch_3_receipt",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-ordered-recurrent-full-schema-fold-v3/plan-step-receipt.json",
+      "sha256": "4cb12ee1b6d2525918fd55d9cacb6dafc47e26a089b9189e793184df0b43a3ba",
+      "size_bytes": 6122
+    },
+    {
+      "role": "epoch_3_runtime_lock",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-ordered-recurrent-full-schema-fold-v3/runtime-lock.json",
+      "sha256": "39d07a895358a9b138c72a6697dac90e0028376f154ae708ba83cefe735c5a73",
+      "size_bytes": 10700
+    },
+    {
+      "role": "epoch_2_receipt",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-true-full-output-shared-reference-v2/plan-step-receipt.json",
+      "sha256": "056a03c0be9521c5be624ef6a9a017aa60b3914668b1fe75bddb95875f2b2d02",
+      "size_bytes": 2410
+    },
+    {
+      "role": "epoch_2_score",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-true-full-output-shared-reference-v2/shared-reference-score.json",
+      "sha256": "f4e66ab829cb35f40335a191dda08daea4384173ddb4cfe871bd909a1cf4a5e3",
+      "size_bytes": 3849
+    },
+    {
+      "role": "epoch_2_runtime_lock",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-true-full-output-shared-reference-v2/runtime-lock.json",
+      "sha256": "1ab4c1f6a33101c35b361f44bafadf0357ac730dc15de77c2749399cb5262c0d",
+      "size_bytes": 7699
+    },
+    {
+      "role": "v249_runtime_lock",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v249-explicit-applicability/runtime-lock.json",
+      "sha256": "5f20ee4aef5ca6a997786a5590fd78b7bd92fd3724d9a274ba273c3fdd53c796",
+      "size_bytes": 23340
+    },
+    {
+      "role": "v249_terminal",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v249-explicit-applicability/terminal.json",
+      "sha256": "56497104fa40aee405a769f39fba5ba082418e3149909222708954e63bb06a5d",
+      "size_bytes": 3523
+    },
+    {
+      "role": "v249_source_packet",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v249-explicit-applicability/turns/v249-explicit-applicability-d7c914bc1cee2c432b36/input.private.json",
+      "sha256": "b0b693ff7d774a61d004d7dca6991a1324c27ed4c3c5ce7ca5d9d0a9c7b44d63",
+      "size_bytes": 24592
+    },
+    {
+      "role": "v249_base_instructions",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v249-explicit-applicability/turns/v249-explicit-applicability-d7c914bc1cee2c432b36/base-instructions.private.md",
+      "sha256": "6bd48754765be6d48d40b0e1a757549784304aaa5fd3c4e6c168143b5e74d3ff",
+      "size_bytes": 9340
+    },
+    {
+      "role": "v249_prompt",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v249-explicit-applicability/turns/v249-explicit-applicability-d7c914bc1cee2c432b36/prompt.private.md",
+      "sha256": "0ae782f2653b13b1fa1136b1a7ed9639f988583a28e3c32c593c09a608e5754c",
+      "size_bytes": 8856
+    },
+    {
+      "role": "v249_output_schema",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v249-explicit-applicability/turns/v249-explicit-applicability-d7c914bc1cee2c432b36/schema.json",
+      "sha256": "eda5ba2a8e0bfc105fcf84ee7837b6d2f9f62bbf3e34c436b7c397ad5a00d61d",
+      "size_bytes": 25597
+    },
+    {
+      "role": "v249_projection_schema",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v249-explicit-applicability/turns/v249-explicit-applicability-d7c914bc1cee2c432b36/projection-schema.json",
+      "sha256": "1f84977a2a884ba746c56f99a42ab2620d14accd9a97ccb72d17a07d096f85df",
+      "size_bytes": 17150
+    },
+    {
+      "role": "instruction_source",
+      "path": "/Users/kolbydayley/.codex/AGENTS.md",
+      "sha256": "d312dd99bba39962891fa7c5eeab50c2918b3188f1b31dc0c99939e3d35d10f7",
+      "size_bytes": 10197
+    }
+  ],
+  "privacy": "private_analysis_only_no_source_event_prompt_or_output_text_in_public_receipts"
+}

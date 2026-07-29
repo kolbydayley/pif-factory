@@ -1,0 +1,219 @@
+{
+  "schema_version": "pif_evaluation_expanded_cap_direct_reference_directive_v6",
+  "created_at": "2026-07-18T17:52:00-04:00",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "plan_epoch": 6,
+  "step_id": "expanded_cap_full_event_direct_reference_reserve_v6",
+  "purpose": "execute_the_unchanged_epoch5_all_event_direct_reference_judge_from_a_fresh_root_under_audited_remaining_reserve_capacity_control",
+  "execution_contract": {
+    "extraction_model_call_cap": 0,
+    "semantic_judge_call_cap": 3,
+    "required_ab_ba_call_count": 2,
+    "adjudication_call_cap": 1,
+    "semantic_retry_cap": 0,
+    "judge_model": "gpt-5.5",
+    "judge_reasoning_effort": "high",
+    "judge_transport": "official_codex_app_server_stdio_managed_chatgpt_auth",
+    "ordered_turn_names": [
+      "epoch6_direct_reference_ab",
+      "epoch6_direct_reference_ba",
+      "epoch6_direct_reference_adjudication"
+    ],
+    "fresh_root_required": true,
+    "all_events_direct_to_full_event_judge": true,
+    "semantic_prefilter_allowed": false,
+    "semantic_pruning_allowed": false,
+    "support_or_alignment_prefilter_allowed": false,
+    "reference_system_ids": null,
+    "abstention_allowed": true,
+    "origin_neutral_adjudication_only_for_observable_disagreement": true,
+    "production_cost_projection": {
+      "baseline_end_to_end_tokens": 10065426,
+      "production_amortized_context_tokens": 600538,
+      "production_scale": 30,
+      "extraction_total_tokens": 32631,
+      "production_amortized_total_tokens": 1579468,
+      "production_amortized_total_token_ratio": 0.15692,
+      "judge_tokens_included_in_production_formula": false
+    }
+  },
+  "capacity_contract": {
+    "policy_schema_version": "pif_app_server_capacity_policy_v20",
+    "source_policy_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-control-v20/capacity-policy-v20.json",
+    "minimum_remaining_reserve_percent": 20,
+    "quota_points_per_million_tokens": 17,
+    "maximum_total_tokens_per_turn": 102000,
+    "phase_total_token_bound": 306000,
+    "projected_phase_quota_points": 6,
+    "used_percent_threshold_allowed": false,
+    "rate_limit_reached_type_must_be_null": true,
+    "unknown_usage_hard_stop": true,
+    "no_turn_preflight_required": true,
+    "reprobe_before_each_semantic_turn": true
+  },
+  "predecessor_contract": {
+    "plan_epoch": 5,
+    "state": "pre_turn_waiting_terminal_immutable",
+    "semantic_turn_count": 0,
+    "semantic_retry_allowed": false,
+    "runtime_or_evidence_mutation_allowed": false,
+    "predecessor_process_lock_must_be_held_by_successor": true,
+    "allowed_reuse": "checksum_bound_private_inputs_and_pure_scoring_helpers_only"
+  },
+  "witness_contract": {
+    "source_segment_order": [
+      "seg_c84d5569778c65202b572971",
+      "seg_5d6fb274a5d25880b9db3006"
+    ],
+    "baseline_dense_event_count": 27,
+    "baseline_no_signal_event_count": 0,
+    "candidate_dense_event_count": 39,
+    "candidate_no_signal_event_count": 1,
+    "baseline_total_event_count": 27,
+    "candidate_total_event_count": 40,
+    "shared_witness_total": 67,
+    "identical_ab_ba_case_order_required": true,
+    "opaque_witness_ids_required": true,
+    "one_shared_augmented_reference_required": true,
+    "all_candidate_events_preserved": true
+  },
+  "acceptance_contract": {
+    "candidate_strict_full_field_macro_f1_min": 0.97,
+    "candidate_must_be_noninferior_to_baseline": true,
+    "production_amortized_total_token_ratio_max": 0.28,
+    "exact_evidence_rate": 1.0,
+    "quality_failure_is_rejected": true,
+    "operational_failure_is_waiting": true,
+    "winner_frozen_by_this_step": false,
+    "holdout_authorized_by_this_step": false,
+    "production_mutation_allowed": false
+  },
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-full-event-direct-reference-reserve-v6/plan-step-receipt.json",
+  "frozen_inputs": [
+    {
+      "role": "epoch5_attempt_spec",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/attempt-spec.json",
+      "sha256": "2144a8842bdad259cdf88cbc1387f0c6ac6a212fee484b81f7241cde85f10bd5",
+      "size_bytes": 1357
+    },
+    {
+      "role": "epoch5_runtime_lock",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/runtime-lock.json",
+      "sha256": "dadbe5c28f12422b826c0e425595c85464dd8f8ce0bf8b08e10542d0703bc2a7",
+      "size_bytes": 10799
+    },
+    {
+      "role": "epoch5_launch_receipt",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/launch-receipt.json",
+      "sha256": "7ada3bc2540618927bb964a1606a05b2c4224d574b521b64eb59a4516b09e57b",
+      "size_bytes": 1362
+    },
+    {
+      "role": "epoch5_plan_step_receipt",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/plan-step-receipt.json",
+      "sha256": "50c0f4ebfe465eac44b55e4041c2e10debcd5071472fd6c7b45073dec5f6a0f4",
+      "size_bytes": 6165
+    },
+    {
+      "role": "epoch5_terminal",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/terminal.json",
+      "sha256": "50c0f4ebfe465eac44b55e4041c2e10debcd5071472fd6c7b45073dec5f6a0f4",
+      "size_bytes": 6165
+    },
+    {
+      "role": "epoch5_pool",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/shared-witness-pool.private.json",
+      "sha256": "69d1f54f82b169b59958b50a0e3e7dbc1bfd4b7b06385ec50ba77975d4f23ee8",
+      "size_bytes": 138095
+    },
+    {
+      "role": "epoch5_mapping",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/private-witness-mapping.private.json",
+      "sha256": "4a13b430f90c73f94186b37e6b87f45d46ca45f55bcc5875725fb329dc1e0242",
+      "size_bytes": 193924
+    },
+    {
+      "role": "epoch5_candidate_lineage",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/candidate-lineage.json",
+      "sha256": "ad5127008ef6ab7fbc1a91f98b02e694f2a1495d8604964cc7e5d424ab81909b",
+      "size_bytes": 12890
+    },
+    {
+      "role": "epoch5_base_instructions",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/requests/base-instructions.private.md",
+      "sha256": "f2e3cc9c8d47ca4ad46d5bac4b6c581c5be612ea4602819e3b4fe4150e1bdbc0",
+      "size_bytes": 1056
+    },
+    {
+      "role": "epoch5_prompt_ab",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/requests/prompt-ab.private.md",
+      "sha256": "479317a1d6add95b8cb199d891905d0af3dc7a81745c1dfd28ca0dea90825944",
+      "size_bytes": 100517
+    },
+    {
+      "role": "epoch5_schema_ab",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/requests/schema-ab.json",
+      "sha256": "460f8a52179323b8fa8b70e7ff1ea14da4e81120c251686e18e50330d3d3c383",
+      "size_bytes": 25485
+    },
+    {
+      "role": "epoch5_prompt_ba",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/requests/prompt-ba.private.md",
+      "sha256": "ee695fde275c022d2b29751539656169a31dd388dda35bcb6db35d31dc7e21e1",
+      "size_bytes": 100517
+    },
+    {
+      "role": "epoch5_schema_ba",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/requests/schema-ba.json",
+      "sha256": "2ad802a3a96d6df28a9243afa1167ce97d208bb95f4beda7c781cb27dfd5edbc",
+      "size_bytes": 25485
+    },
+    {
+      "role": "epoch5_judge_spec",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/judge/judge-spec.json",
+      "sha256": "439b39388ae18e586a08e4c16e9114e41cb0b072229e868d793343e67af94475",
+      "size_bytes": 1485
+    },
+    {
+      "role": "epoch5_working_prompt_ab",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/judge/prompt-ab.private.md",
+      "sha256": "479317a1d6add95b8cb199d891905d0af3dc7a81745c1dfd28ca0dea90825944",
+      "size_bytes": 100517
+    },
+    {
+      "role": "epoch5_working_schema_ab",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/judge/schema-ab.json",
+      "sha256": "460f8a52179323b8fa8b70e7ff1ea14da4e81120c251686e18e50330d3d3c383",
+      "size_bytes": 25485
+    },
+    {
+      "role": "epoch5_working_prompt_ba",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/judge/prompt-ba.private.md",
+      "sha256": "ee695fde275c022d2b29751539656169a31dd388dda35bcb6db35d31dc7e21e1",
+      "size_bytes": 100517
+    },
+    {
+      "role": "epoch5_working_schema_ba",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/judge/schema-ba.json",
+      "sha256": "2ad802a3a96d6df28a9243afa1167ce97d208bb95f4beda7c781cb27dfd5edbc",
+      "size_bytes": 25485
+    },
+    {
+      "role": "audited_v20_capacity_policy",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-control-v20/capacity-policy-v20.json",
+      "sha256": "07f2dfc6029cc072fe2e0d91557c219820a35bad064715a7e1580526b3c5e64f",
+      "size_bytes": 1698
+    }
+  ],
+  "terminal_contract": {
+    "receipt_schema_version": "pif_semantic_plan_step_receipt_v1",
+    "passed_state": "passed",
+    "quality_failure_state": "rejected",
+    "operational_failure_state": "waiting",
+    "zero_retry": true,
+    "strict_thread_turn_call_accounting": true,
+    "development_winner_frozen": false,
+    "holdout_authorized": false,
+    "production_mutated": false
+  }
+}

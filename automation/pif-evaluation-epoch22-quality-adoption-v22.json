@@ -1,0 +1,111 @@
+{
+  "acceptance_contract": {
+    "candidate_noninferiority_required": true,
+    "holdout_authorized": false,
+    "production_mutation_allowed": false,
+    "production_ratio_max": 0.28,
+    "quality_threshold": 0.97,
+    "quality_failure_state": "rejected"
+  },
+  "authority": "direct_user_instruction",
+  "authorization_statement": "You have my full permission to continue. No need to seek out my approval anymore.",
+  "authorized_by": "kolby",
+  "execution_contract": {
+    "exact_span_projection_only": true,
+    "semantic_fields_mutable": false,
+    "semantic_model_call_cap": 0,
+    "semantic_retry_cap": 0,
+    "source_output_replay_allowed": false
+  },
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch22-quality-adoption-v1/plan-step-receipt.json",
+  "frozen_inputs": [
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch21-single-message-quality-recovery-v1/runtime-lock.json",
+      "role": "epoch21_runtime_lock",
+      "sha256": "850797f40ae297e08c1d53487b69515575fe11b8e089b3a5cf33719ee904f7d1",
+      "size_bytes": 12726
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch21-single-message-quality-recovery-v1/plan-step-receipt.json",
+      "role": "epoch21_plan_step_receipt",
+      "sha256": "829c953f0561b09e29b58e817d8843e827f348266c60dd81249895b00a2151d8",
+      "size_bytes": 6797
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch21-single-message-quality-recovery-v1/terminal.json",
+      "role": "epoch21_terminal",
+      "sha256": "829c953f0561b09e29b58e817d8843e827f348266c60dd81249895b00a2151d8",
+      "size_bytes": 6797
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch21-single-message-quality-recovery-v1/shared-witness-pool.private.json",
+      "role": "shared_witness_pool",
+      "sha256": "6606f684532a5115fa8c0bd0f6a1c8acea79f15f2afd1143c54339e90852aadd",
+      "size_bytes": 349482
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch21-single-message-quality-recovery-v1/private-witness-mapping.private.json",
+      "role": "private_witness_mapping",
+      "sha256": "f6780c6ad055fce03247f4e2ed59e842110e6392a8bf2d6e5d71cc99ab1c054d",
+      "size_bytes": 569270
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch21-single-message-quality-recovery-v1/turns/epoch21-origin-neutral-quality-recovery/variant.private.json",
+      "role": "epoch21_variant",
+      "sha256": "6b4f4c07103036de6fadad30a718ba7d4cf4d03e9f9ead401e1d2e36c66d0b15",
+      "size_bytes": 349359
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch21-single-message-quality-recovery-v1/turns/epoch21-origin-neutral-quality-recovery/capacity.json",
+      "role": "epoch21_capacity",
+      "sha256": "37bab2e8d343b7bf25af8ed506184f5f5204488fb682843b846128fd515e9784",
+      "size_bytes": 1314
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch21-single-message-quality-recovery-v1/turns/epoch21-origin-neutral-quality-recovery/sidecar.json",
+      "role": "epoch21_sidecar",
+      "sha256": "f5eb80f2680830bcb56ea77123a1643efa6a40463ee9149ca4a5a01f06ff0bc4",
+      "size_bytes": 2399
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch21-single-message-quality-recovery-v1/turns/epoch21-origin-neutral-quality-recovery/output.private.json",
+      "role": "epoch21_output",
+      "sha256": "9ef83717182d03df6f5cb0c938d75ff13210647c9bbddbfbc363bca91853868a",
+      "size_bytes": 78751
+    }
+  ],
+  "plan_epoch": 22,
+  "projection_contract": {
+    "allowed_normalization": "remove_only_line_leading_speaker_number_markers_and_collapse_formatting_whitespace_for_unique_exact_source_projection",
+    "expected_changes": [
+      {
+        "after_sha256": "20bfd397209f7a538bb7dc0308037e1ebef1554100253b57f486ff5d20f99566",
+        "after_size_bytes": 97,
+        "before_sha256": "a038983fde0d3946bd342ac6b56f0df82f132a73ae02e89349cfb0aac331f466",
+        "before_size_bytes": 86,
+        "case_index": 5,
+        "span_index": 3,
+        "support_index": 11,
+        "unique_projection_count": 1
+      },
+      {
+        "after_sha256": "78e10a196260641060beb577197b86d485db1deaf3de85e6aa8749ec4a1c6a2a",
+        "after_size_bytes": 345,
+        "before_sha256": "d6ec4ef9b91e793741caa8145a3c3a40c707c0858361895f556ba3eb1628027f",
+        "before_size_bytes": 334,
+        "case_index": 5,
+        "span_index": 0,
+        "support_index": 22,
+        "unique_projection_count": 1
+      }
+    ],
+    "source_validation_errors": [
+      "case_5_support_11_evidence_not_exact",
+      "case_5_support_22_evidence_not_exact"
+    ]
+  },
+  "schema_version": "pif_evaluation_epoch22_quality_adoption_directive_v1",
+  "state": "authorized_zero_call_deterministic_adoption",
+  "step_id": "canonical_v31_epoch22_quality_adoption_v22",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10"
+}

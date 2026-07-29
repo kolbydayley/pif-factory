@@ -1,0 +1,205 @@
+{
+  "schema_version": "pif_evaluation_ordered_recurrent_full_schema_fold_directive_v3",
+  "created_at": "2026-07-18T14:08:03Z",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "plan_epoch": 3,
+  "step_id": "ordered_recurrent_full_schema_fold_canary_v3",
+  "purpose": "run_one_ordered_recurrent_full_schema_fold_canary_after_the_valid_epoch_2_quality_rejection",
+  "predecessor_receipt": {
+    "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-true-full-output-shared-reference-v2/plan-step-receipt.json",
+    "sha256": "056a03c0be9521c5be624ef6a9a017aa60b3914668b1fe75bddb95875f2b2d02",
+    "state": "rejected",
+    "candidate_strict_full_field_macro_f1": 0.963768,
+    "quality_threshold": 0.97,
+    "sole_failed_check": "candidate_strict_full_field_macro_f1_gte_0_97",
+    "accounting_complete": true,
+    "production_mutated": false
+  },
+  "architecture_contract": {
+    "architecture_id": "ordered_recurrent_full_schema_fold",
+    "hypothesis": "processing the shorter no-signal segment first and the dense segment second as two full-schema turns in one persistent ephemeral Sol-high thread will reduce cross-segment output competition while retaining full semantic ownership and enough grounded coverage to clear the unchanged full-event quality gate",
+    "representative_development_canary": {
+      "episode_count": 1,
+      "segment_count": 2,
+      "turn_order": [
+        {
+          "turn_index": 0,
+          "turn_name": "ordered-fold-no-signal-first",
+          "segment_id": "seg_5d6fb274a5d25880b9db3006",
+          "density_stratum": "no_signal",
+          "total_token_cap": 24000
+        },
+        {
+          "turn_index": 1,
+          "turn_name": "ordered-fold-dense-second",
+          "segment_id": "seg_c84d5569778c65202b572971",
+          "density_stratum": "dense",
+          "total_token_cap": 48891
+        }
+      ],
+      "reference_visible_to_model": false,
+      "target_count_visible_to_model": false,
+      "prior_candidate_output_visible_to_model": false,
+      "turn_1_history_visible_to_turn_2": true
+    },
+    "semantic_owner": "gpt-5.6-sol_high",
+    "semantic_decisions": [
+      "event_discovery",
+      "event_boundaries",
+      "exact_evidence_selection",
+      "actor",
+      "reported_actor",
+      "speaker",
+      "claim",
+      "event_type",
+      "stance",
+      "certainty",
+      "temporal_horizon",
+      "causal_mechanism",
+      "target",
+      "metric_applicability_and_values",
+      "all_optional_field_applicability"
+    ],
+    "deterministic_postprocessing": "schema_enum_exact_evidence_offset_metric_substring_provenance_cap_accounting_validation_and_structural_segment_array_concatenation_only",
+    "deterministic_semantic_pruning_allowed": false,
+    "deterministic_support_filtering_allowed": false,
+    "deterministic_deduplication_allowed": false,
+    "deterministic_relabeling_allowed": false,
+    "exact_identity_duplicate_detection": "diagnostic_only_nonblocking_all_events_flow_to_llm_equivalence_judge"
+  },
+  "execution_contract": {
+    "extraction_model_call_cap": 2,
+    "semantic_judge_call_cap": 0,
+    "semantic_retry_cap": 0,
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "high",
+    "transport": "official_pinned_codex_0_144_1_persistent_app_server_stdio_managed_chatgpt_auth",
+    "app_server_process_count": 1,
+    "thread_count": 1,
+    "thread_ephemeral": true,
+    "thread_reused_for_both_turns": true,
+    "turn_count": 2,
+    "turn_total_token_caps": [
+      24000,
+      48891
+    ],
+    "combined_extraction_total_token_cap": 72891,
+    "timeout_seconds_per_turn": 1200,
+    "v249_full_applicability_schema_and_projection_required": true,
+    "all_source_units_reviewed_required": true,
+    "exact_source_evidence_required": true,
+    "complete_usage_cache_reasoning_wall_time_telemetry_required": true,
+    "managed_chatgpt_auth_required": true,
+    "zero_silent_retry": true,
+    "turn_2_preconditions": {
+      "turn_1_status_completed": true,
+      "turn_1_auth_type": "chatgpt",
+      "turn_1_usage_status": "measured",
+      "turn_1_usage_complete": true,
+      "turn_1_total_tokens_lte": 24000,
+      "remaining_combined_token_cap_gte": 48891,
+      "fresh_no_turn_capacity_probe_required": true,
+      "rate_limit_reached_type": null,
+      "minimum_remaining_reserve_percent_after_conservative_projection": 20
+    },
+    "production_cost_projection": {
+      "baseline_end_to_end_tokens": 10065426,
+      "production_amortized_context_tokens": 600538,
+      "production_scale": 30,
+      "combined_extraction_total_token_cap": 72891,
+      "projected_production_amortized_total_tokens": 2787268,
+      "projected_production_amortized_total_token_ratio": 0.276915,
+      "required_ratio_max": 0.28
+    }
+  },
+  "structural_acceptance_contract": {
+    "both_declared_segments_returned_once": true,
+    "segment_order_preserved": true,
+    "complete_v249_projection_valid": true,
+    "all_source_units_reviewed": true,
+    "unresolved_source_unit_count": 0,
+    "exact_evidence_rate": 1.0,
+    "metric_grounding_error_event_count": 0,
+    "event_cap_violation_count": 0,
+    "exact_identity_duplicate_count_reported_diagnostic_only": true,
+    "combined_extraction_total_tokens_max": 72891,
+    "production_amortized_total_token_ratio_max": 0.28,
+    "accounting_complete": true,
+    "production_mutated": false,
+    "holdout_authorized": false,
+    "development_winner_frozen": false
+  },
+  "terminal_contract": {
+    "operational_or_transport_or_unknown_usage_failure_state": "waiting",
+    "structural_or_cost_or_semantic_quality_failure_state": "rejected",
+    "structural_pass_state": "passed",
+    "receipt_schema_version": "pif_semantic_plan_step_receipt_v1",
+    "receipt_winner_frozen": false,
+    "receipt_holdout_authorized": false,
+    "receipt_production_mutated": false
+  },
+  "branch_after_receipt": {
+    "passed": "run_checksum_bound_full_event_ab_ba_evaluator_over_every_baseline_and_every_recurrent_canary_event_without_support_or_alignment_prefilter",
+    "rejected": "freeze_and_reject_the_ordered_recurrent_full_schema_fold_architecture_without_field_level_repair",
+    "waiting": "create_one_new_checksum_bound_operational_recovery_without_replaying_completed_turns"
+  },
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-ordered-recurrent-full-schema-fold-v3/plan-step-receipt.json",
+  "frozen_inputs": [
+    {
+      "role": "epoch_2_receipt",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-true-full-output-shared-reference-v2/plan-step-receipt.json",
+      "sha256": "056a03c0be9521c5be624ef6a9a017aa60b3914668b1fe75bddb95875f2b2d02"
+    },
+    {
+      "role": "epoch_2_score",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-true-full-output-shared-reference-v2/shared-reference-score.json",
+      "sha256": "f4e66ab829cb35f40335a191dda08daea4384173ddb4cfe871bd909a1cf4a5e3"
+    },
+    {
+      "role": "epoch_2_runtime_lock",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-true-full-output-shared-reference-v2/runtime-lock.json",
+      "sha256": "1ab4c1f6a33101c35b361f44bafadf0357ac730dc15de77c2749399cb5262c0d"
+    },
+    {
+      "role": "v249_runtime_lock",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v249-explicit-applicability/runtime-lock.json",
+      "sha256": "5f20ee4aef5ca6a997786a5590fd78b7bd92fd3724d9a274ba273c3fdd53c796"
+    },
+    {
+      "role": "v249_source_packet",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v249-explicit-applicability/turns/v249-explicit-applicability-d7c914bc1cee2c432b36/input.private.json",
+      "sha256": "b0b693ff7d774a61d004d7dca6991a1324c27ed4c3c5ce7ca5d9d0a9c7b44d63"
+    },
+    {
+      "role": "v249_base_instructions",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v249-explicit-applicability/turns/v249-explicit-applicability-d7c914bc1cee2c432b36/base-instructions.private.md",
+      "sha256": "6bd48754765be6d48d40b0e1a757549784304aaa5fd3c4e6c168143b5e74d3ff"
+    },
+    {
+      "role": "v249_output_schema",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v249-explicit-applicability/turns/v249-explicit-applicability-d7c914bc1cee2c432b36/schema.json",
+      "sha256": "eda5ba2a8e0bfc105fcf84ee7837b6d2f9f62bbf3e34c436b7c397ad5a00d61d"
+    },
+    {
+      "role": "v249_projection_schema",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v249-explicit-applicability/turns/v249-explicit-applicability-d7c914bc1cee2c432b36/projection-schema.json",
+      "sha256": "1f84977a2a884ba746c56f99a42ab2620d14accd9a97ccb72d17a07d096f85df"
+    },
+    {
+      "role": "v249_applicability_receipt",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v249-explicit-applicability/applicability-receipt.json",
+      "sha256": "609fbf140a249a26494aa2598bc1f5fe60329a41996055b568101be8f9a4af32"
+    },
+    {
+      "role": "v249_evidence_provenance",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v249-explicit-applicability/evidence-provenance.private.json",
+      "sha256": "f31bcfbd65b437a4ac3bc448c1aace98290511915151ddbc681f738ed07b52de"
+    },
+    {
+      "role": "v249_terminal",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v249-explicit-applicability/terminal.json",
+      "sha256": "56497104fa40aee405a769f39fba5ba082418e3149909222708954e63bb06a5d"
+    }
+  ],
+  "privacy": "private_analysis_only_no_source_event_prompt_or_output_text_in_public_receipts"
+}

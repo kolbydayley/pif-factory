@@ -1,0 +1,139 @@
+{
+  "architecture_ranking": [
+    {
+      "architecture": "nested_proposition_event_ledger_medium_effort",
+      "evidence": "Epoch 32's separate inventory and event arrays produced 40 propositions and 40 events, demonstrating materially better coverage volume than epoch 27's 25 events, but duplicated evidence transport caused two pointer mismatches and high-effort output projected to 81504 tokens. Nesting one full canonical event inside each proposition item preserves the coverage architecture while making one-to-one realization structural, removing duplicate evidence transport, and using the previously measured medium-effort cost lane.",
+      "rank": 1,
+      "selected": true
+    },
+    {
+      "architecture": "two_turn_inventory_then_canonical_realization",
+      "evidence": "It separates planning and realization but duplicates the fixed 14979-token input context and cannot plausibly satisfy the 73926 six-case ceiling after epoch 32 already projected above it in one turn.",
+      "rank": 2,
+      "selected": false
+    },
+    {
+      "architecture": "same_dual_array_inventory_with_pointer_instruction_patch",
+      "evidence": "This would be an isolated pointer-field repair of the rejected epoch 32 architecture and is expressly closed.",
+      "rank": 3,
+      "selected": false
+    }
+  ],
+  "authority": "direct_user_instruction",
+  "authorization_statement": "You have my full permission to continue. No need to seek out my approval anymore.",
+  "authorized_by": "kolby",
+  "canary_contract": {
+    "architecture_hypothesis": "A nested proposition-event ledger will preserve epoch 32's 40-event coverage behavior while eliminating duplicated pointer synchronization, and medium reasoning effort plus the smaller wire format will reduce the measured six-case token projection from 81504 to at most 73926 without semantic pruning or repair.",
+    "candidate_model": "gpt-5.6-sol",
+    "candidate_reasoning_effort": "medium",
+    "deterministic_ledger_unwrap_only": true,
+    "deterministic_semantic_repair_allowed": false,
+    "epoch27_extraction_replay_allowed": false,
+    "epoch31_quality_replay_allowed": false,
+    "epoch32_extraction_replay_allowed": false,
+    "extraction_only": true,
+    "full_six_case_total_token_ceiling": 73926,
+    "measured_total_token_ceiling": 36000,
+    "model_authors_one_nested_full_canonical_event_per_proposition": true,
+    "no_duplicate_inventory_event_evidence_transport": true,
+    "semantic_model_call_cap": 1,
+    "semantic_retry_cap": 0,
+    "selected_segment_ids": [
+      "seg_80fe585badf8f3d3597d0f96",
+      "seg_7c027e01ed7e813b528c5c7f"
+    ],
+    "stop_rule": "Any transport, accounting, nested-ledger structure, canonical-fidelity, exact-evidence, timeout, measured-token, or six-case cost-projection failure rejects this architecture without replay or field repair. Structural and projected-cost pass advances only to a fresh frozen full-event AB/BA quality gate over every baseline and candidate event.",
+    "thread_mode": "new_thread"
+  },
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch33-nested-proposition-event-ledger-canary-v1/plan-step-receipt.json",
+  "frozen_predecessor_evidence": [
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch32-inventory-first-canary-v1/plan-step-receipt.json",
+      "role": "epoch32_receipt",
+      "sha256": "873edef6d6de28e55d88a00e189b2a137dbcea944e8b19ee4ca49b3ff312530a",
+      "size_bytes": 11797
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch32-inventory-first-canary-v1/terminal.json",
+      "role": "epoch32_terminal",
+      "sha256": "873edef6d6de28e55d88a00e189b2a137dbcea944e8b19ee4ca49b3ff312530a",
+      "size_bytes": 11797
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch32-inventory-first-canary-v1/runtime-lock.json",
+      "role": "epoch32_runtime_lock",
+      "sha256": "900a0c1ebb0c04b6405ee0c29272c719e2b45438da98ef78c55f2e1b2b2c7ef6",
+      "size_bytes": 14161
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch32-inventory-first-canary-v1/operator-authorization.json",
+      "role": "epoch32_authorization",
+      "sha256": "f8f91c7b469bf74239a20eff6edc23db85dc97ac45b2e8b7bf75ae7c1a5b3c04",
+      "size_bytes": 1585
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch32-inventory-first-canary-v1/turn/semantic-attempt.json",
+      "role": "epoch32_attempt",
+      "sha256": "541eff8bdf162c17f3edc6e41adf752028ab1fd500c51746a747bb3dda6f106c",
+      "size_bytes": 1795
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch32-inventory-first-canary-v1/turn/sidecar.json",
+      "role": "epoch32_sidecar",
+      "sha256": "161d73e863ff37d9865ea41ae07ae2d89355d2b58754a1f196ade50cbc34aaa7",
+      "size_bytes": 2343
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch32-inventory-first-canary-v1/turn/output.private.json",
+      "role": "epoch32_output",
+      "sha256": "ef3dae9479eda7ddb95978dcd4925e2658634845628c8f3188c72835ff8d79fb",
+      "size_bytes": 55368
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch32-inventory-first-canary-v1/semantic-rejection.json",
+      "role": "epoch32_rejection",
+      "sha256": "4abca3f0c967db9500ef5bbce0adf2a33da87e209ad3101dfb5e984f2e120861",
+      "size_bytes": 320
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch32-inventory-first-canary-v1/prepared-turn/request.private.json",
+      "role": "epoch32_request",
+      "sha256": "279916f353d580537aaea303a6f61bd944733d71e4cc1c1268df9c3f175e6812",
+      "size_bytes": 591384
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch27-tagged-metric-token-id-canary-v1/prepared-turn/request.private.json",
+      "role": "epoch27_request",
+      "sha256": "f94df0a9f66f3de82a67f6442e37e5f6f0e563794e6722e5a6e56cc1e02513b6",
+      "size_bytes": 588929
+    }
+  ],
+  "intention_to_treat_accounting": {
+    "maximum_semantic_model_call_count_after_epoch33_dispatch": 11,
+    "predecessor_measured_total_tokens": 347709,
+    "predecessor_replay_allowed": false,
+    "predecessor_semantic_model_call_count": 10,
+    "predecessor_unknown_usage_turn_count": 2
+  },
+  "plan_epoch": 33,
+  "promotion_contract": {
+    "candidate_noninferiority_required": true,
+    "full_event_ab_ba_quality_required_after_structural_and_cost_pass": true,
+    "full_six_case_production_total_token_ceiling": 73926,
+    "holdout_authorized": false,
+    "production_amortized_ratio_max": 0.28,
+    "production_mutation_allowed": false,
+    "quality_threshold": 0.97,
+    "winner_frozen": false
+  },
+  "schema_version": "pif_evaluation_epoch33_nested_proposition_event_ledger_canary_directive_v1",
+  "state": "authorized_for_zero_call_freeze_then_one_bounded_nested_ledger_canary",
+  "step_id": "canonical_v31_epoch33_nested_proposition_event_ledger_canary_v33",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "transport_contract": {
+    "api_key_billing_allowed": false,
+    "managed_chatgpt_pro_auth_required": true,
+    "raw_session_token_replay_allowed": false,
+    "transport": "official_codex_app_server_stdio_managed_chatgpt_auth"
+  }
+}

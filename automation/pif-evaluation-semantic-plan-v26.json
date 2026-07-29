@@ -1,0 +1,20 @@
+{
+  "plan_epoch": 26,
+  "schema_version": "pif_evaluation_semantic_plan_v1",
+  "state": "executable",
+  "step": {
+    "accepted_receipt_states": [
+      "passed",
+      "rejected",
+      "waiting"
+    ],
+    "directive_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/automation/pif-evaluation-epoch26-unit-owned-token-id-low-recovery-v26.json",
+    "directive_sha256": "b5d0dc3c0737925a32de1eb6b6cf01ad86f6a3e626908161a7bddbb9465b373d",
+    "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch26-unit-owned-token-id-low-recovery-v1/plan-step-receipt.json",
+    "max_model_calls": 1,
+    "max_total_tokens": 30000,
+    "state": "executable",
+    "step_id": "canonical_v31_epoch26_unit_owned_token_id_low_recovery_v26"
+  },
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10"
+}

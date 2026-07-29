@@ -1,0 +1,112 @@
+{
+  "architecture_evidence": {
+    "aggregate_measured_total_tokens_after_epoch41": 871445,
+    "aggregate_semantic_model_call_count_after_epoch41": 20,
+    "aggregate_unknown_usage_turn_count_after_epoch41": 3,
+    "epoch32_event_count": 40,
+    "epoch32_full_six_case_total_token_projection": 81504,
+    "epoch32_inventory_item_count": 40,
+    "epoch32_pointer_mismatch_count": 2,
+    "epoch41_diagnostic_path": "$.s[0].u[3].e[0].value_range literal-token ID is unknown",
+    "epoch41_failed_checks": [
+      "semantic_output_validity"
+    ],
+    "epoch41_full_six_case_total_token_projection": 50235,
+    "epoch41_measured_total_tokens": 24813,
+    "epoch41_state": "rejected",
+    "epoch41_terminal_reason": "epoch41_one_turn_canary_semantic_output_rejected",
+    "epoch41_unknown_metric_token_id_failure": true,
+    "failure_class": "inventory_recall_signal_requires_compact_exact_pointer_transport_without_arbitrary_model_authored_token_ids",
+    "semantic_field_repair_authorized": false
+  },
+  "architecture_ranking": [
+    {
+      "architecture": "one_turn_compact_inventory_first_evidence_relative_metric_ordinal",
+      "hypothesis": "The epoch-32 inventory-first architecture exposed forty candidate events, while compact normalized tables keep the one-turn cost projection below the production ceiling and evidence-relative ordinals remove arbitrary literal-token identifiers from model output without changing any semantic decision.",
+      "rank": 1,
+      "selected": true
+    },
+    {
+      "architecture": "two_turn_compact_inventory_then_full_canonical_realization",
+      "hypothesis": "A separate inventory turn could preserve proposition salience, but it duplicates fixed source and schema context and has a weaker path to the frozen six-case token ceiling than one compact inventory-first realization.",
+      "rank": 2,
+      "selected": false
+    },
+    {
+      "architecture": "one_turn_disjoint_owner_local_full_canonical_semantic_shards",
+      "hypothesis": "The epoch-41 shard architecture met its measured cost projection but was structurally rejected on an unknown model-authored metric token identifier, so it is immutable rejected evidence and is not replayed or field-patched.",
+      "rank": 3,
+      "selected": false
+    }
+  ],
+  "authority": "direct_user_instruction",
+  "authorization_statement": "You have my full permission to continue. No need to seek out my approval anymore.",
+  "authorized_by": "kolby",
+  "canary_contract": {
+    "candidate_model": "gpt-5.6-sol",
+    "candidate_reasoning_effort": "medium",
+    "deterministic_evidence_relative_metric_ordinal_projection_only": true,
+    "deterministic_inventory_removal_only": true,
+    "deterministic_semantic_deduplication_allowed": false,
+    "deterministic_semantic_pruning_allowed": false,
+    "deterministic_semantic_relabeling_allowed": false,
+    "deterministic_support_filtering_allowed": false,
+    "event_count_is_diagnostic_only": true,
+    "expected_request_sha256": "908a62950e35b3b46f57fd2659c9aeae5aec4386905775a9b30d9e80f935c62f",
+    "expected_request_shape": {
+      "base_bytes": 25071,
+      "evidence_span_count": 38,
+      "literal_token_count": 2020,
+      "prompt_bytes": 14277,
+      "request_bytes": 315688,
+      "schema_bytes": 6534,
+      "source_unit_count": 20
+    },
+    "full_six_case_total_token_ceiling": 73926,
+    "inventory_and_event_evidence_pointer_identity_required": true,
+    "inventory_protocol_version": "pif_compact_inventory_evidence_relative_metric_ordinal_v1",
+    "measured_total_token_ceiling": 40000,
+    "model_authors_evidence_relative_metric_token_ordinals": true,
+    "model_authors_every_full_canonical_event_value": true,
+    "model_authors_every_normalized_table_value": true,
+    "model_authors_ordered_source_unit_proposition_inventory": true,
+    "one_inventory_item_per_canonical_event": true,
+    "predecessor_semantic_replay_allowed": false,
+    "selected_segment_ids": [
+      "seg_80fe585badf8f3d3597d0f96",
+      "seg_7c027e01ed7e813b528c5c7f"
+    ],
+    "semantic_model_call_cap": 1,
+    "semantic_retry_cap": 0,
+    "structural_and_cost_pass_requires_quality_evaluation": true,
+    "table_duplicate_rejection_allowed": false
+  },
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch42-compact-inventory-evidence-ordinal-canary-v1/plan-step-receipt.json",
+  "intention_to_treat_accounting": {
+    "maximum_semantic_model_call_count_after_epoch42_dispatch": 21,
+    "predecessor_measured_total_tokens": 871445,
+    "predecessor_replay_allowed": false,
+    "predecessor_semantic_model_call_count": 20,
+    "predecessor_unknown_usage_turn_count": 3
+  },
+  "plan_epoch": 42,
+  "promotion_contract": {
+    "candidate_noninferiority_required": true,
+    "fresh_full_event_ab_ba_quality_required": true,
+    "holdout_authorized": false,
+    "production_mutation_allowed": false,
+    "quality_threshold": 0.97,
+    "winner_frozen": false
+  },
+  "schema_version": "pif_evaluation_epoch42_compact_inventory_evidence_ordinal_canary_directive_v1",
+  "state": "authorized_for_exactly_one_compact_inventory_evidence_ordinal_two_segment_canary",
+  "step_id": "canonical_v31_epoch42_compact_inventory_evidence_ordinal_canary_v42",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "transport_contract": {
+    "api_key_billing_allowed": false,
+    "managed_chatgpt_pro_auth_required": true,
+    "official_persistent_codex_app_server_only": true,
+    "raw_session_token_replay_allowed": false,
+    "transport": "official_codex_app_server_stdio_managed_chatgpt_auth"
+  }
+}

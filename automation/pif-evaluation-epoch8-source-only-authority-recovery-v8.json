@@ -1,0 +1,89 @@
+{
+  "schema_version": "pif_evaluation_epoch8_source_only_authority_recovery_directive_v1",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "plan_epoch": 8,
+  "step_id": "canonical_v31_epoch8_source_only_authority_recovery_v8",
+  "state": "ready_for_direct_user_authorized_execute",
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch8-source-only-authority-recovery-v1/authority-recovery-receipt.json",
+  "predecessor": {
+    "receipt": {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch7-input-authority-runtime-v1/authority-execution-receipt.json",
+      "sha256": "67bb555f50a8e4105bd4d598d3013659f792d54d82ae8cba1f74639fd9129477",
+      "size_bytes": 3219
+    },
+    "state": "rejected",
+    "terminal_reason": "epoch7_authority_structural_or_cost_contract_rejected",
+    "completed_validated_turn_count": 1,
+    "semantic_model_call_count": 1,
+    "semantic_retry_count": 0,
+    "measured_total_tokens": 124404,
+    "measured_input_tokens": 102733,
+    "prior_per_turn_acceptance_ceiling": 102000,
+    "remaining_turns_started": false,
+    "replay_authorized": false
+  },
+  "recovery_hypothesis": {
+    "class": "source_only_full_schema_reference_regeneration",
+    "evidence": "The predecessor request carried malformed 37-47KB legacy labels for every invalid segment. The first request consumed 102733 input tokens before output, making the 102000 total-token ceiling impossible.",
+    "semantic_delta": "For only the three never-started episodes, omit malformed legacy labels from model-visible input and ask the same LLM to regenerate complete canonical labels directly from exact segment source while preserving deterministic segment_quality provenance.",
+    "adopt_completed_predecessor_turn_without_replay": true,
+    "remaining_episode_count": 3,
+    "legacy_reference_labels_model_visible": false,
+    "source_text_and_full_schema_model_visible": true,
+    "deterministic_semantic_mutation_allowed": false
+  },
+  "execution_contract": {
+    "model": "gpt-5.6-sol",
+    "effort": "high",
+    "new_model_call_cap": 3,
+    "new_total_token_cap": 283596,
+    "new_per_turn_total_token_cap": 94532,
+    "cumulative_model_call_cap": 4,
+    "cumulative_total_token_cap": 408000,
+    "semantic_retry_count": 0,
+    "official_persistent_codex_app_server_only": true,
+    "managed_chatgpt_auth_only": true,
+    "managed_chatgpt_plan_type": "pro",
+    "fresh_capacity_probe_before_thread_and_turn": true,
+    "caller_supplied_capacity_admission_allowed": false,
+    "complete_usage_cache_reasoning_wall_telemetry_required": true,
+    "partial_attempt_replay_forbidden": true,
+    "api_key_auth_allowed": false,
+    "raw_session_token_auth_allowed": false,
+    "codex_exec_allowed": false
+  },
+  "source_only_contract": {
+    "legacy_reference_label_objects_in_prompt": 0,
+    "required_model_visible_fields": [
+      "full_segmented_episode_text",
+      "original_context",
+      "invalid_reference_segment_ids",
+      "segment_id",
+      "segment_text",
+      "segment_text_sha256",
+      "segment_quality"
+    ],
+    "output_schema_unchanged_from_epoch7": true,
+    "output_validator_unchanged_from_epoch7": true,
+    "preserved_valid_references_replayed_to_model": false,
+    "semantic_regex_or_keyword_rules_allowed": false
+  },
+  "terminal_contract": {
+    "accepted_states": [
+      "passed",
+      "rejected",
+      "waiting"
+    ],
+    "materialize_inputs_only_after_passed": true,
+    "quality_authorized": false,
+    "holdout_authorized": false,
+    "production_mutation_allowed": false
+  },
+  "authorization_contract": {
+    "authorized_by": "kolby",
+    "authority": "direct_user_instruction",
+    "operator_authorization_statement_sha256": "f152c313e729d6dd40609d3c8857c8b220e3e6acbc17e99495dcf9812de430f6",
+    "authorization_window_max_seconds": 14400,
+    "additional_interactive_approval_required": false
+  }
+}

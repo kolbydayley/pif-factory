@@ -1,0 +1,95 @@
+{
+  "architecture_evidence": {
+    "epoch36_baseline_strict_full_field_macro_f1": 0.848039,
+    "epoch36_candidate_strict_full_field_macro_f1": 0.689746,
+    "epoch36_candidate_supported_unit_count": 30,
+    "epoch36_exact_evidence_rate": 1.0,
+    "epoch36_full_six_case_token_projection": 59779,
+    "epoch36_shared_reference_unit_count": 57,
+    "failure_class": "single_pass_full_canonical_recall_and_granularity_shortfall",
+    "semantic_field_repair_authorized": false
+  },
+  "architecture_ranking": [
+    {
+      "architecture": "within_turn_primary_plus_independent_omission_audit_full_canonical_ledgers",
+      "hypothesis": "A second model-authored omission audit in the same response can recover supported propositions and alternate grounded event boundaries missed by the primary pass without duplicating source context across calls.",
+      "rank": 1,
+      "selected": true
+    },
+    {
+      "architecture": "two_turn_compact_inventory_then_full_canonical_realization",
+      "hypothesis": "A separate inventory can increase recall but duplicates fixed context and has prior evidence of exceeding the frozen six-case token ceiling.",
+      "rank": 2,
+      "selected": false
+    },
+    {
+      "architecture": "one_segment_per_turn_recurrent_full_canonical_extraction",
+      "hypothesis": "Per-segment turns reduce cross-segment attention but multiply fixed full-schema context and have no plausible production-cost path below the frozen ceiling.",
+      "rank": 3,
+      "selected": false
+    }
+  ],
+  "authority": "direct_user_instruction",
+  "authorization_statement": "You have my full permission to continue. No need to seek out my approval anymore.",
+  "authorized_by": "kolby",
+  "canary_contract": {
+    "audit_duplicate_rejection_allowed": false,
+    "candidate_model": "gpt-5.6-sol",
+    "candidate_reasoning_effort": "medium",
+    "deterministic_dual_ledger_concatenation_only": true,
+    "deterministic_semantic_deduplication_allowed": false,
+    "deterministic_semantic_pruning_allowed": false,
+    "deterministic_semantic_relabeling_allowed": false,
+    "deterministic_support_filtering_allowed": false,
+    "event_count_is_diagnostic_only": true,
+    "expected_request_sha256": "f97b01cea16e5508f991a336ad448a81d28ee029f588336f4dc50e6c429d2514",
+    "expected_request_shape": {
+      "base_bytes": 26292,
+      "evidence_span_count": 38,
+      "literal_token_count": 2020,
+      "prompt_bytes": 14277,
+      "request_bytes": 320705,
+      "schema_bytes": 10337,
+      "source_unit_count": 20
+    },
+    "full_six_case_total_token_ceiling": 73926,
+    "measured_total_token_ceiling": 40000,
+    "model_authors_complete_canonical_events_in_both_lanes": true,
+    "predecessor_semantic_replay_allowed": false,
+    "selected_segment_ids": [
+      "seg_80fe585badf8f3d3597d0f96",
+      "seg_7c027e01ed7e813b528c5c7f"
+    ],
+    "semantic_model_call_cap": 1,
+    "semantic_retry_cap": 0,
+    "structural_and_cost_pass_requires_quality_evaluation": true
+  },
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch37-dual-pass-omission-audit-ledger-canary-v1/plan-step-receipt.json",
+  "intention_to_treat_accounting": {
+    "maximum_semantic_model_call_count_after_epoch37_dispatch": 15,
+    "predecessor_measured_total_tokens": 596289,
+    "predecessor_replay_allowed": false,
+    "predecessor_semantic_model_call_count": 14,
+    "predecessor_unknown_usage_turn_count": 2
+  },
+  "plan_epoch": 37,
+  "promotion_contract": {
+    "candidate_noninferiority_required": true,
+    "fresh_full_event_ab_ba_quality_required": true,
+    "holdout_authorized": false,
+    "production_mutation_allowed": false,
+    "quality_threshold": 0.97,
+    "winner_frozen": false
+  },
+  "schema_version": "pif_evaluation_epoch37_dual_pass_omission_audit_ledger_canary_directive_v1",
+  "state": "authorized_for_exactly_one_dual_pass_omission_audit_two_segment_canary",
+  "step_id": "canonical_v31_epoch37_dual_pass_omission_audit_ledger_canary_v37",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "transport_contract": {
+    "api_key_billing_allowed": false,
+    "managed_chatgpt_pro_auth_required": true,
+    "official_persistent_codex_app_server_only": true,
+    "raw_session_token_replay_allowed": false,
+    "transport": "official_codex_app_server_stdio_managed_chatgpt_auth"
+  }
+}

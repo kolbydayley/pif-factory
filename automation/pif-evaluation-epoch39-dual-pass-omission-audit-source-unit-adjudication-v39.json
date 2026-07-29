@@ -1,0 +1,100 @@
+{
+  "adjudication_contract": {
+    "adjudication_call_cap": 1,
+    "adjudication_total_token_cap": 100000,
+    "effort": "high",
+    "exact_unit_projection_only": true,
+    "model": "gpt-5.5",
+    "observable_disagreement_case_ids": [
+      "jcase_32e458a9c366205fb5b44f72",
+      "jcase_b60c20e3b5f9762d31ac8618"
+    ],
+    "origin_neutral": true,
+    "prior_semantic_replay_allowed": false,
+    "semantic_output_repair_allowed": false,
+    "semantic_retry_cap": 0,
+    "source_unit_chunking_version": "pif_exact_offset_structural_source_units_v1",
+    "source_unit_ids_opaque": true,
+    "source_unit_max_characters": 900
+  },
+  "authority": "direct_user_instruction",
+  "authorization_statement": "You have my full permission to continue. No need to seek out my approval anymore.",
+  "authorized_by": "kolby",
+  "capacity_contract": {
+    "maximum_total_tokens_per_turn": 100000,
+    "minimum_remaining_reserve_percent": 20,
+    "phase_total_token_bound": 100000,
+    "projected_phase_quota_points": 2,
+    "quota_points_per_million_tokens": 17
+  },
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch39-dual-pass-omission-audit-source-unit-adjudication-v1/plan-step-receipt.json",
+  "instruction_contract": {
+    "instruction_source_paths": [
+      "/Users/kolbydayley/.codex/AGENTS.md"
+    ],
+    "instruction_source_records": [
+      {
+        "path": "/Users/kolbydayley/.codex/AGENTS.md",
+        "sha256": "8755274938f9e8502e6de3dc5d987e583d0e23dc0a40e20e4d25ee52c90548f8",
+        "size_bytes": 11280
+      }
+    ],
+    "instruction_sources_count": 1,
+    "instruction_sources_sha256": "a86aa3509517b418a3a54effc1a4f1fbde4af060b1664f753c06388334698aff"
+  },
+  "plan_epoch": 39,
+  "predecessor_contract": {
+    "authoritative_aggregate_measured_total_tokens": 775247,
+    "authoritative_aggregate_model_call_count": 17,
+    "authoritative_aggregate_unknown_usage_turn_count": 2,
+    "measured_model_call_count": 2,
+    "measured_total_tokens": 151101,
+    "quality_measured": false,
+    "receipt": {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch38-dual-pass-omission-audit-quality-v1/plan-step-receipt.json",
+      "sha256": "ee431761492eee8c3e0b13578d4e89acaf807d670538be384bb50d3c428002ea",
+      "size_bytes": 8303
+    },
+    "runtime_lock": {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch38-dual-pass-omission-audit-quality-v1/runtime-lock.json",
+      "sha256": "52d3f77754d2fa3ea908ed6c6c5f2d7223cfa08804980d113603ae561576529c",
+      "size_bytes": 11299
+    },
+    "state": "waiting",
+    "terminal": {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch38-dual-pass-omission-audit-quality-v1/terminal.json",
+      "sha256": "ee431761492eee8c3e0b13578d4e89acaf807d670538be384bb50d3c428002ea",
+      "size_bytes": 8303
+    },
+    "terminal_reason": "epoch38_ab_ba_disagreement_requires_versioned_adjudication"
+  },
+  "promotion_contract": {
+    "full_six_case_token_ceiling": 73926,
+    "full_six_case_token_projection": 60481,
+    "holdout_authorized": false,
+    "production_mutation_allowed": false,
+    "winner_frozen": false
+  },
+  "quality_contract": {
+    "all_event_witness_count": 73,
+    "baseline_witness_count": 43,
+    "candidate_noninferiority_required": true,
+    "candidate_witness_count": 30,
+    "deterministic_semantic_pruning_allowed": false,
+    "exact_evidence_rate_required": 1.0,
+    "judge_total_token_cap_including_prior_quality_calls": 300000,
+    "quality_threshold": 0.97,
+    "reference_system_ids": null,
+    "semantic_prefilter_allowed": false
+  },
+  "schema_version": "pif_evaluation_epoch39_dual_pass_omission_audit_source_unit_adjudication_directive_v1",
+  "state": "authorized_for_zero_call_freeze_then_one_bounded_opaque_source_unit_adjudication",
+  "step_id": "canonical_v31_epoch39_dual_pass_omission_audit_source_unit_adjudication_v39",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "transport_contract": {
+    "api_key_billing_allowed": false,
+    "managed_chatgpt_pro_auth_required": true,
+    "raw_session_token_replay_allowed": false,
+    "transport": "official_codex_app_server_stdio_managed_chatgpt_auth"
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "schema_version": "pif_evaluation_true_full_output_reference_directive_v2",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "plan_epoch": 2,
+  "step_id": "true_full_output_shared_reference_v2",
+  "purpose": "replace_the_pre_filtered_52_witness_pool_with_the_true_60_submission_pool_before_any_new_extraction_call",
+  "predecessor_receipt": {
+    "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-shared-augmented-reference-correction-v1/plan-step-receipt.json",
+    "sha256": "fec44a9642994f20de3a1a35556bbb51ab5d8305fc855755fcd51278470a7621",
+    "state": "rejected",
+    "final_acceptance_evidence": false,
+    "diagnostic_candidate_macro_f1": 0.918182,
+    "diagnostic_reason": "the_epoch_1_pool_omitted_eight_submitted_candidate_events_before_the_full_event_judge"
+  },
+  "scope_correction": {
+    "reference_submission_count": 27,
+    "candidate_submission_count": 33,
+    "total_submission_count": 60,
+    "dense_reference_submission_count": 27,
+    "dense_candidate_submission_count": 32,
+    "no_signal_reference_submission_count": 0,
+    "no_signal_candidate_submission_count": 1,
+    "epoch_1_candidate_witness_count": 25,
+    "omitted_candidate_submission_count": 8,
+    "all_submitted_events_must_reach_llm_support_and_equivalence_judgment": true,
+    "prior_support_or_alignment_filtering_allowed": false
+  },
+  "frozen_inputs": [
+    {
+      "role": "complete_60_submission_bundle",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-canary-v249-source-complete-columnar-owner-v2-semantic-evaluation-v1/support/support-bundle.private.json",
+      "sha256": "ad195fd31c71641bd6231c2d1b075ac840b425aa20e56ff177f37d88bf713360"
+    },
+    {
+      "role": "complete_bundle_runtime_lock",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-canary-v249-source-complete-columnar-owner-v2-semantic-evaluation-v1/support/runtime-lock.json",
+      "sha256": "4dec2cc0570c93e3a64723606eacaba675641402795f9fa2a830f6e620b5cbf0"
+    },
+    {
+      "role": "candidate_v249_complete_output",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v249-explicit-applicability/normalized-output.private.json",
+      "sha256": "3ff1ebebf86e0442b0c99df3dc53324a83d306eff2ea82933aa5713cac481c62"
+    },
+    {
+      "role": "baseline_complete_output",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v220-fresh-integrated-base-design/shared-reference-seed-v1.json",
+      "sha256": "bdbe05c04b73cdd0ab12e80e87d4a666972c2e33380fd31b38921c42543ae4d2"
+    },
+    {
+      "role": "blind_source_packet",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v249-explicit-applicability/turns/v249-explicit-applicability-d7c914bc1cee2c432b36/input.private.json",
+      "sha256": "b0b693ff7d774a61d004d7dca6991a1324c27ed4c3c5ce7ca5d9d0a9c7b44d63"
+    },
+    {
+      "role": "epoch_1_diagnostic_score",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-shared-augmented-reference-correction-v1/shared-reference-score.json",
+      "sha256": "1e2112566119afb847dfa59df18f99ea197d2c2fa41a5e4fa9078b796d146eea"
+    }
+  ],
+  "execution_contract": {
+    "extraction_model_call_cap": 0,
+    "semantic_judge_call_cap": 3,
+    "semantic_retry_cap": 0,
+    "judge_transport": "official_codex_app_server_stdio_managed_chatgpt_auth",
+    "judge_model": "gpt-5.5",
+    "judge_reasoning_effort": "high",
+    "support_scope": "complete_event_all_populated_semantic_fields_and_exact_evidence",
+    "variants": [
+      "ab",
+      "ba"
+    ],
+    "variant_case_order_and_opaque_ids_must_match": true,
+    "adjudication_call_cap": 1,
+    "abstention_allowed": true,
+    "reference_policy": "union_of_full_event_source_supported_exact_evidence_equivalence_groups_contributed_by_either_system",
+    "systems_scored_against_identical_reference": [
+      "baseline_reference_seed",
+      "candidate_v249"
+    ],
+    "partial_alignment_is_diagnostic_only": true,
+    "deterministic_semantic_pruning_allowed": false,
+    "process_claim_required": true,
+    "existing_receipt_integrity_verification_required": true
+  },
+  "acceptance_contract": {
+    "candidate_strict_full_field_macro_f1_min": 0.97,
+    "candidate_must_be_noninferior_to_baseline": true,
+    "production_amortized_total_token_ratio_max": 0.28,
+    "exact_evidence_rate": 1.0,
+    "accounting_complete": true,
+    "holdout_or_production_mutation_before_pass": false,
+    "quality_failure_is_rejected": true,
+    "operational_failure_is_waiting": true
+  },
+  "branch_after_receipt": {
+    "passed": "freeze_v249_as_the_development_winner_then_build_the_v249_specific_untouched_holdout_bridge",
+    "rejected": "run_one_ordered_recurrent_full_schema_fold_canary_with_predeclared_72891_extraction_token_cap",
+    "waiting": "create_a_new_checksum_bound_recovery_epoch_without_replaying_completed_semantic_calls"
+  },
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-true-full-output-shared-reference-v2/plan-step-receipt.json",
+  "privacy": "private_analysis_only_no_source_or_event_text_in_directive_or_public_receipt"
+}

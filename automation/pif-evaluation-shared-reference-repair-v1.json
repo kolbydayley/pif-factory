@@ -1,0 +1,83 @@
+{
+  "schema_version": "pif_evaluation_shared_reference_repair_directive_v1",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "plan_epoch": 1,
+  "step_id": "shared_augmented_reference_repair_v1",
+  "purpose": "replace_the_asymmetric_claim_only_candidate_gate_with_one_full_event_shared_augmented_reference_before_any_new_extraction_call",
+  "invalidated_gate": {
+    "reported_candidate_macro_f1": 0.857143,
+    "production_amortized_total_token_ratio": 0.192218,
+    "score_is_final_acceptance_evidence": false,
+    "defects": [
+      "the_reference_denominator_is_the_unaugmented_baseline_seed",
+      "the_baseline_is_not_scored_against_the_same_reference_union",
+      "pointwise_support_explicitly_judges_claim_text_only_and_excludes_structured_fields",
+      "a_candidate_only_source_supported_no_signal_event_is_not_added_to_the_reference_union",
+      "the_candidate_precision_metric_is_source_support_precision_not_strict_shared_reference_precision"
+    ]
+  },
+  "frozen_inputs": [
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-adoption-output-semantic-evaluation-v1/support/support-pool.private.json",
+      "sha256": "eb672de3c6f705dc88ca596cfba90343b8324b301d4423fb86b52ea733a572ff"
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-adoption-output-semantic-evaluation-v1/support/origin-map.private.json",
+      "sha256": "565db3d2daf5516e3555be99d9439457cd5e85daf13d6b3680fa19968e599c49"
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-adoption-output-semantic-evaluation-v1/candidate-evidence-provenance.private.json",
+      "sha256": "70f8586c7b3d40a026b2b476a2a9d9446b2606e97222774936218eeaaea90173"
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-current-evaluator-identity-adoption-2026-07-18/adopted-alignment-score.json",
+      "sha256": "6c0dbea248b51f9486fa4984fc7d63f09a22fee5bb91aa9eea2a019b69daf903"
+    }
+  ],
+  "execution_contract": {
+    "extraction_model_call_cap": 0,
+    "semantic_judge_call_cap": 3,
+    "semantic_retry_cap": 0,
+    "judge_transport": "official_codex_app_server_stdio_managed_chatgpt_auth",
+    "judge_model": "gpt-5.5",
+    "judge_reasoning_effort": "high",
+    "support_scope": "complete_event_all_populated_semantic_fields_and_exact_evidence",
+    "variants": [
+      "ab",
+      "ba"
+    ],
+    "variant_case_order_and_opaque_ids_must_match": true,
+    "adjudication_call_cap": 1,
+    "abstention_allowed": true,
+    "reference_policy": "union_of_full_event_source_supported_exact_evidence_equivalence_groups_contributed_by_either_system",
+    "systems_scored_against_identical_reference": [
+      "baseline_reference_seed",
+      "candidate_v249"
+    ],
+    "partial_alignment_is_diagnostic_only": true,
+    "deterministic_code_authority": [
+      "schema_validation",
+      "opaque_id_and_case_order_validation",
+      "exact_evidence_and_offset_validation",
+      "provenance_hashing",
+      "token_and_wall_time_accounting",
+      "immutable_artifact_verification"
+    ],
+    "deterministic_semantic_pruning_allowed": false
+  },
+  "acceptance_contract": {
+    "candidate_strict_full_field_macro_f1_min": 0.97,
+    "candidate_must_be_noninferior_to_baseline": true,
+    "production_amortized_total_token_ratio_max": 0.28,
+    "exact_evidence_rate": 1.0,
+    "accounting_complete": true,
+    "holdout_or_production_mutation_before_pass": false
+  },
+  "branch_after_receipt": {
+    "passed": "freeze_development_winner_then_open_untouched_holdout_under_separate_authorization",
+    "rejected": "run_one_ordered_recurrent_full_schema_fold_canary_with_predeclared_72891_extraction_token_cap",
+    "waiting": "perform_at_most_one_side_free_capped_adjudication_for_observable_ab_ba_disagreement"
+  },
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-shared-augmented-reference-correction-v1/plan-step-receipt.json",
+  "privacy": "private_analysis_only_no_source_or_event_text_in_directive_or_public_receipt"
+}

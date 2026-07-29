@@ -1,0 +1,188 @@
+{
+  "schema_version": "pif_evaluation_epoch21_single_message_quality_recovery_directive_v1",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "plan_epoch": 21,
+  "step_id": "canonical_v31_epoch21_single_message_quality_recovery_v21",
+  "state": "authorized_for_zero_call_freeze_then_one_bounded_recovery_attempt",
+  "authorized_by": "kolby",
+  "authority": "direct_user_instruction",
+  "authorization_statement": "You have my full permission to continue. No need to seek out my approval anymore.",
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch21-single-message-quality-recovery-v1/plan-step-receipt.json",
+  "execution_contract": {
+    "extraction_model_call_cap": 0,
+    "predecessor_judge_model_call_count": 2,
+    "new_judge_model_call_cap": 1,
+    "aggregate_judge_model_call_cap": 3,
+    "semantic_retry_cap": 0,
+    "judge_model": "gpt-5.5",
+    "judge_reasoning_effort": "high",
+    "judge_transport": "official_codex_app_server_stdio_managed_chatgpt_auth",
+    "new_total_token_cap": 150000,
+    "aggregate_total_token_cap": 400000,
+    "minimum_remaining_reserve_percent": 20,
+    "quota_points_per_million_tokens": 17,
+    "projected_phase_quota_points": 3,
+    "origin_neutral_all_case_adjudication": true,
+    "prior_ab_ba_replay_allowed": false,
+    "prior_outputs_exposed_to_recovery_model": false,
+    "semantic_prefilter_allowed": false,
+    "semantic_pruning_allowed": false
+  },
+  "witness_contract": {
+    "source_segment_order": [
+      "seg_155ba31ee473823b6e7e9504",
+      "seg_a845b306d731d9728a5b0fa0",
+      "seg_80fe585badf8f3d3597d0f96",
+      "seg_6aa065273c73b7078583dcb6",
+      "seg_7c027e01ed7e813b528c5c7f",
+      "seg_24034ad57133895b52bdc068"
+    ],
+    "baseline_total_event_count": 120,
+    "candidate_total_event_count": 31,
+    "shared_witness_total": 151,
+    "all_six_cases_rejudged_once": true,
+    "opaque_witness_ids_required": true,
+    "one_shared_augmented_reference_required": true
+  },
+  "acceptance_contract": {
+    "candidate_strict_full_field_macro_f1_min": 0.97,
+    "candidate_must_be_noninferior_to_baseline": true,
+    "production_amortized_total_token_ratio_max": 0.28,
+    "exact_evidence_rate": 1.0,
+    "quality_failure_is_rejected": true,
+    "operational_failure_is_waiting": true,
+    "winner_frozen_by_this_step": false,
+    "holdout_authorized_by_this_step": false,
+    "production_mutation_allowed": false
+  },
+  "terminal_contract": {
+    "receipt_schema_version": "pif_semantic_plan_step_receipt_v1",
+    "passed_state": "passed",
+    "quality_failure_state": "rejected",
+    "operational_failure_state": "waiting",
+    "zero_retry": true,
+    "replay_safe": true,
+    "development_winner_frozen": false,
+    "holdout_authorized": false,
+    "production_mutated": false
+  },
+  "frozen_inputs": [
+    {
+      "role": "epoch20_terminal",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch20-single-message-direct-reference-v1/terminal.json",
+      "sha256": "5de22278e82683c16348e9fc5145a47bef3e924ab0165b1402fdaae18eefa72d",
+      "size_bytes": 8038
+    },
+    {
+      "role": "epoch20_plan_step_receipt",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch20-single-message-direct-reference-v1/plan-step-receipt.json",
+      "sha256": "5de22278e82683c16348e9fc5145a47bef3e924ab0165b1402fdaae18eefa72d",
+      "size_bytes": 8038
+    },
+    {
+      "role": "epoch20_runtime_lock",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch20-single-message-direct-reference-v1/runtime-lock.json",
+      "sha256": "63340c712b4aeb20e12b011fdde832384677f0b25d515600cdeef9dd4f6cd14c",
+      "size_bytes": 11383
+    },
+    {
+      "role": "epoch20_launch_receipt",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch20-single-message-direct-reference-v1/launch-receipt.json",
+      "sha256": "d6075fe804e9cf3b840ff95c156d7ef14d17bcfdef512bf58f0f8c430110cac3",
+      "size_bytes": 1331
+    },
+    {
+      "role": "shared_witness_pool",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch20-single-message-direct-reference-v1/shared-witness-pool.private.json",
+      "sha256": "6606f684532a5115fa8c0bd0f6a1c8acea79f15f2afd1143c54339e90852aadd",
+      "size_bytes": 349482
+    },
+    {
+      "role": "private_witness_mapping",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch20-single-message-direct-reference-v1/private-witness-mapping.private.json",
+      "sha256": "f6780c6ad055fce03247f4e2ed59e842110e6392a8bf2d6e5d71cc99ab1c054d",
+      "size_bytes": 569270
+    },
+    {
+      "role": "candidate_lineage",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch20-single-message-direct-reference-v1/candidate-lineage.json",
+      "sha256": "aa4907dc857efbc23f9ce7aca51d95ed0293f416656d2307a7b69866e12c7a60",
+      "size_bytes": 9964
+    },
+    {
+      "role": "judge_spec",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch20-single-message-direct-reference-v1/judge/judge-spec.json",
+      "sha256": "e0e733fbec5cb24016e5359977f3726f74a339762ecfb1a464e3c23c56793ecb",
+      "size_bytes": 1609
+    },
+    {
+      "role": "judge_ab_prompt",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch20-single-message-direct-reference-v1/judge/prompt-ab.private.md",
+      "sha256": "468f322fcb6c46c8594d42807f53d95de86a59e27fab51775856c6cd9c59b9e7",
+      "size_bytes": 260739
+    },
+    {
+      "role": "judge_ab_schema",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch20-single-message-direct-reference-v1/judge/schema-ab.json",
+      "sha256": "68cd8cacbefe24393437011ddf81db891cbe5679796d603af8e29003fa004136",
+      "size_bytes": 51381
+    },
+    {
+      "role": "judge_ab_output",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch20-single-message-direct-reference-v1/judge/output-ab.private.json",
+      "sha256": "e7efa1f0020cca9fb9298383b29643b1007d60f4b1c8784aec157d50611cef75",
+      "size_bytes": 77760
+    },
+    {
+      "role": "judge_ab_sidecar",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch20-single-message-direct-reference-v1/judge/sidecars/ab.json",
+      "sha256": "24ddf28ee32ea94cc679384c35b02c356a9a157d61b7f28f3ef717a64e7e81e9",
+      "size_bytes": 2362
+    },
+    {
+      "role": "judge_ab_capacity",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch20-single-message-direct-reference-v1/judge/sidecars/ab.capacity.json",
+      "sha256": "64845769862faeab1683c5f4a84f91ce816af1eda052ddef14ad7f7f63cccec2",
+      "size_bytes": 1293
+    },
+    {
+      "role": "judge_ba_prompt",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch20-single-message-direct-reference-v1/judge/prompt-ba.private.md",
+      "sha256": "b2fc3a572f2e5429b6d117d5050c4ac21e5c07a69b067845e2e38e4c37b6f783",
+      "size_bytes": 260739
+    },
+    {
+      "role": "judge_ba_schema",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch20-single-message-direct-reference-v1/judge/schema-ba.json",
+      "sha256": "99d2dbe2ed989942ad95ac266e6b61d390c38c8b7539f7daec4debf7a9781b41",
+      "size_bytes": 51381
+    },
+    {
+      "role": "judge_ba_output",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch20-single-message-direct-reference-v1/judge/output-ba.private.json",
+      "sha256": "53d196f290cdd730e25bcedbb05b8547acc4b5d50fe94cf0a30e08efa7422568",
+      "size_bytes": 81315
+    },
+    {
+      "role": "judge_ba_sidecar",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch20-single-message-direct-reference-v1/judge/sidecars/ba.json",
+      "sha256": "8539d39e9c47c5d37575615065986d69b2c092f7e752111bd5595777e7e74179",
+      "size_bytes": 2362
+    },
+    {
+      "role": "judge_ba_capacity",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch20-single-message-direct-reference-v1/judge/sidecars/ba.capacity.json",
+      "sha256": "42a1dbd3bac34ca91d0de76efeb3e34fa7be7aac4685c50662e414f1840e853b",
+      "size_bytes": 1293
+    },
+    {
+      "role": "epoch20_adapter",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/research_factory/app_server_canonical_v31_single_message_direct_reference.py",
+      "sha256": "3eba192ef05002fa1bf5ea32d929aecb48e5db393a75f2f000a6e9c9d854c1d7",
+      "size_bytes": 131482
+    }
+  ],
+  "winner_frozen": false,
+  "holdout_authorized": false,
+  "production_mutation_allowed": false
+}

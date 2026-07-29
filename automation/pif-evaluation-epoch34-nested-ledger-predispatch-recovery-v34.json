@@ -1,0 +1,117 @@
+{
+  "authority": "direct_user_instruction",
+  "authorization_statement": "You have my full permission to continue. No need to seek out my approval anymore.",
+  "authorized_by": "kolby",
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch34-nested-ledger-predispatch-recovery-v1/plan-step-receipt.json",
+  "frozen_predecessor_evidence": [
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch33-nested-proposition-event-ledger-canary-v1/plan-step-receipt.json",
+      "role": "epoch33_receipt",
+      "sha256": "7e68e2b313d0b026ddc8e7705e76ec76c52cd5db05b89841374f2d248a152b04",
+      "size_bytes": 8817
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch33-nested-proposition-event-ledger-canary-v1/terminal.json",
+      "role": "epoch33_terminal",
+      "sha256": "7e68e2b313d0b026ddc8e7705e76ec76c52cd5db05b89841374f2d248a152b04",
+      "size_bytes": 8817
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch33-nested-proposition-event-ledger-canary-v1/runtime-lock.json",
+      "role": "epoch33_runtime_lock",
+      "sha256": "23624bd395c2ca5717bf0cebff5032cd7134e060a729833beed1e74385c3a264",
+      "size_bytes": 13676
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch33-nested-proposition-event-ledger-canary-v1/runtime-contract.json",
+      "role": "epoch33_runtime_contract",
+      "sha256": "b41ba742e49d61034dc41a24064384ae4b464114940adc03cfdf76e84162ba0a",
+      "size_bytes": 41384
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch33-nested-proposition-event-ledger-canary-v1/operator-authorization.json",
+      "role": "epoch33_authorization",
+      "sha256": "d6e474dc31826513ee6f925493015635d289ad873c2c438f88ab509f6b299248",
+      "size_bytes": 1637
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch33-nested-proposition-event-ledger-canary-v1/turn/semantic-attempt.json",
+      "role": "epoch33_attempt",
+      "sha256": "1c533669349275331cd9403a27d52a7a18c05860f2963ce692f8a1baf34d0248",
+      "size_bytes": 1883
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch33-nested-proposition-event-ledger-canary-v1/turn/capacity/initial/request.json",
+      "role": "epoch33_capacity_request",
+      "sha256": "9147d4678b1a269fcf7af0137ba495a9bf9174e56e5fc45a32495efd3ca8227c",
+      "size_bytes": 2283
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch33-nested-proposition-event-ledger-canary-v1/turn/capacity/initial/measurement.json",
+      "role": "epoch33_capacity_measurement",
+      "sha256": "3ca2e6c8a643cd3ccb71d5f502ff9208b7e2bfb0ad2c262812818e7139c08aa7",
+      "size_bytes": 2067
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch33-nested-proposition-event-ledger-canary-v1/turn/capacity/initial/provider-response.private.json",
+      "role": "epoch33_capacity_provider_response",
+      "sha256": "ce413ed2f318a532a0976a7e9c1d1b361076de491c32c0322fa7085c37472c7c",
+      "size_bytes": 1647
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch33-nested-proposition-event-ledger-canary-v1/prepared-turn/request.private.json",
+      "role": "epoch33_request",
+      "sha256": "549104c9624d10d4f6b3d53700ac79b9855219ecc0b0f239af549fff8db24107",
+      "size_bytes": 592817
+    }
+  ],
+  "intention_to_treat_accounting": {
+    "maximum_semantic_model_call_count_after_epoch34_dispatch": 11,
+    "predecessor_measured_total_tokens": 347709,
+    "predecessor_replay_allowed": false,
+    "predecessor_semantic_model_call_count": 10,
+    "predecessor_unknown_usage_turn_count": 2
+  },
+  "plan_epoch": 34,
+  "promotion_contract": {
+    "candidate_noninferiority_required": true,
+    "full_event_ab_ba_quality_required_after_structural_and_cost_pass": true,
+    "full_six_case_production_total_token_ceiling": 73926,
+    "holdout_authorized": false,
+    "production_amortized_ratio_max": 0.28,
+    "production_mutation_allowed": false,
+    "quality_threshold": 0.97,
+    "winner_frozen": false
+  },
+  "recovery_contract": {
+    "candidate_model": "gpt-5.6-sol",
+    "candidate_reasoning_effort": "medium",
+    "epoch33_capacity_available": true,
+    "epoch33_minimum_applicable_remaining_percent": 75,
+    "epoch33_minimum_remaining_reserve_percent": 20,
+    "epoch33_rate_limit_reached_type": null,
+    "epoch33_semantic_model_call_count": 0,
+    "epoch33_semantic_retry_count": 0,
+    "epoch33_semantic_thread_started": false,
+    "epoch33_semantic_turn_started": false,
+    "exact_epoch33_semantic_request_reused": true,
+    "full_six_case_total_token_ceiling": 73926,
+    "measured_total_token_ceiling": 36000,
+    "minimum_remaining_reserve_percent": 20,
+    "semantic_model_call_cap": 1,
+    "semantic_request_change_allowed": false,
+    "semantic_retry_cap": 0,
+    "stop_rule": "Any second predispatch failure, semantic interruption, transport error, accounting failure, nested-ledger structural failure, measured-token failure, or six-case projection failure terminalizes without replay or semantic repair. A structural and projected-cost pass advances only to a fresh frozen full-event AB/BA quality gate.",
+    "thread_mode": "new_thread"
+  },
+  "schema_version": "pif_evaluation_epoch34_nested_ledger_predispatch_recovery_directive_v1",
+  "state": "authorized_for_zero_call_freeze_then_one_bounded_predispatch_recovery",
+  "step_id": "canonical_v31_epoch34_nested_ledger_predispatch_recovery_v34",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "transport_contract": {
+    "api_key_billing_allowed": false,
+    "managed_chatgpt_pro_auth_required": true,
+    "raw_session_token_replay_allowed": false,
+    "transport": "official_codex_app_server_stdio_managed_chatgpt_auth"
+  }
+}

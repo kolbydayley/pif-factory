@@ -1,0 +1,154 @@
+{
+  "schema_version": "pif_evaluation_expanded_cap_direct_reference_directive_v5",
+  "created_at": "2026-07-18T19:30:00Z",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "plan_epoch": 5,
+  "step_id": "expanded_cap_full_event_direct_reference_v5",
+  "purpose": "judge_every_selected_baseline_event_and_every_passed_epoch_4_candidate_event_symmetrically_against_one_shared_augmented_reference",
+  "execution_contract": {
+    "extraction_model_call_cap": 0,
+    "semantic_judge_call_cap": 3,
+    "required_ab_ba_call_count": 2,
+    "adjudication_call_cap": 1,
+    "semantic_retry_cap": 0,
+    "judge_model": "gpt-5.5",
+    "judge_reasoning_effort": "high",
+    "judge_transport": "official_codex_app_server_stdio_managed_chatgpt_auth",
+    "judge_total_token_cap": 400000,
+    "adjudication_max_total_tokens": 100000,
+    "variants": [
+      "ab",
+      "ba"
+    ],
+    "all_events_direct_to_full_event_judge": true,
+    "semantic_prefilter_allowed": false,
+    "semantic_pruning_allowed": false,
+    "support_or_alignment_prefilter_allowed": false,
+    "reference_system_ids": null,
+    "abstention_allowed": true,
+    "origin_neutral_adjudication_only_for_observable_disagreement": true,
+    "production_cost_projection": {
+      "baseline_end_to_end_tokens": 10065426,
+      "production_amortized_context_tokens": 600538,
+      "production_scale": 30,
+      "extraction_total_tokens": 32631,
+      "production_amortized_total_tokens": 1579468,
+      "production_amortized_total_token_ratio": 0.15692,
+      "judge_tokens_included_in_production_formula": false
+    }
+  },
+  "witness_contract": {
+    "source_segment_order": [
+      "seg_c84d5569778c65202b572971",
+      "seg_5d6fb274a5d25880b9db3006"
+    ],
+    "baseline_dense_event_count": 27,
+    "baseline_no_signal_event_count": 0,
+    "candidate_dense_event_count": 39,
+    "candidate_no_signal_event_count": 1,
+    "baseline_total_event_count": 27,
+    "candidate_total_event_count": 40,
+    "shared_witness_total": 67,
+    "identical_ab_ba_case_order_required": true,
+    "opaque_witness_ids_required": true,
+    "one_shared_augmented_reference_required": true,
+    "all_candidate_events_preserved": true
+  },
+  "acceptance_contract": {
+    "candidate_strict_full_field_macro_f1_min": 0.97,
+    "candidate_must_be_noninferior_to_baseline": true,
+    "production_amortized_total_token_ratio_max": 0.28,
+    "exact_evidence_rate": 1.0,
+    "quality_failure_is_rejected": true,
+    "operational_failure_is_waiting": true,
+    "winner_frozen_by_this_step": false,
+    "holdout_authorized_by_this_step": false,
+    "production_mutation_allowed": false
+  },
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-direct-reference-v5/plan-step-receipt.json",
+  "frozen_inputs": [
+    {
+      "role": "baseline_complete_output",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v220-fresh-integrated-base-design/shared-reference-seed-v1.json",
+      "sha256": "bdbe05c04b73cdd0ab12e80e87d4a666972c2e33380fd31b38921c42543ae4d2",
+      "size_bytes": 326316
+    },
+    {
+      "role": "blind_source_packet",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v5_4-v249-explicit-applicability/turns/v249-explicit-applicability-d7c914bc1cee2c432b36/input.private.json",
+      "sha256": "b0b693ff7d774a61d004d7dca6991a1324c27ed4c3c5ce7ca5d9d0a9c7b44d63",
+      "size_bytes": 24592
+    },
+    {
+      "role": "epoch4_terminal",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-v4/terminal.json",
+      "sha256": "850acc114d615ccbd5b85306c713fcb28b6908a546f2065dfb0da3ffd5c01def",
+      "size_bytes": 8607
+    },
+    {
+      "role": "epoch4_plan_step_receipt",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-v4/plan-step-receipt.json",
+      "sha256": "850acc114d615ccbd5b85306c713fcb28b6908a546f2065dfb0da3ffd5c01def",
+      "size_bytes": 8607
+    },
+    {
+      "role": "epoch4_runtime_lock",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-v4/runtime-lock.json",
+      "sha256": "4eb40c371407366d4d66d378e9365f64c34e97db02b6b0b11cceda81a20f8eb9",
+      "size_bytes": 14007
+    },
+    {
+      "role": "epoch4_normalized_output",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-v4/turns/expanded-cap-exhaustive-full-schema/normalized-output.private.json",
+      "sha256": "e80645576b54a48650b3e69f8d61ccffa51b683e3e0328028c83d3d7fbc8bc46",
+      "size_bytes": 70533
+    },
+    {
+      "role": "epoch4_evidence_provenance",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-v4/turns/expanded-cap-exhaustive-full-schema/evidence-provenance.private.json",
+      "sha256": "b60d3697c8c2d27ca0e0f9005e3444670078117b6c71485f21d589806327d594",
+      "size_bytes": 13552
+    },
+    {
+      "role": "epoch4_structural_gate",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-v4/structural-gate.json",
+      "sha256": "a94b9f89cb7f3981596e196ee8a7f4c4b2af80d7314e1e000ab6d4a8e50c614c",
+      "size_bytes": 1365
+    },
+    {
+      "role": "epoch4_sidecar",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-v4/turns/expanded-cap-exhaustive-full-schema/sidecar.json",
+      "sha256": "a1f0442cbaa766077c215f5a81f9621c2c5d9b151b349ba41e089fd069638342",
+      "size_bytes": 4098
+    },
+    {
+      "role": "epoch4_raw_output",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-v4/turns/expanded-cap-exhaustive-full-schema/output.private.json",
+      "sha256": "7b69ff0b42cca11da09d89ef7414fb8f96867267e0e055175838487cdb780a02",
+      "size_bytes": 66184
+    },
+    {
+      "role": "epoch4_input",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-expanded-cap-exhaustive-full-schema-v4/turns/expanded-cap-exhaustive-full-schema/input.private.json",
+      "sha256": "b0b693ff7d774a61d004d7dca6991a1324c27ed4c3c5ce7ca5d9d0a9c7b44d63",
+      "size_bytes": 24592
+    },
+    {
+      "role": "mature_direct_reference_logic",
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/research_factory/app_server_candidate_recurrent_fold_direct_reference.py",
+      "sha256": "432500ef7275ba60322f51734fd0b4acdf4db3cef98f1fdcc1664918ea3616ff",
+      "size_bytes": 84924
+    }
+  ],
+  "terminal_contract": {
+    "receipt_schema_version": "pif_semantic_plan_step_receipt_v1",
+    "passed_state": "passed",
+    "quality_failure_state": "rejected",
+    "operational_failure_state": "waiting",
+    "zero_retry": true,
+    "replay_safe": true,
+    "development_winner_frozen": false,
+    "holdout_authorized": false,
+    "production_mutated": false
+  }
+}

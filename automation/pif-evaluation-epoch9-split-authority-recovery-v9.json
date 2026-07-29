@@ -1,0 +1,77 @@
+{
+  "schema_version": "pif_evaluation_epoch9_split_authority_recovery_directive_v1",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "plan_epoch": 9,
+  "step_id": "canonical_v31_epoch9_split_authority_recovery_v9",
+  "state": "ready_for_direct_user_authorized_execute",
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch9-split-authority-recovery-v1/authority-recovery-receipt.json",
+  "authorization_contract": {
+    "authority": "direct_user_instruction",
+    "authorized_by": "kolby",
+    "operator_authorization_statement": "You have my full permission to continue. No need to seek out my approval anymore.",
+    "additional_interactive_approval_required": false
+  },
+  "predecessor_contract": {
+    "epoch7_root": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch7-input-authority-runtime-v1",
+    "epoch8_root": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch8-source-only-authority-recovery-v1",
+    "epoch7_adopted_turn_count": 1,
+    "epoch8_diagnostic_turn_count": 1,
+    "epoch8_last_increment_total_tokens": 92732,
+    "epoch8_full_thread_total_tokens": 580618,
+    "epoch8_frozen_per_turn_ceiling": 94532,
+    "epoch8_state": "cost_accounting_and_two_label_structural_checks_rejected",
+    "epoch8_valid_label_count": 5,
+    "epoch8_invalid_label_count": 2,
+    "epoch8_valid_context_component_count": 1,
+    "completed_turn_replay_allowed": false
+  },
+  "architecture_contract": {
+    "name": "episode_context_then_segment_only_canonical_labels",
+    "untouched_episode_count": 2,
+    "epoch8_invalid_label_repair_turn_count": 1,
+    "turns_per_untouched_episode": 2,
+    "turn_order": [
+      "two_epoch8_invalid_labels_from_exact_source_segments",
+      "episode_context_from_complete_episode_source",
+      "canonical_labels_from_only_the_six_invalid_source_segments"
+    ],
+    "model_visible_legacy_reference_label_count": 0,
+    "model_visible_validation_diagnostic_count": 0,
+    "context_output_is_bound_into_label_turn": true,
+    "full_combined_output_validator_unchanged_from_epoch7": true,
+    "deterministic_semantic_mutation_allowed": false,
+    "semantic_regex_keyword_pruning_allowed": false
+  },
+  "execution_contract": {
+    "model": "gpt-5.6-sol",
+    "effort": "high",
+    "new_model_call_cap": 5,
+    "new_total_token_cap": 550000,
+    "new_per_turn_thread_total_token_cap": 110000,
+    "adopted_development_qa_total_tokens": 705022,
+    "cumulative_development_qa_total_token_cap": 1255022,
+    "semantic_retry_count": 0,
+    "official_persistent_codex_app_server_only": true,
+    "managed_chatgpt_auth_only": true,
+    "managed_chatgpt_plan_type": "pro",
+    "fresh_capacity_probe_before_thread_and_turn": true,
+    "caller_supplied_capacity_admission_allowed": false,
+    "full_thread_total_usage_is_accounting_authority": true,
+    "last_usage_increment_is_diagnostic_only": true,
+    "complete_usage_cache_reasoning_wall_telemetry_required": true,
+    "partial_attempt_replay_forbidden": true,
+    "api_key_auth_allowed": false,
+    "raw_session_token_auth_allowed": false,
+    "codex_exec_allowed": false
+  },
+  "terminal_contract": {
+    "accepted_receipt_states": [
+      "passed",
+      "rejected",
+      "waiting"
+    ],
+    "quality_authorized": false,
+    "holdout_authorized": false,
+    "production_mutation_allowed": false
+  }
+}

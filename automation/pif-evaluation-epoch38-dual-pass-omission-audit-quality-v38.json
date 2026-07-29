@@ -1,0 +1,140 @@
+{
+  "authority": "direct_user_instruction",
+  "authorization_statement": "You have my full permission to continue. No need to seek out my approval anymore.",
+  "authorized_by": "kolby",
+  "capacity_contract": {
+    "maximum_total_tokens_per_turn": 100000,
+    "minimum_remaining_reserve_percent": 20,
+    "phase_total_token_bound": 200000,
+    "projected_phase_quota_points": 4,
+    "quota_points_per_million_tokens": 17
+  },
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch38-dual-pass-omission-audit-quality-v1/plan-step-receipt.json",
+  "frozen_inputs": [
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch37-dual-pass-omission-audit-ledger-canary-v1/runtime-lock.json",
+      "role": "epoch37_runtime_lock",
+      "sha256": "f49956812f1a80372e54a9870a8ce1062d7d943499a13a30a7dd81fc11d569e4",
+      "size_bytes": 13118
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch37-dual-pass-omission-audit-ledger-canary-v1/plan-step-receipt.json",
+      "role": "epoch37_receipt",
+      "sha256": "bd46613bc6bbaa87bad3fe9e4e3d70ac1f4082b65222ab48587dcb32797a04a4",
+      "size_bytes": 12449
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch37-dual-pass-omission-audit-ledger-canary-v1/terminal.json",
+      "role": "epoch37_terminal",
+      "sha256": "bd46613bc6bbaa87bad3fe9e4e3d70ac1f4082b65222ab48587dcb32797a04a4",
+      "size_bytes": 12449
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch37-dual-pass-omission-audit-ledger-canary-v1/operator-authorization.json",
+      "role": "epoch37_authorization",
+      "sha256": "bb005f613f052479204791575a711077480f494969fdd51ce364e0431f19c90e",
+      "size_bytes": 1641
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch37-dual-pass-omission-audit-ledger-canary-v1/turn/semantic-attempt.json",
+      "role": "epoch37_semantic_attempt",
+      "sha256": "97d30ee7676eac44b4347ae3aa326b97f89db18a41a092e08f884f0f5fb80572",
+      "size_bytes": 1869
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch37-dual-pass-omission-audit-ledger-canary-v1/turn/canonical-labels.private.json",
+      "role": "epoch37_labels",
+      "sha256": "03674e03d8be3eaa5a922a3c54e2d888578df2c814b763b2d3a5cbb95f6bf9b4",
+      "size_bytes": 116513
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch37-dual-pass-omission-audit-ledger-canary-v1/turn/evidence-provenance.private.json",
+      "role": "epoch37_provenance",
+      "sha256": "b6506d0c179c7b0f10e67a122914e111c9fa737abb23140c24c04799911fe58e",
+      "size_bytes": 93440
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch37-dual-pass-omission-audit-ledger-canary-v1/turn/semantic-fidelity.json",
+      "role": "epoch37_fidelity",
+      "sha256": "ec7cccd261ed5c2c11e2ecd5921f1cd7b826b67d6b4e0b29482deee1f03f7455",
+      "size_bytes": 2744
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch37-dual-pass-omission-audit-ledger-canary-v1/turn/output.private.json",
+      "role": "epoch37_output",
+      "sha256": "45ad201b6f440da5a951e6981cec9d43d5f9387a8b6973a47af6850538755ce5",
+      "size_bytes": 41297
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch37-dual-pass-omission-audit-ledger-canary-v1/turn/sidecar.json",
+      "role": "epoch37_sidecar",
+      "sha256": "274311dfc2fd942b5ebda0318d456514ea6db07f80beb170dcd99af327d15172",
+      "size_bytes": 2360
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch37-dual-pass-omission-audit-ledger-canary-v1/prepared-turn/request.private.json",
+      "role": "epoch37_request",
+      "sha256": "c74cd58416c0a706c07ff2b6439bb935d33819b793c457d6677c7416774399da",
+      "size_bytes": 615396
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/shared-reference-seed-v1.json",
+      "role": "baseline_seed",
+      "sha256": "167bdfb40af5608b1dd23d3199d30b9d12bc7573f369038a4f642e85adaf19b0",
+      "size_bytes": 1882029
+    }
+  ],
+  "instruction_contract": {
+    "instruction_source_paths": [
+      "/Users/kolbydayley/.codex/AGENTS.md"
+    ],
+    "instruction_source_records": [
+      {
+        "path": "/Users/kolbydayley/.codex/AGENTS.md",
+        "sha256": "8755274938f9e8502e6de3dc5d987e583d0e23dc0a40e20e4d25ee52c90548f8",
+        "size_bytes": 11280
+      }
+    ],
+    "instruction_sources_count": 1,
+    "instruction_sources_sha256": "a86aa3509517b418a3a54effc1a4f1fbde4af060b1664f753c06388334698aff"
+  },
+  "plan_epoch": 38,
+  "promotion_contract": {
+    "full_six_case_token_ceiling": 73926,
+    "full_six_case_token_projection": 60481,
+    "holdout_authorized": false,
+    "production_amortized_ratio_max": 0.28,
+    "production_mutation_allowed": false,
+    "winner_frozen": false
+  },
+  "quality_contract": {
+    "adjudication_call_cap": 0,
+    "all_event_witness_count": 73,
+    "all_events_direct_to_support_and_alignment": true,
+    "baseline_witness_count": 43,
+    "candidate_noninferiority_required": true,
+    "candidate_witness_count": 30,
+    "deterministic_semantic_pruning_allowed": false,
+    "judge_effort": "high",
+    "judge_model": "gpt-5.5",
+    "quality_threshold": 0.97,
+    "reference_system_ids": null,
+    "semantic_model_call_cap": 2,
+    "semantic_prefilter_allowed": false,
+    "semantic_retry_cap": 0,
+    "source_segment_order": [
+      "seg_80fe585badf8f3d3597d0f96",
+      "seg_7c027e01ed7e813b528c5c7f"
+    ]
+  },
+  "schema_version": "pif_evaluation_epoch38_dual_pass_omission_audit_quality_directive_v1",
+  "state": "authorized_for_zero_call_freeze_then_two_bounded_full_event_judge_turns",
+  "step_id": "canonical_v31_epoch38_dual_pass_omission_audit_quality_v38",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "transport_contract": {
+    "api_key_billing_allowed": false,
+    "managed_chatgpt_pro_auth_required": true,
+    "raw_session_token_replay_allowed": false,
+    "transport": "official_codex_app_server_stdio_managed_chatgpt_auth"
+  }
+}

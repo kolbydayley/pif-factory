@@ -1,0 +1,96 @@
+{
+  "adjudication_contract": {
+    "adjudication_call_cap": 1,
+    "adjudication_total_token_cap": 100000,
+    "effort": "high",
+    "exact_unit_projection_only": true,
+    "model": "gpt-5.5",
+    "observable_disagreement_case_ids": [
+      "jcase_42e27c0a64b9807fa07f378d"
+    ],
+    "origin_neutral": true,
+    "prior_semantic_replay_allowed": false,
+    "semantic_output_repair_allowed": false,
+    "semantic_retry_cap": 0,
+    "source_unit_chunking_version": "pif_exact_offset_structural_source_units_v1",
+    "source_unit_ids_opaque": true,
+    "source_unit_max_characters": 900
+  },
+  "authority": "direct_user_instruction",
+  "authorization_statement": "You have my full permission to continue. No need to seek out my approval anymore.",
+  "authorized_by": "kolby",
+  "capacity_contract": {
+    "maximum_total_tokens_per_turn": 100000,
+    "minimum_remaining_reserve_percent": 20,
+    "phase_total_token_bound": 100000,
+    "projected_phase_quota_points": 2,
+    "quota_points_per_million_tokens": 17
+  },
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch31-opaque-source-unit-adjudication-v1/plan-step-receipt.json",
+  "instruction_contract": {
+    "instruction_source_paths": [
+      "/Users/kolbydayley/.codex/AGENTS.md"
+    ],
+    "instruction_source_records": [
+      {
+        "path": "/Users/kolbydayley/.codex/AGENTS.md",
+        "sha256": "8755274938f9e8502e6de3dc5d987e583d0e23dc0a40e20e4d25ee52c90548f8",
+        "size_bytes": 11280
+      }
+    ],
+    "instruction_sources_count": 1,
+    "instruction_sources_sha256": "a86aa3509517b418a3a54effc1a4f1fbde4af060b1664f753c06388334698aff"
+  },
+  "plan_epoch": 31,
+  "predecessor_contract": {
+    "quality_measured": false,
+    "receipt": {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch30-adjudication-exact-validation-recovery-v1/plan-step-receipt.json",
+      "sha256": "7958a17fea619daf0dc2b1587d59eac55314443a5e24dadb1eb6b7302395be7e",
+      "size_bytes": 4266
+    },
+    "recovered_measured_model_call_count": 1,
+    "recovered_measured_total_tokens": 49404,
+    "runtime_lock": {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch30-adjudication-exact-validation-recovery-v1/runtime-lock.json",
+      "sha256": "cee5976f22ec5d627f2b1686db2076a4a8ea5a36ad9732322f12fba52dc374bc",
+      "size_bytes": 3702
+    },
+    "state": "rejected",
+    "terminal": {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch30-adjudication-exact-validation-recovery-v1/terminal.json",
+      "sha256": "7958a17fea619daf0dc2b1587d59eac55314443a5e24dadb1eb6b7302395be7e",
+      "size_bytes": 4266
+    },
+    "terminal_reason": "epoch29_adjudication_exact_evidence_validation_rejected"
+  },
+  "promotion_contract": {
+    "full_six_case_token_ceiling": 73926,
+    "full_six_case_token_projection": 54770,
+    "holdout_authorized": false,
+    "production_mutation_allowed": false,
+    "winner_frozen": false
+  },
+  "quality_contract": {
+    "all_event_witness_count": 68,
+    "baseline_witness_count": 43,
+    "candidate_noninferiority_required": true,
+    "candidate_witness_count": 25,
+    "deterministic_semantic_pruning_allowed": false,
+    "exact_evidence_rate_required": 1.0,
+    "judge_total_token_cap_including_prior_quality_calls": 300000,
+    "quality_threshold": 0.97,
+    "reference_system_ids": null,
+    "semantic_prefilter_allowed": false
+  },
+  "schema_version": "pif_evaluation_epoch31_opaque_source_unit_adjudication_directive_v1",
+  "state": "authorized_for_zero_call_freeze_then_one_bounded_opaque_source_unit_adjudication",
+  "step_id": "canonical_v31_epoch31_opaque_source_unit_adjudication_v31",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "transport_contract": {
+    "api_key_billing_allowed": false,
+    "managed_chatgpt_pro_auth_required": true,
+    "raw_session_token_replay_allowed": false,
+    "transport": "official_codex_app_server_stdio_managed_chatgpt_auth"
+  }
+}

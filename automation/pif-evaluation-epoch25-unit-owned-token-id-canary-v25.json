@@ -1,0 +1,143 @@
+{
+  "architecture_ranking": [
+    {
+      "architecture": "unit_reviewed_closed_ordinal_with_exact_literal_token_ids",
+      "evidence": "Epoch 24 produced 30 events and 13 concepts across the two hard cases. Its only deterministic failures were one redundant owner-container mismatch and one out-of-range numeric metric endpoint. Exact catalog token IDs and evidence-pointer-authoritative structural placement directly remove both brittle transport surfaces without changing any model-authored semantic value.",
+      "rank": 1,
+      "selected": true
+    },
+    {
+      "architecture": "evidence_span_owned_dynamic_schema",
+      "evidence": "Would make ownership and metric bounds schema-local, but duplicates the full canonical event schema across 38 canary spans and 114 full-run spans, making the production token ceiling implausible.",
+      "rank": 2,
+      "selected": false
+    },
+    {
+      "architecture": "two_pass_inventory_then_canonical_enrichment",
+      "evidence": "Could improve recall, but duplicates source and fixed context and requires another semantic output pass; existing measured calls leave no plausible path below the frozen full-run token ceiling.",
+      "rank": 3,
+      "selected": false
+    }
+  ],
+  "authority": "direct_user_instruction",
+  "authorization_statement": "You have my full permission to continue. No need to seek out my approval anymore.",
+  "authorized_by": "kolby",
+  "canary_contract": {
+    "architecture_hypothesis": "Replacing numeric metric coordinates with exact source literal-token IDs and treating the model-authored evidence span as the sole owner authority will preserve epoch-24 recall, eliminate its two structural failure classes, and retain a plausible full-run path below 73926 tokens.",
+    "candidate_model": "gpt-5.6-sol",
+    "candidate_reasoning_effort": "high",
+    "deterministic_owner_container_normalization_only": true,
+    "epoch24_replay_allowed": false,
+    "extraction_only": true,
+    "measured_total_token_ceiling": 32000,
+    "model_selects_exact_literal_token_ids": true,
+    "semantic_model_call_cap": 1,
+    "semantic_retry_cap": 0,
+    "selected_segment_ids": [
+      "seg_80fe585badf8f3d3597d0f96",
+      "seg_7c027e01ed7e813b528c5c7f"
+    ],
+    "stop_rule": "Any transport, accounting, exact-token identity, structural, canonical-fidelity, exact-evidence, or measured-token failure terminalizes this architecture without replay. Structural pass advances only if the measured full-run case-count projection is at most 73926, and then only to the frozen two-case full-event LLM quality gate.",
+    "thread_mode": "new_thread"
+  },
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch25-unit-owned-token-id-canary-v1/plan-step-receipt.json",
+  "frozen_predecessor_evidence": [
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch24-unit-owned-ordinal-schema-recovery-v1/runtime-lock.json",
+      "role": "epoch24_runtime_lock",
+      "sha256": "8d472a3edce4f3b7e4c7bcf43b632afed8131f70fc25252226430a997a4f9138",
+      "size_bytes": 16165
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch24-unit-owned-ordinal-schema-recovery-v1/plan-step-receipt.json",
+      "role": "epoch24_receipt",
+      "sha256": "e9641bf69b1e21e341e71a930696a2589a277da362294b6e6ec0a1cb64a285f8",
+      "size_bytes": 11435
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch24-unit-owned-ordinal-schema-recovery-v1/terminal.json",
+      "role": "epoch24_terminal",
+      "sha256": "e9641bf69b1e21e341e71a930696a2589a277da362294b6e6ec0a1cb64a285f8",
+      "size_bytes": 11435
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch24-unit-owned-ordinal-schema-recovery-v1/operator-authorization.json",
+      "role": "epoch24_authorization",
+      "sha256": "c33dce22fdd0078ad72592fd8b2223819ed3478e2710beed8d5cb6e3ad802461",
+      "size_bytes": 1613
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch24-unit-owned-ordinal-schema-recovery-v1/turn/semantic-attempt.json",
+      "role": "epoch24_attempt",
+      "sha256": "54af5d6aab39ad47f432bdbfe26cd68cfd2527b52d096c4c7eda6d1673b668b8",
+      "size_bytes": 1845
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch24-unit-owned-ordinal-schema-recovery-v1/turn/sidecar.json",
+      "role": "epoch24_sidecar",
+      "sha256": "9870680d1ec1203bf45baeb4a6a49f530c1867ee668858efb14f789e6931adcf",
+      "size_bytes": 2356
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch24-unit-owned-ordinal-schema-recovery-v1/turn/output.private.json",
+      "role": "epoch24_output",
+      "sha256": "874f6e10e8015cbd06a0e6f8296051d064c5c06ea27406c604710a47388588eb",
+      "size_bytes": 42073
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch24-unit-owned-ordinal-schema-recovery-v1/semantic-rejection.json",
+      "role": "epoch24_rejection",
+      "sha256": "94225e7e9a2c7b438e22f0d79d2e9ae181b02f97eaf012936ea8f70730dca1cd",
+      "size_bytes": 336
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch24-unit-owned-ordinal-schema-recovery-v1/prepared-turn/request.private.json",
+      "role": "epoch24_request",
+      "sha256": "ab173d4d28afeca79a07f11787801030c2365bc132f6523a739ad7b8bef4b436",
+      "size_bytes": 583719
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch23-unit-owned-positional-canary-v1/plan-step-receipt.json",
+      "role": "epoch23_receipt",
+      "sha256": "d4ab5d93e68d7767cd73c95693caf287112591e2ca6bcb543b465ef1aaeb90bc",
+      "size_bytes": 10178
+    },
+    {
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch23-unit-owned-positional-canary-v1/turn/sidecar.json",
+      "role": "epoch23_sidecar",
+      "sha256": "0e16d394060a1188328b1f63e4fad3e26cd19a45d5f58225dd8ee7a9846bf78b",
+      "size_bytes": 2297
+    }
+  ],
+  "measured_predecessor_diagnostic": {
+    "case_count_scaled_full_run_token_projection": 67630,
+    "concept_count": 13,
+    "concept_owner_container_mismatch_count": 1,
+    "event_count": 30,
+    "event_owner_container_mismatch_count": 0,
+    "invalid_numeric_metric_range_count": 1,
+    "measured_total_tokens": 29079,
+    "nonnull_metric_range_count": 9
+  },
+  "plan_epoch": 25,
+  "promotion_contract": {
+    "candidate_noninferiority_required": true,
+    "full_six_case_production_total_token_ceiling": 73926,
+    "holdout_authorized": false,
+    "production_amortized_ratio_max": 0.28,
+    "production_mutation_allowed": false,
+    "quality_threshold": 0.97,
+    "two_case_full_event_ab_ba_quality_required_after_structural_pass": true,
+    "winner_frozen": false
+  },
+  "schema_version": "pif_evaluation_epoch25_unit_owned_token_id_canary_directive_v1",
+  "state": "authorized_for_zero_call_freeze_then_one_bounded_token_id_canary",
+  "step_id": "canonical_v31_epoch25_unit_owned_token_id_canary_v25",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "transport_contract": {
+    "api_key_billing_allowed": false,
+    "managed_chatgpt_pro_auth_required": true,
+    "raw_session_token_replay_allowed": false,
+    "transport": "official_codex_app_server_stdio_managed_chatgpt_auth"
+  }
+}

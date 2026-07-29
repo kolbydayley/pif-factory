@@ -1,0 +1,20 @@
+{
+  "plan_epoch": 38,
+  "schema_version": "pif_evaluation_semantic_plan_v1",
+  "state": "executable",
+  "step": {
+    "accepted_receipt_states": [
+      "passed",
+      "rejected",
+      "waiting"
+    ],
+    "directive_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/automation/pif-evaluation-epoch38-dual-pass-omission-audit-quality-v38.json",
+    "directive_sha256": "dddea4f5c883a8c445769b351133f65212c4acf15907ea3c87b29520c8c0d790",
+    "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch38-dual-pass-omission-audit-quality-v1/plan-step-receipt.json",
+    "max_model_calls": 2,
+    "max_total_tokens": 200000,
+    "state": "executable",
+    "step_id": "canonical_v31_epoch38_dual_pass_omission_audit_quality_v38"
+  },
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10"
+}

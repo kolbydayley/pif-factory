@@ -1,0 +1,20 @@
+{
+  "schema_version": "pif_evaluation_semantic_plan_v1",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "plan_epoch": 3,
+  "state": "executable",
+  "step": {
+    "step_id": "ordered_recurrent_full_schema_fold_canary_v3",
+    "state": "executable",
+    "max_model_calls": 2,
+    "max_total_tokens": 72891,
+    "directive_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/automation/pif-evaluation-ordered-recurrent-full-schema-fold-v3.json",
+    "directive_sha256": "ca2040f7d1f139849b57709f69f047eb9463862ba976a07dc02ade943df4a34e",
+    "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/development-selection-v249-ordered-recurrent-full-schema-fold-v3/plan-step-receipt.json",
+    "accepted_receipt_states": [
+      "passed",
+      "rejected",
+      "waiting"
+    ]
+  }
+}

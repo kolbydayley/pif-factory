@@ -1,0 +1,102 @@
+{
+  "architecture_evidence": {
+    "compact_encoding_simulated_epoch32_output_bytes": 41400,
+    "epoch32_diagnostic_event_count": 40,
+    "epoch32_pointer_mismatch_count": 2,
+    "epoch32_six_case_token_projection": 81504,
+    "epoch37_diagnostic_event_count": 30,
+    "epoch37_six_case_token_projection": 60481,
+    "epoch39_baseline_strict_full_field_macro_f1": 0.88186,
+    "epoch39_candidate_strict_full_field_macro_f1": 0.738889,
+    "epoch39_candidate_supported_unit_count": 30,
+    "epoch39_exact_evidence_rate": 1.0,
+    "epoch39_shared_reference_unit_count": 51,
+    "failure_class": "precision_complete_but_full_canonical_recall_limited",
+    "minimum_candidate_supported_units_needed_for_gate": 49,
+    "semantic_field_repair_authorized": false
+  },
+  "architecture_ranking": [
+    {
+      "architecture": "one_turn_compact_normalized_exhaustive_full_canonical_event_table",
+      "hypothesis": "Three private LLM semantic sweeps plus a normalized table/reference transport can retain the inventory-first recall signal while removing duplicate planning prose and repeated actor, speaker, source, entity, and flag payloads, allowing substantially more complete canonical events under the frozen six-case cost ceiling.",
+      "rank": 1,
+      "selected": true
+    },
+    {
+      "architecture": "one_turn_disjoint_owner_local_full_canonical_semantic_shards",
+      "hypothesis": "Disjoint LLM-owned source shards could reduce omission, but the existing unit-local ledger already exercised owner-local generation and stalled at 30 supported units, so another shard encoding has weaker decision value.",
+      "rank": 2,
+      "selected": false
+    },
+    {
+      "architecture": "two_turn_compact_inventory_then_full_canonical_realization",
+      "hypothesis": "A separate inventory can improve recall, but prior split-turn evidence duplicated nearly all fixed context and has no credible path below the frozen production-amortized token ceiling.",
+      "rank": 3,
+      "selected": false
+    }
+  ],
+  "authority": "direct_user_instruction",
+  "authorization_statement": "You have my full permission to continue. No need to seek out my approval anymore.",
+  "authorized_by": "kolby",
+  "canary_contract": {
+    "candidate_model": "gpt-5.6-sol",
+    "candidate_reasoning_effort": "high",
+    "deterministic_reference_expansion_only": true,
+    "deterministic_semantic_deduplication_allowed": false,
+    "deterministic_semantic_pruning_allowed": false,
+    "deterministic_semantic_relabeling_allowed": false,
+    "deterministic_support_filtering_allowed": false,
+    "event_count_is_diagnostic_only": true,
+    "expected_request_sha256": "47080486b8ed3d624ef05288907fd89b36c830368eb52614d85e58fab40a5970",
+    "expected_request_shape": {
+      "base_bytes": 24682,
+      "evidence_span_count": 38,
+      "literal_token_count": 2020,
+      "prompt_bytes": 14277,
+      "request_bytes": 314949,
+      "schema_bytes": 6449,
+      "source_unit_count": 20
+    },
+    "full_six_case_total_token_ceiling": 73926,
+    "measured_total_token_ceiling": 40000,
+    "model_authors_every_full_canonical_event_value": true,
+    "model_authors_every_normalized_table_value": true,
+    "predecessor_semantic_replay_allowed": false,
+    "selected_segment_ids": [
+      "seg_80fe585badf8f3d3597d0f96",
+      "seg_7c027e01ed7e813b528c5c7f"
+    ],
+    "semantic_model_call_cap": 1,
+    "semantic_retry_cap": 0,
+    "structural_and_cost_pass_requires_quality_evaluation": true,
+    "table_duplicate_rejection_allowed": false
+  },
+  "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch40-compact-exhaustive-event-table-canary-v1/plan-step-receipt.json",
+  "intention_to_treat_accounting": {
+    "maximum_semantic_model_call_count_after_epoch40_dispatch": 19,
+    "predecessor_measured_total_tokens": 846632,
+    "predecessor_replay_allowed": false,
+    "predecessor_semantic_model_call_count": 18,
+    "predecessor_unknown_usage_turn_count": 2
+  },
+  "plan_epoch": 40,
+  "promotion_contract": {
+    "candidate_noninferiority_required": true,
+    "fresh_full_event_ab_ba_quality_required": true,
+    "holdout_authorized": false,
+    "production_mutation_allowed": false,
+    "quality_threshold": 0.97,
+    "winner_frozen": false
+  },
+  "schema_version": "pif_evaluation_epoch40_compact_exhaustive_event_table_canary_directive_v1",
+  "state": "authorized_for_exactly_one_compact_exhaustive_event_table_two_segment_canary",
+  "step_id": "canonical_v31_epoch40_compact_exhaustive_event_table_canary_v40",
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10",
+  "transport_contract": {
+    "api_key_billing_allowed": false,
+    "managed_chatgpt_pro_auth_required": true,
+    "official_persistent_codex_app_server_only": true,
+    "raw_session_token_replay_allowed": false,
+    "transport": "official_codex_app_server_stdio_managed_chatgpt_auth"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "plan_epoch": 40,
+  "schema_version": "pif_evaluation_semantic_plan_v1",
+  "state": "executable",
+  "step": {
+    "accepted_receipt_states": [
+      "passed",
+      "rejected",
+      "waiting"
+    ],
+    "directive_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/automation/pif-evaluation-epoch40-compact-exhaustive-event-table-canary-v40.json",
+    "directive_sha256": "fa235acde78dcba7187ae790ac9aa68a5c1972d350b40b70fa05c4998304fc84",
+    "expected_receipt_path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/work/app-server-development-v2/unattended-pipeline-v5/canonical-v31-epoch40-compact-exhaustive-event-table-canary-v1/plan-step-receipt.json",
+    "max_model_calls": 1,
+    "max_total_tokens": 40000,
+    "state": "executable",
+    "step_id": "canonical_v31_epoch40_compact_exhaustive_event_table_canary_v40"
+  },
+  "thread_id": "019f4cf1-c46e-7db3-acd2-bf03c4459a10"
+}
