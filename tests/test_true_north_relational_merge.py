@@ -362,6 +362,7 @@ class LoaderTest(unittest.TestCase):
         self.run_root.mkdir(parents=True, exist_ok=True)
         self._write_gold()
         self._write_db()
+        self._write_canonical_map()
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -449,6 +450,34 @@ class LoaderTest(unittest.TestCase):
         conn.commit()
         conn.close()
 
+    def _write_canonical_map(self) -> None:
+        path = self.run_root / "canonical-map" / "final.private.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "pif_true_north_canonical_map_v1",
+                    "run_id": self.run_id,
+                    "subjects": [
+                        {
+                            "canonical_subject_key": "subject_a",
+                            "subject_id": "sub_1",
+                        },
+                        {
+                            "canonical_subject_key": "subject_b",
+                            "subject_id": "sub_2",
+                        },
+                        {
+                            "canonical_subject_key": "subject_c",
+                            "subject_id": "sub_3",
+                        },
+                    ],
+                    "variants": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+
     def test_loader_selects_only_relational_escapes(self) -> None:
         inputs = trm.load_relational_merge_inputs(
             run_id=self.run_id, output_root=self.root
@@ -461,13 +490,16 @@ class LoaderTest(unittest.TestCase):
             inputs.diagnostics["intrinsic_junk_escapes"], ("cand_intrinsic",)
         )
 
-    def test_loader_marks_placeholder_proposition_keys_non_identifying(self) -> None:
+    def test_loader_resolves_subject_key_through_final_canonical_map(self) -> None:
         inputs = trm.load_relational_merge_inputs(
             run_id=self.run_id, output_root=self.root
         )
         by_id = {group["canonical_group_id"]: group for group in inputs.canonical_groups}
-        self.assertFalse(by_id["subject_b::unmapped"]["identifying"])
-        self.assertTrue(by_id["subject_a::prop_a"]["identifying"])
+        self.assertTrue(by_id["sub_2"]["identifying"])
+        self.assertEqual(
+            by_id["sub_2"]["canonical_subject_key"], "subject_b"
+        )
+        self.assertTrue(by_id["sub_1"]["identifying"])
 
     def test_verify_run_reports_the_measured_merge_state(self) -> None:
         report, inputs = trm.verify_run(run_id=self.run_id, output_root=self.root)
@@ -478,9 +510,32 @@ class LoaderTest(unittest.TestCase):
         merged = {entry.candidate_id: entry for entry in report.escapes}
         self.assertEqual(merged["cand_rel_merged"].duplicate_of, "cand_dup")
         self.assertEqual(
-            merged["cand_rel_unmerged"].reason, "non_identifying_canonical_group"
+            merged["cand_rel_unmerged"].reason, "singleton_canonical_group"
         )
         self.assertEqual(inputs.run_id, self.run_id)
+
+    def test_loader_raises_when_canonical_map_is_missing(self) -> None:
+        (
+            self.run_root / "canonical-map" / "final.private.json"
+        ).unlink()
+        with self.assertRaisesRegex(
+            trm.RelationalMergeError, "missing canonical-map artifact"
+        ):
+            trm.load_relational_merge_inputs(
+                run_id=self.run_id, output_root=self.root
+            )
+
+    def test_loader_raises_when_canonical_map_run_id_mismatches(self) -> None:
+        path = self.run_root / "canonical-map" / "final.private.json"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["run_id"] = "tnrun_other"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with self.assertRaisesRegex(
+            trm.RelationalMergeError, "run_id does not match"
+        ):
+            trm.load_relational_merge_inputs(
+                run_id=self.run_id, output_root=self.root
+            )
 
     def test_declared_escape_ids_override_the_ledger_derived_escape_set(self) -> None:
         inputs = trm.load_relational_merge_inputs(
@@ -503,6 +558,33 @@ class LoaderTest(unittest.TestCase):
         )
         self.assertEqual(
             inputs.diagnostics["intrinsic_junk_escapes"], ("cand_intrinsic",)
+        )
+
+    def test_declared_held_candidate_without_atomics_is_not_contamination(
+        self,
+    ) -> None:
+        conn = sqlite3.connect(self.run_root / "shadow.sqlite")
+        conn.execute(
+            """
+            UPDATE true_north_stage_ledger
+            SET category = 'held_needs_review',
+                atomic_claim_ids_json = '[]'
+            WHERE candidate_id = 'cand_rel_unmerged'
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        inputs = trm.load_relational_merge_inputs(
+            run_id=self.run_id,
+            output_root=self.root,
+            escape_candidate_ids=["cand_rel_unmerged"],
+        )
+
+        self.assertEqual(inputs.escapes, ())
+        self.assertEqual(
+            inputs.diagnostics["held_relational_candidates"],
+            ("cand_rel_unmerged",),
         )
 
     def test_loader_refuses_the_sealed_holdout_partition(self) -> None:

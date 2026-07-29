@@ -79,6 +79,65 @@ def test_intrinsic_escape_still_blocks_disposition_gate():
     assert result["relational_junk_escape_count"] == 0
 
 
+def test_held_candidates_are_symmetric_across_junk_and_value_metrics():
+    consensus, gold, predictions = _documents(
+        "nonasserted_question_frame"
+    )
+
+    held_junk = true_north._score_phase_c_dispositions(
+        consensus,
+        predictions,
+        gold,
+        held_candidate_ids=["junk"],
+    )
+    held_value = true_north._score_phase_c_dispositions(
+        consensus,
+        predictions,
+        gold,
+        held_candidate_ids=["value"],
+    )
+
+    assert held_junk["all_junk_escape_count"] == 0
+    assert held_junk["held_gold_junk_count"] == 1
+    assert held_value["retained_value_recall"] == 0.0
+    assert held_value["false_reject_count"] == 1
+    assert held_value["held_gold_value_count"] == 1
+
+
+def test_bracket_link_chrome_rule_is_narrow_and_model_free():
+    predictions = {
+        "chrome": {"candidate_id": "chrome", "disposition": "retain"},
+        "assertion": {
+            "candidate_id": "assertion",
+            "disposition": "retain",
+        },
+    }
+    candidates = {
+        "chrome": {
+            "candidate_id": "chrome",
+            "claim_text": "The speaker references a current request.",
+            "evidence_text": "The agency has a [request] out right now",
+        },
+        "assertion": {
+            "candidate_id": "assertion",
+            "claim_text": "The executive called an official about concerns.",
+            "evidence_text": (
+                "The executive called [Secretary] Jones and discussed "
+                "the concerns."
+            ),
+        },
+    }
+
+    result = true_north.apply_phase_c_intrinsic_composition_rules(
+        predictions, candidates
+    )
+
+    assert result["flipped_candidate_ids"] == ["chrome"]
+    assert result["model_calls_made"] == 0
+    assert result["predictions"]["chrome"]["disposition"] == "reject"
+    assert result["predictions"]["assertion"]["disposition"] == "retain"
+
+
 def test_measurement_contract_hash_is_stable_and_auditable():
     first = option2.measurement_contract()
     second = option2.measurement_contract()
@@ -98,6 +157,9 @@ def test_measurement_contract_hash_is_stable_and_auditable():
     assert first["evidence_trail"]["offline_parameter_sweep"][
         "parameterizations"
     ] == 36
+    assert first["held_item_accounting"]["value_effect"].startswith(
+        "exclude from the retained-value recall numerator"
+    )
 
 
 def test_manifest_contract_is_versioned_and_idempotent(

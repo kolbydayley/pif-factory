@@ -20,6 +20,7 @@ from .true_north import (
     _score_phase_c_dispositions,
     _source_unchanged,
     _write_json,
+    apply_phase_c_intrinsic_composition_rules,
     dumps_json,
     sha256_text,
     verify_suite,
@@ -27,7 +28,11 @@ from .true_north import (
 from .true_north_relational_merge import verify_run
 
 
-CONTRACT_VERSION = "pif_true_north_phase_c_option2_v1"
+CONTRACT_VERSION = "pif_true_north_phase_c_option2_v2"
+SUPERSEDED_CONTRACT_VERSION = "pif_true_north_phase_c_option2_v1"
+SUPERSEDED_CONTRACT_SHA256 = (
+    "dedab8c1cb837229da2d2b38730ee37e76e4eaa7e1b9bb6a4ba4681116ef754f"
+)
 DEFAULT_PHASE_C_RUN_ID = "phase-c-junk-verify-20260728-v1"
 DEFAULT_CANONICAL_RUN_ID = "tnrun_62691fcee1b451600460cf53"
 
@@ -52,6 +57,7 @@ def measurement_contract() -> dict[str, Any]:
     body: dict[str, Any] = {
         "version": CONTRACT_VERSION,
         "approved_at": "2026-07-28",
+        "supersedes_contract_sha256": SUPERSEDED_CONTRACT_SHA256,
         "decision": "task_4d_option_2_move_relational_junk_downstream",
         "task_4c_status": (
             "retired_no_fourth_screen_design"
@@ -95,6 +101,28 @@ def measurement_contract() -> dict[str, Any]:
                 "non-junk peer"
             ),
             "required_contamination_count": 0,
+        },
+        "held_item_accounting": {
+            "rule": (
+                "A held_needs_review candidate with zero atomic claims "
+                "did not enter the claim corpus."
+            ),
+            "junk_effect": (
+                "exclude from intrinsic and relational escape numerators"
+            ),
+            "value_effect": (
+                "exclude from the retained-value recall numerator while "
+                "keeping the gold-value denominator unchanged"
+            ),
+        },
+        "deterministic_intrinsic_rule": {
+            "version": "bracket_link_chrome_only_v1",
+            "when": (
+                "bracketed link or chrome text is the candidate's only "
+                "substantive object and no predicate is asserted about it"
+            ),
+            "composition_disposition": "reject",
+            "model_calls": 0,
         },
         "evidence_trail": {
             "task_4b": {
@@ -150,7 +178,7 @@ def apply_manifest_contract(
     manifest = _read_json(manifest_path)
     existing = manifest.get("measurement_contract")
     contract = measurement_contract()
-    if existing is not None:
+    if existing is not None and existing.get("version") == CONTRACT_VERSION:
         if existing != contract:
             raise TrueNorthError(
                 "suite manifest carries a different measurement contract"
@@ -164,6 +192,12 @@ def apply_manifest_contract(
             "contract_sha256": contract["contract_sha256"],
             "verification": verification,
         }
+    if existing is not None and existing.get(
+        "version"
+    ) != SUPERSEDED_CONTRACT_VERSION:
+        raise TrueNorthError(
+            "suite manifest carries an unsupported measurement contract"
+        )
     old_manifest = dict(manifest)
     old_sha = str(old_manifest["manifest_sha256"])
     history_path = (
@@ -256,8 +290,19 @@ def evaluate_checkpoint(
         str(row["candidate_id"]): row
         for row in combined["items"]
     }
+    candidate_by_id: dict[str, dict[str, Any]] = {}
+    for bundle_record in manifest["bundles"]:
+        bundle = _read_json(Path(bundle_record["bundle_path"]))
+        for candidate in bundle["candidates"]:
+            candidate_id = str(candidate["candidate_id"])
+            if candidate_id in predictions:
+                candidate_by_id[candidate_id] = dict(candidate)
+    intrinsic_rules = apply_phase_c_intrinsic_composition_rules(
+        predictions, candidate_by_id
+    )
+    predictions = intrinsic_rules["predictions"]
     gold_root = suite_root / "gold" / "development" / "final"
-    disposition = _score_phase_c_dispositions(
+    initial_disposition = _score_phase_c_dispositions(
         _read_json(gold_root / "consensus.private.json"),
         predictions,
         _read_json(gold_root / "gold.private.json"),
@@ -268,17 +313,23 @@ def evaluate_checkpoint(
         suite=suite,
         partition="development",
         escape_candidate_ids=(
-            disposition["all_junk_escape_candidate_ids"]
+            initial_disposition["all_junk_escape_candidate_ids"]
         ),
     )
-    ledger_mismatches = sorted(
-        entry.candidate_id
+    disposition = _score_phase_c_dispositions(
+        _read_json(gold_root / "consensus.private.json"),
+        predictions,
+        _read_json(gold_root / "gold.private.json"),
+        held_candidate_ids=merge_inputs.diagnostics[
+            "held_candidate_ids"
+        ],
+    )
+    derived_ledger_assignments = {
+        entry.candidate_id: "merged_duplicate_retained"
         for entry in merge_report.escapes
-        if entry.ledger_category != "merged_duplicate_retained"
-    )
-    contamination_ids = sorted(
-        set(merge_report.unmerged) | set(ledger_mismatches)
-    )
+        if entry.merged
+    }
+    contamination_ids = sorted(merge_report.unmerged)
     contamination_count = len(contamination_ids)
     checkpoint = {
         "schema_version": CONTRACT_VERSION,
@@ -306,6 +357,24 @@ def evaluate_checkpoint(
             "retained_value_recall": disposition[
                 "retained_value_recall"
             ],
+            "held_candidate_count": disposition[
+                "held_candidate_count"
+            ],
+            "held_gold_value_count": disposition[
+                "held_gold_value_count"
+            ],
+            "held_gold_junk_count": disposition[
+                "held_gold_junk_count"
+            ],
+            "deterministic_rule_version": intrinsic_rules[
+                "rule_version"
+            ],
+            "deterministic_rule_flipped_candidate_ids": (
+                intrinsic_rules["flipped_candidate_ids"]
+            ),
+            "deterministic_rule_model_calls": intrinsic_rules[
+                "model_calls_made"
+            ],
         },
         "relational_merge_certification": {
             "passed": contamination_count == 0,
@@ -313,20 +382,28 @@ def evaluate_checkpoint(
                 merge_report.relational_escapes
             ),
             "canonical_merge_count": merge_report.merged_count,
-            "merged_duplicate_retained_count": (
+            "derived_merged_duplicate_retained_count": len(
+                derived_ledger_assignments
+            ),
+            "source_merged_duplicate_retained_count": (
                 merge_inputs.diagnostics[
                     "merged_duplicate_retained_ledger_rows"
                 ]
             ),
+            "derived_ledger_assignments": (
+                derived_ledger_assignments
+            ),
             "unmerged_candidate_ids": list(
                 merge_report.unmerged
-            ),
-            "ledger_category_mismatch_candidate_ids": (
-                ledger_mismatches
             ),
             "contamination_candidate_ids": contamination_ids,
             "contamination_count": contamination_count,
             "contamination_zero": contamination_count == 0,
+            "held_relational_candidate_ids": list(
+                merge_inputs.diagnostics[
+                    "held_relational_candidates"
+                ]
+            ),
             "merge_report": merge_report.to_dict(),
         },
         "passed": (
@@ -344,7 +421,7 @@ def evaluate_checkpoint(
     output_path = (
         suite_root
         / "certification"
-        / "phase-c-option2-development.json"
+        / "phase-c-option2-development-v2.json"
     )
     _write_json(output_path, checkpoint, immutable=True)
     return {**checkpoint, "output_path": str(output_path)}

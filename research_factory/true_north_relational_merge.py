@@ -569,6 +569,54 @@ def _positions_relation(conn: sqlite3.Connection) -> str:
     raise RelationalMergeError("shadow database exposes no position observations")
 
 
+def _load_canonical_subject_map(
+    run_root: Path,
+    run_id: str,
+) -> tuple[dict[str, str], Path]:
+    path = run_root / "canonical-map" / "final.private.json"
+    if not path.is_file():
+        raise RelationalMergeError(
+            f"missing canonical-map artifact for run {run_id}: {path}"
+        )
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RelationalMergeError(
+            f"cannot read canonical-map artifact: {path}"
+        ) from exc
+    if payload.get("schema_version") != "pif_true_north_canonical_map_v1":
+        raise RelationalMergeError(
+            "canonical-map artifact has the wrong schema_version"
+        )
+    if payload.get("run_id") != run_id:
+        raise RelationalMergeError(
+            "canonical-map artifact run_id does not match canonical run"
+        )
+    rows = payload.get("subjects")
+    if not isinstance(rows, list) or not rows:
+        raise RelationalMergeError(
+            "canonical-map artifact has no subject mappings"
+        )
+    resolved: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise RelationalMergeError(
+                "canonical-map subject entry must be a mapping"
+            )
+        key = _require_str(
+            row.get("canonical_subject_key"),
+            "canonical_subject_key",
+        )
+        subject_id = _require_str(row.get("subject_id"), "subject_id")
+        existing = resolved.get(key)
+        if existing is not None and existing != subject_id:
+            raise RelationalMergeError(
+                f"canonical subject key {key} maps to multiple subject ids"
+            )
+        resolved[key] = subject_id
+    return resolved, path
+
+
 def load_relational_merge_inputs(
     *,
     run_id: str,
@@ -599,6 +647,9 @@ def load_relational_merge_inputs(
     root = suite_root(output_root, suite)
     run_root = root / "runs" / _require_str(run_id, "run_id")
     shadow_path = _guard_sealed(run_root / "shadow.sqlite", "shadow database")
+    subject_id_by_key, canonical_map_path = (
+        _load_canonical_subject_map(run_root, run_id)
+    )
     resolved_gold = (
         Path(gold_path).expanduser()
         if gold_path is not None
@@ -628,7 +679,8 @@ def load_relational_merge_inputs(
             positions = _positions_relation(conn)
             canonical_rows = conn.execute(
                 f"""
-                SELECT map.canonical_subject_key AS subject_key,
+                SELECT map.subject_id AS subject_id,
+                       map.canonical_subject_key AS subject_key,
                        map.canonical_proposition_key AS proposition_key,
                        positions.atomic_claim_id AS atomic_claim_id
                 FROM true_north_variant_canonical_map AS map
@@ -651,6 +703,7 @@ def load_relational_merge_inputs(
 
     atomics: list[dict[str, Any]] = []
     category_by_candidate: dict[str, str] = {}
+    atomic_ids_by_candidate: dict[str, tuple[str, ...]] = {}
     category_counts: dict[str, int] = {}
     for row in ledger_rows:
         candidate_id = str(row["candidate_id"])
@@ -658,19 +711,36 @@ def load_relational_merge_inputs(
         category_by_candidate[candidate_id] = category
         category_counts[category] = category_counts.get(category, 0) + 1
         raw_ids = json.loads(row["atomic_claim_ids_json"] or "[]")
+        atomic_ids_by_candidate[candidate_id] = tuple(
+            str(value) for value in raw_ids
+        )
         atomics.append(
             {
                 "candidate_id": candidate_id,
-                "atomic_claim_ids": [str(value) for value in raw_ids],
+                "atomic_claim_ids": list(
+                    atomic_ids_by_candidate[candidate_id]
+                ),
                 "ledger_category": category,
             }
         )
 
     grouped: dict[str, list[str]] = {}
+    key_by_group: dict[str, str] = {}
     for row in canonical_rows:
         subject_key = str(row["subject_key"])
-        proposition_key = str(row["proposition_key"])
-        group_id = f"{subject_key}{GROUP_KEY_SEPARATOR}{proposition_key}"
+        resolved_subject_id = subject_id_by_key.get(subject_key)
+        if resolved_subject_id is None:
+            raise RelationalMergeError(
+                "canonical subject key is absent from the final map: "
+                f"{subject_key}"
+            )
+        if str(row["subject_id"]) != resolved_subject_id:
+            raise RelationalMergeError(
+                "canonical subject id disagrees with the final map for key: "
+                f"{subject_key}"
+            )
+        group_id = resolved_subject_id
+        key_by_group[group_id] = subject_key
         bucket = grouped.setdefault(group_id, [])
         atomic_id = str(row["atomic_claim_id"])
         if atomic_id not in bucket:
@@ -682,10 +752,8 @@ def load_relational_merge_inputs(
             {
                 "canonical_group_id": group_id,
                 "atomic_claim_ids": sorted(grouped[group_id]),
-                "identifying": (
-                    is_identifying_canonical_key(subject_key)
-                    and is_identifying_canonical_key(proposition_key)
-                ),
+                "canonical_subject_key": key_by_group[group_id],
+                "identifying": True,
             }
         )
 
@@ -704,14 +772,21 @@ def load_relational_merge_inputs(
     escapes: list[dict[str, Any]] = []
     intrinsic_escapes: list[str] = []
     relational_non_escapes: list[str] = []
+    held_relational_candidates: list[str] = []
     for candidate_id, reason in sorted(reject_reasons.items()):
         category = category_by_candidate.get(candidate_id)
         if declared_escapes is None:
             escaped = category in VALUE_LEDGER_CATEGORIES
         else:
             escaped = candidate_id in declared_escapes
+        held_without_claim = (
+            category == "held_needs_review"
+            and not atomic_ids_by_candidate.get(candidate_id)
+        )
         if is_relational_junk_reason(reason):
-            if escaped:
+            if escaped and held_without_claim:
+                held_relational_candidates.append(candidate_id)
+            elif escaped:
                 escapes.append(
                     {
                         "candidate_id": candidate_id,
@@ -737,11 +812,24 @@ def load_relational_merge_inputs(
         "ledger_category_counts": dict(sorted(category_counts.items())),
         "canonical_map_row_count": len(canonical_rows),
         "canonical_group_count": len(canonical_groups),
+        "canonical_subject_map_path": str(canonical_map_path),
+        "canonical_subject_map_count": len(subject_id_by_key),
         "non_identifying_group_count": sum(
             1 for group in canonical_groups if not group["identifying"]
         ),
         "canonicalization_ran": bool(canonical_rows),
         "relational_escapes": tuple(row["candidate_id"] for row in escapes),
+        "held_candidate_ids": tuple(
+            sorted(
+                candidate_id
+                for candidate_id, category in category_by_candidate.items()
+                if category == "held_needs_review"
+                and not atomic_ids_by_candidate.get(candidate_id)
+            )
+        ),
+        "held_relational_candidates": tuple(
+            held_relational_candidates
+        ),
         "relational_gold_rejects_not_escaped": tuple(relational_non_escapes),
         "intrinsic_junk_escapes": tuple(intrinsic_escapes),
         "merged_duplicate_retained_ledger_rows": category_counts.get(

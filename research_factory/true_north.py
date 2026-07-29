@@ -9000,6 +9000,8 @@ def _score_phase_c_dispositions(
     consensus_document: Mapping[str, Any],
     predictions: Mapping[str, Mapping[str, Any]],
     preferred_document: Mapping[str, Any],
+    *,
+    held_candidate_ids: Sequence[str] = (),
 ) -> dict[str, Any]:
     from .true_north_relational_merge import is_relational_junk_reason
 
@@ -9025,6 +9027,9 @@ def _score_phase_c_dispositions(
         key: _gold_value_state(str(predictions[key]["disposition"]))
         for key in strict
     }
+    held = set(held_candidate_ids) & set(strict)
+    for candidate_id in held:
+        predicted_states[candidate_id] = "hold"
     macro_f1, detail = _macro_f1(
         gold_states, predicted_states, ("value", "junk", "hold")
     )
@@ -9104,6 +9109,10 @@ def _score_phase_c_dispositions(
             relational_junk_escapes
         ),
         "all_junk_escape_count": len(all_junk_escapes),
+        "held_candidate_count": len(held),
+        "held_candidate_ids": sorted(held),
+        "held_gold_value_count": len(held & gold_value),
+        "held_gold_junk_count": len(held & gold_junk),
         "false_reject_candidate_ids": false_rejects,
         "junk_escape_candidate_ids": intrinsic_junk_escapes,
         "intrinsic_junk_escape_candidate_ids": (
@@ -9114,7 +9123,7 @@ def _score_phase_c_dispositions(
         ),
         "all_junk_escape_candidate_ids": all_junk_escapes,
         "measurement_contract": {
-            "version": "pif_true_north_phase_c_option2_v1",
+            "version": "pif_true_north_phase_c_option2_v2",
             "old_gate": {
                 "scope": "all_gold_junk",
                 "acceptance": old_acceptance,
@@ -9227,8 +9236,15 @@ def run_phase_c_disposition(
         }
         _multipass_state_write(state_path, state)
     jobs: list[tuple[str, str, dict[str, Any]]] = []
+    candidate_by_id: dict[str, dict[str, Any]] = {}
     for episode_id in episode_ids:
         bundle = _read_json(Path(development[episode_id]["bundle_path"]))
+        candidate_by_id.update(
+            {
+                str(candidate["candidate_id"]): dict(candidate)
+                for candidate in bundle["candidates"]
+            }
+        )
         for base_job in _segment_jobs(bundle, gold=False):
             segment_id = str(
                 base_job["input"]["segment"]["segment_id"]
@@ -9263,6 +9279,10 @@ def run_phase_c_disposition(
                     f"duplicate Phase-C disposition: {candidate_id}"
                 )
             predictions[candidate_id] = dict(item)
+    intrinsic_rules = apply_phase_c_intrinsic_composition_rules(
+        predictions, candidate_by_id
+    )
+    predictions = intrinsic_rules["predictions"]
     score = _score_phase_c_dispositions(
         consensus,
         predictions,
@@ -9279,6 +9299,11 @@ def run_phase_c_disposition(
         "run_id": resolved_run_id,
         "configuration_sha256": configuration["configuration_sha256"],
         "score": score,
+        "deterministic_intrinsic_rules": {
+            key: value
+            for key, value in intrinsic_rules.items()
+            if key != "predictions"
+        },
         "usage": state["usage"],
         "packet_count": len(jobs),
         "production_mutation": False,
@@ -9801,6 +9826,78 @@ def _phase_c_is_reference_only_claim(text: str) -> bool:
             flags=re.IGNORECASE,
         )
     )
+
+
+def _phase_c_is_bracket_link_chrome_only(
+    candidate: Mapping[str, Any],
+) -> bool:
+    """Detect a bracket-link object mentioned only as existing/available."""
+
+    evidence = " ".join(
+        str(candidate.get("evidence_text") or "").split()
+    )
+    claim = " ".join(str(candidate.get("claim_text") or "").split())
+    matches = list(re.finditer(r"\[[^\]\r\n]+\]", evidence))
+    if len(matches) != 1 or not _phase_c_is_reference_only_claim(
+        claim
+    ):
+        return False
+    placeholder = (
+        evidence[: matches[0].start()]
+        + " BRACKET_OBJECT "
+        + evidence[matches[0].end() :]
+    )
+    return bool(
+        re.fullmatch(
+            r"(?i)(?:there\s+(?:is|was)|"
+            r"(?:the\s+)?[a-z0-9'’-]+(?:\s+[a-z0-9'’-]+){0,5}"
+            r"\s+(?:has|have|had))"
+            r"\s+(?:an?\s+|the\s+)?BRACKET_OBJECT"
+            r"(?:\s+(?:out|up|online|available|currently|now|today|"
+            r"right\s+now))*[.!?]?",
+            placeholder.strip(),
+        )
+    )
+
+
+def apply_phase_c_intrinsic_composition_rules(
+    predictions: Mapping[str, Mapping[str, Any]],
+    candidate_by_id: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Apply gold-blind intrinsic-junk rules after model composition."""
+
+    if set(predictions) - set(candidate_by_id):
+        raise TrueNorthError(
+            "intrinsic composition rules lack candidate inputs"
+        )
+    composed = {
+        candidate_id: dict(prediction)
+        for candidate_id, prediction in predictions.items()
+    }
+    flipped: list[str] = []
+    for candidate_id in sorted(composed):
+        if _gold_value_state(
+            str(composed[candidate_id]["disposition"])
+        ) != "value":
+            continue
+        if _phase_c_is_bracket_link_chrome_only(
+            candidate_by_id[candidate_id]
+        ):
+            composed[candidate_id] = {
+                **composed[candidate_id],
+                "disposition": "reject",
+                "junk_reason": "bare_mention",
+                "deterministic_rule": (
+                    "bracket_link_chrome_only_v1"
+                ),
+            }
+            flipped.append(candidate_id)
+    return {
+        "predictions": composed,
+        "flipped_candidate_ids": flipped,
+        "rule_version": "bracket_link_chrome_only_v1",
+        "model_calls_made": 0,
+    }
 
 
 def screen_phase_c_marginal_candidates(
@@ -10692,6 +10789,10 @@ def run_phase_c_junk_verify(
     composition = compose_phase_c_junk_verification(
         composed, screened, verifier, spark_results
     )
+    intrinsic_rules = apply_phase_c_intrinsic_composition_rules(
+        composition["predictions"], candidate_by_id
+    )
+    composition["predictions"] = intrinsic_rules["predictions"]
     consensus = _read_json(
         suite_root
         / "gold"
@@ -10720,6 +10821,9 @@ def run_phase_c_junk_verify(
         "glm_packet_count": len(batches),
         "spark_escalation_count": len(escalation_ids),
         "flipped_candidate_ids": composition[
+            "flipped_candidate_ids"
+        ],
+        "intrinsic_rule_flipped_candidate_ids": intrinsic_rules[
             "flipped_candidate_ids"
         ],
         "score": score,
@@ -11123,6 +11227,10 @@ def run_phase_c_marginal_verify(
     composition = compose_phase_c_marginal_verification(
         composed, screened, verifier, spark_results
     )
+    intrinsic_rules = apply_phase_c_intrinsic_composition_rules(
+        composition["predictions"], candidate_by_id
+    )
+    composition["predictions"] = intrinsic_rules["predictions"]
     consensus = _read_json(
         suite_root
         / "gold"
@@ -11156,6 +11264,9 @@ def run_phase_c_marginal_verify(
             "spark_escalation_reasons"
         ],
         "flipped_candidate_ids": composition[
+            "flipped_candidate_ids"
+        ],
+        "intrinsic_rule_flipped_candidate_ids": intrinsic_rules[
             "flipped_candidate_ids"
         ],
         "score": score,
@@ -11292,6 +11403,10 @@ def run_phase_c_disposition_escalation(
     combined = combine_phase_c_disposition_votes(
         first, second, escalated
     )
+    intrinsic_rules = apply_phase_c_intrinsic_composition_rules(
+        combined, candidate_by_id
+    )
+    combined = intrinsic_rules["predictions"]
     consensus = _read_json(
         suite_root
         / "gold"
@@ -11312,6 +11427,9 @@ def run_phase_c_disposition_escalation(
         "selection_sha256": selection["selection_sha256"],
         "provider_model": model,
         "score": score,
+        "intrinsic_rule_flipped_candidate_ids": intrinsic_rules[
+            "flipped_candidate_ids"
+        ],
         "usage": usage,
         "spark_call_ceiling": 25,
         "production_mutation": False,
@@ -11325,6 +11443,58 @@ def run_phase_c_disposition_escalation(
         immutable=True,
     )
     return result
+
+
+def _relational_certification_for_run(
+    *,
+    run_id: str,
+    output_root: str | Path | None,
+    suite: str,
+) -> dict[str, Any]:
+    from .true_north_relational_merge import (
+        RelationalMergeError,
+        verify_run,
+    )
+
+    try:
+        merge_report, merge_inputs = verify_run(
+            run_id=run_id,
+            output_root=output_root,
+            suite=suite,
+            partition="development",
+        )
+    except RelationalMergeError as exc:
+        raise TrueNorthError(str(exc)) from exc
+    contamination_ids = sorted(merge_report.unmerged)
+    derived_ledger_assignments = {
+        entry.candidate_id: "merged_duplicate_retained"
+        for entry in merge_report.escapes
+        if entry.merged
+    }
+    return {
+        "relational_escape_count": merge_report.relational_escapes,
+        "canonical_merge_count": merge_report.merged_count,
+        "derived_merged_duplicate_retained_count": len(
+            derived_ledger_assignments
+        ),
+        "source_merged_duplicate_retained_count": (
+            merge_inputs.diagnostics.get(
+                "merged_duplicate_retained_ledger_rows", 0
+            )
+        ),
+        "derived_ledger_assignments": derived_ledger_assignments,
+        "unmerged_candidate_ids": list(merge_report.unmerged),
+        "contamination_candidate_ids": contamination_ids,
+        "contamination_count": len(contamination_ids),
+        "contamination_zero": not contamination_ids,
+        "held_relational_candidate_ids": list(
+            merge_inputs.diagnostics.get(
+                "held_relational_candidates", ()
+            )
+        ),
+        "merge_report": merge_report.to_dict(),
+        "loader_diagnostics": merge_inputs.diagnostics,
+    }
 
 
 def score_run(
@@ -11935,6 +12105,48 @@ def score_run(
                     ),
                 )
             )
+    relational_certification: dict[str, Any] | None = None
+    measurement_contract = current_manifest.get(
+        "measurement_contract"
+    )
+    if (
+        partition == "development"
+        and isinstance(measurement_contract, Mapping)
+        and measurement_contract.get("version")
+        == "pif_true_north_phase_c_option2_v2"
+    ):
+        try:
+            relational_certification = (
+                _relational_certification_for_run(
+                    run_id=run_id,
+                    output_root=output_root,
+                    suite=suite,
+                )
+            )
+        except (
+            OSError,
+            sqlite3.Error,
+            ValueError,
+            TrueNorthError,
+        ) as exc:
+            relational_certification = {
+                "relational_escape_count": None,
+                "contamination_count": 1,
+                "contamination_zero": False,
+                "mechanical_failure": type(exc).__name__,
+            }
+        metrics.append(
+            _metric(
+                "relational_merge_contamination_count",
+                float(
+                    relational_certification["contamination_count"]
+                ),
+                threshold=0.0,
+                comparison="==",
+                details=relational_certification,
+                gate_group="safety",
+            )
+        )
     gate_metrics = [row for row in metrics if row["gate"]]
     primary_metrics = [
         row for row in gate_metrics if row["gate_group"] == "primary"
