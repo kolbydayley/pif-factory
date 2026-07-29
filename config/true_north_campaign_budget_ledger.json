@@ -198,7 +198,7 @@
       "max_tokens": 450000,
       "max_wall_seconds": 14400,
       "reserved_tokens_per_call": 25000,
-      "status": "declared",
+      "status": "terminal_partial_ineligible_decomposition_lane_stopped",
       "input_contract": "exact_19_flagged_packets_from_task5-input-split-default-20260729-v1",
       "provider_envelopes": 16,
       "batching_contract": "deterministically pack the 19 immutable semantic packets into 16 provider envelopes; validate every inner output against its original packet",
@@ -212,6 +212,31 @@
         "source_kind": "review_thread_directive_in_active_codex_thread",
         "directive_received_at": "2026-07-29",
         "directive_summary": "Run one gpt-5.6-sol gold-author-class decomposition probe and stop the decomposition lane if it fails."
+      },
+      "actual": {
+        "run_id": "task5-sol-input-split-default-20260729-v1",
+        "calls": 14,
+        "tokens": 455902,
+        "token_overage": 5902,
+        "validated_provider_envelopes": 13,
+        "expected_provider_envelopes": 16,
+        "validated_sol_candidates": 96,
+        "flagged_candidates": 106,
+        "validation_failures": 1,
+        "same_candidate_sol_atomic_accuracy": 0.631578947368421,
+        "same_candidate_glm_task5_fallback_atomic_accuracy": 0.6526315789473685,
+        "direct_shared_candidate_count": 84,
+        "direct_sol_atomic_accuracy": 0.6144578313253012,
+        "direct_glm_atomic_accuracy": 0.6385542168674698,
+        "sol_under_extraction_errors": 21,
+        "sol_over_extraction_errors": 15,
+        "partial_fallback_full_fold_atomic_accuracy": 0.7974137931034483,
+        "partial_fallback_aligned_faithfulness": 0.755012,
+        "result_sha256": "07ead4df1381ddab070ae5e278398489f51e3767c9e783ef145cbb7b17d1a3fa",
+        "cumulative_calls_after": 264,
+        "known_cumulative_tokens_after": 2782670,
+        "acceptance_eligible": false,
+        "decomposition_lane_stopped": true
       }
     }
   ]

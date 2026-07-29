@@ -737,3 +737,317 @@ def compose_and_score_sol_probe(
     true_north._write_json(path, document, immutable=False)
     return {**document, "score_path": str(path)}
 
+
+def _atomic_error_directions(
+    *,
+    consensus: Mapping[str, Any],
+    predictions: Mapping[str, Mapping[str, Any]],
+    candidate_ids: set[str],
+) -> dict[str, int]:
+    consensus_by_id = {
+        str(row["candidate_id"]): row for row in consensus["items"]
+    }
+    counts = {"acceptable": 0, "under": 0, "over": 0}
+    for candidate_id in sorted(candidate_ids):
+        gold = consensus_by_id[candidate_id]
+        predicted_count = len(
+            predictions[candidate_id]["atomic_claims"]
+        )
+        minimum = int(gold["minimum_atomic_count"])
+        maximum = int(gold["maximum_atomic_count"])
+        if minimum <= predicted_count <= maximum:
+            counts["acceptable"] += 1
+        elif predicted_count < minimum:
+            counts["under"] += 1
+        else:
+            counts["over"] += 1
+    return counts
+
+
+def finalize_partial_sol_probe(
+    *,
+    suite_root: str | Path,
+    run_id: str,
+) -> dict[str, Any]:
+    """Freeze an incomplete run as a diagnostic Task-5 fallback composition."""
+
+    root = Path(suite_root).expanduser().resolve()
+    run_root = root / "multipass" / "runs" / run_id
+    result = true_north._read_json(run_root / "result.json")
+    if result["complete"]:
+        raise SolSplitDefaultError(
+            "complete sol runs use the acceptance-eligible scorer"
+        )
+    output_paths = sorted(
+        (run_root / "outputs" / "sol-input-split-default").glob(
+            "*/validated.private.json"
+        )
+    )
+    sol_by_candidate = {
+        str(row["candidate_id"]): {
+            key: value
+            for key, value in row.items()
+            if key != "merge_reason"
+        }
+        for path in output_paths
+        for row in true_north._read_json(path)["items"]
+    }
+    if not sol_by_candidate:
+        raise SolSplitDefaultError(
+            "partial sol run has no validated candidates"
+        )
+    manifest = true_north._read_json(root / "manifest.json")
+    (
+        _reference_root,
+        reference_packets,
+        reference_outputs,
+        _reference_provenance,
+    ) = _reference_artifacts(root)
+    base_jobs, dispositions, _candidates = _load_search_context(
+        root, manifest
+    )
+    predictions: list[dict[str, Any]] = []
+    for key, reference in sorted(reference_outputs.items()):
+        adjudication = {
+            "schema_version": true_north.MULTIPASS_SCHEMA_VERSION,
+            "items": [
+                copy.deepcopy(
+                    sol_by_candidate.get(
+                        str(row["candidate_id"]), row
+                    )
+                )
+                for row in reference["items"]
+            ],
+        }
+        true_north.validate_multipass_adjudication(
+            adjudication, reference_packets[key]
+        )
+        output = true_north.compose_multipass_output(
+            base_jobs[key],
+            dispositions[key],
+            adjudication,
+            None,
+            stage_b_mode="adjudication",
+        )
+        predictions.extend(output["items"])
+        true_north._write_json(
+            run_root
+            / "outputs"
+            / "composed-partial-task5-fallback"
+            / key[0]
+            / key[1]
+            / "validated.private.json",
+            output,
+            immutable=False,
+        )
+    span_predictions, span_report = _apply_actor_span(predictions)
+    span_path = (
+        run_root
+        / "outputs"
+        / "composed-partial-actor-span"
+        / "predictions.private.json"
+    )
+    span_document = {
+        "schema_version": true_north.WORK_OUTPUT_SCHEMA_VERSION,
+        "actor_span_rule": "deterministic_actor_span_rule_v1",
+        "fallback": (
+            "validated sol candidates; frozen Task-5 for every "
+            "unvalidated flagged candidate and every unflagged candidate"
+        ),
+        "items": span_predictions,
+    }
+    span_document["predictions_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(span_document)
+    )
+    true_north._write_json(span_path, span_document, immutable=False)
+    decoupled = score_predictions(
+        suite_root=root,
+        lane_id=f"{run_id}-partial-actor-span",
+        predictions=span_predictions,
+        source_paths=[*output_paths, span_path],
+        actor_span_applied=True,
+        actor_span_report=span_report,
+    )
+    prediction_map = {
+        str(row["candidate_id"]): row for row in span_predictions
+    }
+    private = true_north._read_json(Path(decoupled["output_path"]))
+    candidate_scores = {
+        str(row["candidate_id"]): row
+        for row in private["private_candidate_scores"]
+    }
+    consensus = true_north._read_json(
+        root / "gold" / "development" / "final" / "consensus.private.json"
+    )
+    preferred = true_north._read_json(
+        root / "gold" / "development" / "final" / "gold.private.json"
+    )
+    speaker_maps: dict[str, Any] = {}
+    for bundle_row in manifest["bundles"]:
+        if bundle_row["partition"] != "development":
+            continue
+        bundle = true_north._read_json(Path(bundle_row["bundle_path"]))
+        for candidate in bundle["candidates"]:
+            speaker_maps[str(candidate["candidate_id"])] = (
+                bundle["episode_context"].get("speaker_map", [])
+            )
+    aligned_ids = {
+        candidate_id
+        for candidate_id, row in candidate_scores.items()
+        if row["strictly_scoreable"]
+        and row["atomic_count"]["acceptable_count"]
+        and row["value_state"]["predicted"] == "value"
+    }
+    aligned = score_campaign(
+        [
+            prediction_map[candidate_id]
+            for candidate_id in sorted(aligned_ids)
+        ],
+        consensus["items"],
+        preferred["items"],
+        subset_candidate_ids=aligned_ids,
+        speaker_maps_by_candidate=speaker_maps,
+    )
+    glm_paths = sorted(
+        (
+            root
+            / "multipass"
+            / "runs"
+            / SOURCE_RUN_ID
+            / "outputs"
+            / "composed-partial-fallback"
+        ).glob("*/*/validated.private.json")
+    )
+    glm_map = {
+        str(row["candidate_id"]): row
+        for path in glm_paths
+        for row in true_north._read_json(path)["items"]
+    }
+    validated_glm_ids = {
+        str(row["candidate_id"])
+        for path in (
+            root
+            / "multipass"
+            / "runs"
+            / SOURCE_RUN_ID
+            / "outputs"
+            / "input-split-default"
+        ).glob("*/*/validated.private.json")
+        for row in true_north._read_json(path)["items"]
+    }
+    measured_ids = set(sol_by_candidate)
+    shared_ids = measured_ids & validated_glm_ids
+    checkpoint = true_north._read_json(
+        root
+        / "certification"
+        / true_north.TASK5_CHECKPOINT_FILENAME
+    )
+    aggregate = decoupled["aggregate"]
+    document = {
+        "schema_version": SCHEMA_VERSION,
+        "experiment_id": EXPERIMENT_ID,
+        "run_id": run_id,
+        "model": MODEL,
+        "model_lane": MODEL_LANE,
+        "complete": False,
+        "acceptance_eligible": False,
+        "terminal_reason": (
+            "actual_token_usage_exceeded_declared_ceiling_after_"
+            "reserved_call_and_one_output_failed_unchanged_validator"
+        ),
+        "coverage": {
+            "validated_provider_envelopes": result[
+                "validated_provider_envelopes"
+            ],
+            "expected_provider_envelopes": result[
+                "expected_provider_envelopes"
+            ],
+            "validated_sol_candidate_count": len(measured_ids),
+            "flagged_candidate_count": 106,
+        },
+        "partial_fallback_composition": {
+            "acceptable_atomic_count_rate": aggregate[
+                "acceptable_atomic_count_rate"
+            ],
+            "aligned_candidate_count": len(aligned_ids),
+            "aligned_claim_text_faithfulness": aligned["aggregate"][
+                "claim_text_faithfulness_proxy"
+            ],
+            "faithfulness": aggregate[
+                "claim_text_faithfulness_proxy"
+            ],
+            "candidate_state_macro_f1": aggregate[
+                "consensus_candidate_state_macro_f1"
+            ],
+            "hallucination_rate_proxy": aggregate[
+                "hallucination_rate_proxy"
+            ],
+            "nine_gate_table": decoupled["nine_gate_table"],
+            "passed_gate_count": decoupled["passed_gate_count"],
+        },
+        "same_candidate_comparison": {
+            "all_validated_sol_candidate_count": len(measured_ids),
+            "sol_all_validated_acceptable_atomic_count_rate": (
+                _atomic_subset(
+                    consensus=consensus,
+                    predictions=prediction_map,
+                    candidate_ids=measured_ids,
+                )
+            ),
+            "glm_task5_fallback_on_same_candidates": _atomic_subset(
+                consensus=consensus,
+                predictions=glm_map,
+                candidate_ids=measured_ids,
+            ),
+            "direct_sol_glm_shared_candidate_count": len(shared_ids),
+            "sol_direct_shared_acceptable_atomic_count_rate": (
+                _atomic_subset(
+                    consensus=consensus,
+                    predictions=prediction_map,
+                    candidate_ids=shared_ids,
+                )
+            ),
+            "glm_direct_shared_acceptable_atomic_count_rate": (
+                _atomic_subset(
+                    consensus=consensus,
+                    predictions=glm_map,
+                    candidate_ids=shared_ids,
+                )
+            ),
+            "sol_error_directions_on_validated_candidates": (
+                _atomic_error_directions(
+                    consensus=consensus,
+                    predictions=prediction_map,
+                    candidate_ids=measured_ids,
+                )
+            ),
+        },
+        "junk_and_contamination": {
+            "intrinsic_junk_escape_count": checkpoint[
+                "disposition_gate"
+            ]["intrinsic_junk_escape_count"],
+            "relational_contamination_count": checkpoint[
+                "relational_merge_certification"
+            ]["contamination_count"],
+        },
+        "usage": result["usage"],
+        "token_overage": max(
+            0, int(result["usage"]["tokens"]) - MAX_TOKENS
+        ),
+        "cumulative_calls_after_run": result[
+            "cumulative_calls_after_run"
+        ],
+        "known_cumulative_tokens_after_run": result[
+            "known_cumulative_tokens_after_run"
+        ],
+        "passed": False,
+        "stop_decomposition_lane": True,
+        "holdout_opened": False,
+        "production_mutation": False,
+    }
+    document["result_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(document)
+    )
+    path = run_root / "terminal-partial-result.private.json"
+    true_north._write_json(path, document, immutable=False)
+    return {**document, "result_path": str(path)}

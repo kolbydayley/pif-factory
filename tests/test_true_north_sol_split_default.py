@@ -45,3 +45,35 @@ def test_reserved_whole_run_fits_declared_ceiling() -> None:
     assert probe.MODEL == "gpt-5.6-sol"
     assert probe.MODEL_LANE == "codex_subscription_ephemeral"
 
+
+def test_atomic_error_directions_use_gold_range() -> None:
+    consensus = {
+        "items": [
+            {
+                "candidate_id": "ok",
+                "minimum_atomic_count": 1,
+                "maximum_atomic_count": 2,
+            },
+            {
+                "candidate_id": "under",
+                "minimum_atomic_count": 2,
+                "maximum_atomic_count": 3,
+            },
+            {
+                "candidate_id": "over",
+                "minimum_atomic_count": 1,
+                "maximum_atomic_count": 1,
+            },
+        ]
+    }
+    predictions = {
+        "ok": {"atomic_claims": [{}, {}]},
+        "under": {"atomic_claims": [{}]},
+        "over": {"atomic_claims": [{}, {}]},
+    }
+
+    assert probe._atomic_error_directions(
+        consensus=consensus,
+        predictions=predictions,
+        candidate_ids=set(predictions),
+    ) == {"acceptable": 1, "under": 1, "over": 1}
