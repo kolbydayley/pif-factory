@@ -187,6 +187,7 @@ def run_jobs(
                     source_kind=payload.get("source_kind", "creator_provided_rss_transcript"),
                     error=str(exc),
                     worker_id=worker_id,
+                    lane=job["lane"],
                 )
             fail_or_retry_job(conn, job, str(exc))
             stats["failed"] += 1

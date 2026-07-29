@@ -678,7 +678,11 @@ def _default_stage_handlers(
         }
 
     def rss_and_strategies(context: DailyStageContext) -> Mapping[str, Any]:
-        from .ingest import enqueue_sources, enqueue_transcript_backlog
+        from .ingest import (
+            enqueue_sources,
+            enqueue_transcript_backlog,
+            route_terminal_fetch_failures,
+        )
         from .transcript_strategies import transcript_strategy_report
 
         strategy = transcript_strategy_report(conn)
@@ -708,6 +712,15 @@ def _default_stage_handlers(
         )
         processed = min(context.max_items, int(ingestion.get("episodes", 0)))
         remaining = context.max_items - processed
+        terminal_routing: Mapping[str, Any] = {"routed": 0}
+        if remaining:
+            terminal_routing = route_terminal_fetch_failures(
+                conn,
+                lane=lane,
+                limit=remaining,
+            )
+            processed += int(terminal_routing.get("routed", 0))
+            remaining = context.max_items - processed
         backlog: Mapping[str, Any] = {"selected": 0, "enqueued": 0}
         if remaining:
             backlog = enqueue_transcript_backlog(
@@ -732,6 +745,11 @@ def _default_stage_handlers(
             "due_transcript_strategies": {
                 "selected": backlog.get("selected", 0),
                 "enqueued": backlog.get("enqueued", 0),
+            },
+            "terminal_fetch_routing": {
+                "routed": terminal_routing.get("routed", 0),
+                "by_reason": terminal_routing.get("by_reason", {}),
+                "by_source": terminal_routing.get("by_source", {}),
             },
         }
 

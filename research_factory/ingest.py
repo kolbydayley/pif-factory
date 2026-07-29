@@ -46,6 +46,7 @@ TRANSCRIPTION_ELIGIBLE_STATUS = "transcription_eligible"
 TRANSCRIPT_ATTEMPT_DEFAULT_COOLDOWN_SECONDS = 24 * 60 * 60
 TRANSCRIPT_ATTEMPT_TERMINAL_STATUSES = {
     TRANSCRIPTION_ELIGIBLE_STATUS,
+    "manual_transcript_required",
     "rss_transcript_found",
     "official_page_found",
     "youtube_caption_found",
@@ -332,29 +333,217 @@ def record_fetch_transcript_failure(
     source_kind: str,
     error: str,
     worker_id: str | None = None,
+    lane: str = "podcast",
 ) -> dict[str, Any]:
     method = SOURCE_KIND_TO_METHOD.get(source_kind, source_kind)
-    status = "fetch_failed"
-    error_class = "fetch_failed"
-    lowered = error.lower()
-    if source_kind == "youtube_captions" and (
-        "blocking requests" in lowered
-        or "requestblocked" in lowered
-        or "ip" in lowered and "block" in lowered
-    ):
-        status = "youtube_caption_blocked"
-        error_class = "youtube_caption_blocked"
-    return record_transcript_acquisition_attempt(
+    classification = classify_fetch_failure(
+        source_kind=source_kind,
+        error=error,
+    )
+    result = record_transcript_acquisition_attempt(
         conn,
         episode_id=episode_id,
         method=method,
-        status=status,
+        status=classification["status"],
         result_source_kind=source_kind,
         policy_allowed=True,
-        error_class=error_class,
+        error_class=classification["reason_code"],
         notes=error[:1000],
         worker_id=worker_id,
+        metadata={
+            "classification": classification["classification"],
+            "disposition": classification["disposition"],
+        },
     )
+    if classification["classification"] == "terminal":
+        db.enqueue_job(
+            conn,
+            lane=lane,
+            job_type="manual_transcript_required",
+            target_id=episode_id,
+            payload={
+                "reason": classification["reason_code"],
+                "source_kind": source_kind,
+                "disposition": classification["disposition"],
+            },
+            priority=500,
+            max_attempts=1,
+        )
+    return {**result, "failure_classification": classification}
+
+
+def classify_fetch_failure(*, source_kind: str, error: str) -> dict[str, str]:
+    """Classify transcript fetch failures without source-specific retries."""
+
+    lowered = str(error or "").casefold()
+    terminal_reason = None
+    if source_kind == "youtube_captions" and any(
+        marker in lowered
+        for marker in (
+            "youtube is blocking requests",
+            "requestblocked",
+            "transcriptsdisabled",
+            "no transcripts were found",
+            "video unavailable",
+            "unsupported youtube url",
+        )
+    ):
+        terminal_reason = "youtube_public_caption_unavailable"
+    elif "lex_slug_derived_route_disabled_after_high_failure_rate" in lowered:
+        terminal_reason = "disabled_lex_transcript_route"
+    elif "official_page_no_public_transcript" in lowered:
+        terminal_reason = "official_page_no_public_transcript"
+    elif "strategy_not_ready:" in lowered:
+        terminal_reason = "official_strategy_not_ready"
+    elif any(
+        marker in lowered
+        for marker in (
+            "http error 404:",
+            "http error 410:",
+            "http error 403:",
+            "simplecast transcript missing or too short",
+            "transcript too short after parsing:",
+            "official_page_boilerplate_shell",
+            "official_transcript_link_not_found",
+        )
+    ):
+        terminal_reason = "known_source_route_exhausted"
+    if terminal_reason:
+        return {
+            "classification": "terminal",
+            "status": "manual_transcript_required",
+            "reason_code": terminal_reason,
+            "disposition": "exclude_from_automatic_fetch_until_source_route_changes",
+        }
+    return {
+        "classification": "retryable",
+        "status": "fetch_failed",
+        "reason_code": "transient_fetch_failure",
+        "disposition": "retry_after_cooldown",
+    }
+
+
+def route_terminal_fetch_failures(
+    conn,
+    *,
+    lane: str,
+    limit: int,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Route bounded historical terminal failures to manual disposition."""
+
+    if limit < 1:
+        raise ValueError("limit must be at least 1")
+    rows = conn.execute(
+        """
+        SELECT jobs.id AS job_id,
+               jobs.target_id AS episode_id,
+               jobs.error,
+               jobs.payload_json,
+               episodes.source_id,
+               sources.name AS source_name
+        FROM jobs
+        JOIN episodes ON episodes.id = jobs.target_id
+        JOIN sources ON sources.id = episodes.source_id
+        LEFT JOIN transcript_acquisition_status AS acquisition
+          ON acquisition.episode_id = episodes.id
+        WHERE jobs.lane = ?
+          AND jobs.job_type = 'fetch_transcript'
+          AND jobs.status = 'failed'
+          AND NOT EXISTS (
+            SELECT 1 FROM transcripts
+            WHERE transcripts.episode_id = episodes.id
+              AND transcripts.status = 'ready'
+          )
+          AND COALESCE(acquisition.status, '') != 'manual_transcript_required'
+        ORDER BY jobs.id
+        """,
+        (lane,),
+    ).fetchall()
+    routed: list[dict[str, Any]] = []
+    retryable = 0
+    for row in rows:
+        payload = loads_json(row["payload_json"], {})
+        source_kind = str(payload.get("source_kind") or "unknown")
+        classification = classify_fetch_failure(
+            source_kind=source_kind,
+            error=str(row["error"] or ""),
+        )
+        if classification["classification"] != "terminal":
+            retryable += 1
+            continue
+        if len(routed) >= limit:
+            break
+        item = {
+            "job_id": int(row["job_id"]),
+            "episode_id": row["episode_id"],
+            "source_id": row["source_id"],
+            "source_name": row["source_name"],
+            "source_kind": source_kind,
+            "reason_code": classification["reason_code"],
+            "disposition": classification["disposition"],
+        }
+        routed.append(item)
+        if dry_run:
+            continue
+        record_transcript_acquisition_attempt(
+            conn,
+            episode_id=row["episode_id"],
+            method=SOURCE_KIND_TO_METHOD.get(source_kind, source_kind),
+            status="manual_transcript_required",
+            result_source_kind=source_kind,
+            policy_allowed=True,
+            error_class=classification["reason_code"],
+            notes=(
+                "Historical terminal fetch classified during production "
+                "backlog routing."
+            ),
+            worker_id="terminal-fetch-router",
+            metadata={
+                "failed_job_id": int(row["job_id"]),
+                "classification": "terminal",
+                "disposition": classification["disposition"],
+            },
+            idempotency_key=stable_id(
+                "terminal_fetch_route",
+                str(row["job_id"]),
+                classification["reason_code"],
+                prefix="tak_",
+            ),
+        )
+        db.enqueue_job(
+            conn,
+            lane=lane,
+            job_type="manual_transcript_required",
+            target_id=row["episode_id"],
+            payload={
+                "reason": classification["reason_code"],
+                "source_kind": source_kind,
+                "source_id": row["source_id"],
+                "source_name": row["source_name"],
+                "disposition": classification["disposition"],
+                "failed_fetch_job_id": int(row["job_id"]),
+            },
+            priority=500,
+            max_attempts=1,
+        )
+    if not dry_run:
+        conn.commit()
+    by_reason: dict[str, int] = {}
+    by_source: dict[str, int] = {}
+    for item in routed:
+        by_reason[item["reason_code"]] = by_reason.get(item["reason_code"], 0) + 1
+        by_source[item["source_id"]] = by_source.get(item["source_id"], 0) + 1
+    return {
+        "ok": True,
+        "dry_run": dry_run,
+        "scanned": len(rows),
+        "routed": len(routed),
+        "retryable_seen": retryable,
+        "by_reason": by_reason,
+        "by_source": by_source,
+        "items": routed[:100],
+    }
 
 
 def record_transcript_source_found(
@@ -447,6 +636,14 @@ def enqueue_transcript_backlog(
             )
         )
         """,
+        """
+        NOT EXISTS (
+          SELECT 1
+          FROM transcript_acquisition_status AS terminal_status
+          WHERE terminal_status.episode_id = episodes.id
+            AND terminal_status.status = 'manual_transcript_required'
+        )
+        """,
     ]
     parser_retry_blocked_errors = (
         ""
@@ -456,7 +653,9 @@ def enqueue_transcript_backlog(
               OR failed_jobs.error LIKE '%official_page_boilerplate_shell%'
         """
     )
-    filters[-1] = filters[-1].format(parser_retry_blocked_errors=parser_retry_blocked_errors)
+    filters[3] = filters[3].format(
+        parser_retry_blocked_errors=parser_retry_blocked_errors
+    )
     params: list[Any] = [lane, lane]
     if not include_quarantined_retry:
         filters.append(
