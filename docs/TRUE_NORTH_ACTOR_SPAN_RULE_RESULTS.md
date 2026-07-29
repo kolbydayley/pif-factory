@@ -103,16 +103,25 @@ problem is picking the right span. The addressable surface is 157 atomics —
 | **+ a PERFECT value stage on all 157 residual items** | **1251/1458 = 85.8025%** |
 | Reported-actor gate | 90.3182% |
 
-**A perfect actor value selector still lands 4.5 points below the gate.** No
-amount of spend on value selection can close this gate, because the gate is not
-reachable on this measure. That is the same conclusion the denominator work
-reached from the other direction
-(`docs/TRUE_NORTH_GATE_DENOMINATOR_ALIGNMENT.md`: gold-vs-gold reaches 0.6847
-on the gate's own denominator).
+**Correction 2026-07-29:** the 85.8025% figure is computed on the **coupled
+denominator** — the exact defect T6 diagnoses. It is therefore *evidence for the
+decoupling ruling*, not an independent stop-condition. Read it as: under the
+current coupled scoring, even a perfect value stage cannot clear the gate, which
+is a statement about the scoring rule, not about value selection. Under Ruling 1
+(matched-pair scoring) this bound must be recomputed before it means anything
+about what a value stage can achieve.
 
-**Recommendation: do not fund a paid actor value stage until the gate contract
-is settled.** The ceiling is known, it is below the bar, and T1 already captured
-the free 55.6 points. Fix the measurement first.
+What survives the correction, because neither depends on the denominator:
+
+- **100% reachability** — every gold non-null actor is a literal span of its own
+  evidence, computed directly against gold.
+- **The residual is 157 atomics** — likewise computed directly against gold.
+
+**Recommendation (unchanged in direction, corrected in basis): do not fund a
+paid actor value stage until the field-gate scoring is decoupled per Ruling 1
+and this bound is recomputed on matched pairs.** T1 already captured the free
+55.6 points; the residual is small and well-characterised, so the value stage
+can be sized precisely once the measurement is right.
 
 Caveat: this script's span *option enumerator* (capitalized-run heuristic plus
 speaker roster) failed to enumerate the gold span on 255 of 440 items, so its

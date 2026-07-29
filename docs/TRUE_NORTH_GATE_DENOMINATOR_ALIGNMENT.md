@@ -47,6 +47,50 @@ because the gold process does not pass it.
 
 All three semantic gates sit above the agreement their own gold achieves.
 
+## ⚠️ CORRECTION 2026-07-29 — the atomic-count line below is WITHDRAWN
+
+The atomic-count row in the ceiling audit, and every conclusion drawn from it,
+used the **wrong comparator**. Rebutted and reconciled in
+`docs/TRUE_NORTH_ATOMIC_CEILING_RECONCILIATION.md` (commit `f2d97b1`); the
+rebuttal is **accepted in full**.
+
+The live gate scores **acceptable-range acceptance** (a prediction passes when
+its count falls within the consensus min–max), not exact count agreement.
+Comparing a range rule against exact A/B agreement compares the gate to a
+*stricter* rule than it applies — the mirror image of the denominator defect
+this document correctly identifies for the three field gates.
+
+The gate's own analogue is a third independent annotator scored the way the
+extractor is scored: **pass-C within the A/B acceptable range = 1132/1140 =
+99.30%**.
+
+Withdrawn, explicitly:
+
+- "gold-vs-gold exact atomic-count agreement is 0.8404 against a 0.90 gate" as
+  a statement about gate fairness;
+- "~6 of the 12-point gap is unreachable";
+- "further paid decomposition experiments cannot close this gate."
+
+**Standing:** the atomic-count gate at ≥0.90 is **fair**. The extractor's 78.02%
+(80.60% after split-default) is a **real capability shortfall**, concentrated in
+compound candidates — the unflagged subset already scores 92.13%.
+
+**Unaffected:** the three field gates (speaker, reported-actor, faithfulness) on
+a coupled denominator. That finding stands and is the subject of Ruling 1 below.
+
+## Rulings recorded (Kolby, 2026-07-29)
+
+1. **Field gates — option 2, decouple.** Score speaker/actor/faithfulness on
+   matched pairs, calibrated against matched-pair ceilings;
+   `acceptable_atomic_count_rate` alone carries decomposition. Implement the
+   scorer change and re-score frozen runs. No new quota spend.
+2. **Atomicity — gate stays at 0.90.** The Codex lane runs one bounded
+   Spark × split-default probe (~12 calls); its outcome decides strong-lane
+   routing vs disclosed-limitation certification.
+
+Coordination: the Codex review loop is the single driver for PIF experiments and
+gate decisions. No gate, scorer, or gold change without a recorded ruling.
+
 ## Full ceiling audit — which gates can gold itself pass?
 
 Running `compute_ceiling_document` over the same pass-A/pass-B artifacts gives
@@ -56,43 +100,41 @@ every calibrated metric, not just the three with a denominator problem:
 |---|---:|---:|---|
 | `speaker_exactness` | 0.9946 | 0.9700 | Yes (matched-pair) / **No** (gate denominator, 0.8917) |
 | `value_state_exactness` | 0.9632 | 0.9000 | Yes |
-| `atomic_count_exactness` | **0.8404** | 0.9000 | **No** |
+| ~~`atomic_count_exactness`~~ | ~~0.8404~~ | ~~0.9000~~ | **WITHDRAWN — wrong comparator; gate is fair at 99.30% under its own range rule (see correction above)** |
 | `disposition_exactness` | **0.8070** | 0.9000 | **No** |
 | `claim_text_faithfulness_proxy` | 0.7844 | 0.9000 | **No** |
 | `reported_actor_exactness` | 0.7754 | 0.9500 | **No** |
 
 **Only `value_state_exactness` is cleanly passable by the gold process itself.**
 
-### This includes the atomic-count gate
+### ~~This includes the atomic-count gate~~ — RETRACTED
 
-The atomic-count gate was the one target still believed to be measured on an
-undisputed basis, and it is the gate the campaign is actively spending model
-calls against (`docs/TRUE_NORTH_COUNT_FIRST_RESULTS.md` and the split-default
-experiment, both frozen as negative results).
+This section claimed the atomic-count gate was unreachable because gold-vs-gold
+*exact* agreement is 0.8404 against a 0.90 gate, and that ~6 of the 12-point gap
+was therefore unreachable.
 
-Gold-vs-gold exact atomic-count agreement is **0.8404** against a **0.90**
-gate. The system currently sits at 0.7802. Of the 12-point gap to the gate,
-**6 points are unreachable** — no extractor can be more consistent about
-decomposition than the gold it is scored against.
+**That was wrong.** The gate scores acceptable-range acceptance, not exact
+agreement, so exact A/B agreement is not its ceiling — the range exists
+precisely to absorb legitimate decomposition variation between competent
+annotators. Under the gate's own rule, pass-C reaches **99.30% (1132/1140)**.
+The 86.98% post-consensus figure cited here is likewise an exact-agreement
+number, not a range-acceptance one, so it does not support the claim either.
 
-Note on formulation: the figure above is *exact* count agreement, while the
-live gate uses acceptable-range (min–max) acceptance. The plan's own
-post-consensus range-acceptance figure is 86.98% — also below 0.90. Both
-formulations of the ceiling land under the gate.
+The atomic-count gate is **fair at 0.90**, and the extractor's shortfall
+(78.02%, 80.60% after split-default) is real capability, concentrated in
+compound candidates — the unflagged subset already scores 92.13%.
 
-**Practical consequence:** further paid decomposition experiments cannot close
-this gate. The remaining honest headroom is 0.7802 → 0.8404, about 6 points,
-and closing all of it still fails a 0.90 gate.
+See `docs/TRUE_NORTH_ATOMIC_CEILING_RECONCILIATION.md`.
 
 ## What this does and does not establish
 
 - **Does:** these three gate readings certify nothing about the extractor. A
   failure against them is not evidence of an extraction defect.
-- **Does not:** say the extractor is good. Atomic-count accuracy at 78.02% is a
-  real shortfall against a gold ceiling of 84.04% — roughly 6 points of genuine,
-  reachable headroom. The junk and contamination gates are unaffected by this
-  finding. (An earlier draft of this document described the atomic-count gate as
-  measured on an undisputed basis; the ceiling audit above corrects that — its
+- **Does not:** say the extractor is good. Atomic-count accuracy at 78.02%
+  (80.60% after split-default) is a real capability shortfall against a fair
+  0.90 gate, concentrated in compound candidates. The junk and contamination
+  gates are unaffected by this finding. (Superseded text follows, retained for
+  history: an earlier draft described the atomic-count gate as
   0.90 target also exceeds what gold achieves.)
 - **Does not:** propose that decomposition go unmeasured. The coupled
   denominator exists to stop a system from hiding missing atomics inside field
