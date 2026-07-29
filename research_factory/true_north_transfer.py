@@ -71,9 +71,12 @@ def _authorized_bundle(root: Path) -> tuple[dict[str, Any], Path]:
     path = Path(matches[0]["bundle_path"]).expanduser().resolve()
     if FORBIDDEN_EPISODE_ID in str(path):
         raise TransferError("forbidden episode resolved as authorized bundle")
-    if true_north._sha256_file(path) != matches[0]["bundle_sha256"]:
-        raise TransferError("authorized bundle hash drift")
     bundle = true_north._read_json(path)
+    body = dict(bundle)
+    expected = str(body.pop("bundle_sha256", ""))
+    actual = true_north.sha256_text(true_north.dumps_json(body))
+    if expected != actual or expected != matches[0]["bundle_sha256"]:
+        raise TransferError("authorized bundle semantic hash drift")
     if str(bundle["episode"]["episode_id"]) != AUTHORIZED_EPISODE_ID:
         raise TransferError("authorized bundle episode mismatch")
     return bundle, path
@@ -293,7 +296,8 @@ def run_blind(
         "authorized_episode_id": AUTHORIZED_EPISODE_ID,
         "forbidden_episode_id": FORBIDDEN_EPISODE_ID,
         "bundle_path": str(bundle_path),
-        "bundle_sha256": true_north._sha256_file(bundle_path),
+        "bundle_sha256": str(bundle["bundle_sha256"]),
+        "bundle_file_sha256": true_north._sha256_file(bundle_path),
         "model": GLM_MODEL,
         "composition": [
             "two_glm_disposition_passes_value_state_or",
@@ -549,7 +553,8 @@ def run_blind(
         "episode_id": AUTHORIZED_EPISODE_ID,
         "forbidden_episode_id": FORBIDDEN_EPISODE_ID,
         "configuration_sha256": configuration["configuration_sha256"],
-        "bundle_sha256": true_north._sha256_file(bundle_path),
+        "bundle_sha256": str(bundle["bundle_sha256"]),
+        "bundle_file_sha256": true_north._sha256_file(bundle_path),
         "prediction_path": str(output_path),
         "prediction_file_sha256": true_north._sha256_file(output_path),
         "prediction_semantic_sha256": prediction_doc["output_sha256"],
