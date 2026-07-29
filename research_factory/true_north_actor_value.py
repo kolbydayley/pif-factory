@@ -186,8 +186,10 @@ def _load_source_predictions(
         "result_file_sha256": true_north._sha256_file(
             source_root / "result.json"
         ),
-        "campaign_calls_after_source": int(
-            result["campaign_calls_after_run"]
+        "campaign_calls_after_source": (
+            int(result["campaign_calls_after_run"])
+            if result.get("campaign_calls_after_run") is not None
+            else None
         ),
         "episode_ids": configuration["episode_ids"],
     }
@@ -274,6 +276,7 @@ def run_actor_value_measurement(
     suite_root: str | Path,
     source_run_id: str,
     run_id: str | None = None,
+    campaign_calls_before_run: int | None = None,
     workers: int = 4,
     timeout_seconds: int = 900,
     opencode_binary: str = "/opt/homebrew/bin/opencode",
@@ -304,9 +307,22 @@ def run_actor_value_measurement(
         outputs=source_outputs, candidates=candidates
     )
     packets = _actor_packets(rows)
-    campaign_calls_before = int(
-        source_provenance["campaign_calls_after_source"]
+    source_campaign_calls = source_provenance[
+        "campaign_calls_after_source"
+    ]
+    campaign_calls_before = (
+        int(campaign_calls_before_run)
+        if campaign_calls_before_run is not None
+        else (
+            int(source_campaign_calls)
+            if source_campaign_calls is not None
+            else -1
+        )
     )
+    if campaign_calls_before < 0:
+        raise ActorValueError(
+            "campaign calls before actor run must be declared"
+        )
     effective_call_ceiling = min(
         MAX_CALLS,
         CAMPAIGN_CALL_CEILING - campaign_calls_before,
