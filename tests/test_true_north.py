@@ -8,6 +8,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from research_factory import db
 from research_factory import true_north
 
@@ -1491,6 +1493,187 @@ def test_combine_phase_c_disposition_votes_uses_spark_only_as_tiebreaker():
 
     assert combined["agree"]["disposition"] == "reject"
     assert combined["split"]["disposition"] == "revise"
+
+
+def test_phase_c_junk_screen_selects_repetition_fragment_and_disagreement():
+    long_evidence = (
+        "The system produces a complete substantive assertion with enough "
+        "context for a researcher to compare it against another source. "
+        "This sentence is intentionally long."
+    )
+    episode_candidates = {
+        "episode": [
+            {
+                "candidate_id": "earlier",
+                "claim_text": "The system produces a complete assertion.",
+                "evidence_text": long_evidence,
+            },
+            {
+                "candidate_id": "dev_c094b91406c9222943a29eba",
+                "claim_text": "The system produces a complete assertion.",
+                "evidence_text": long_evidence,
+            },
+            {
+                "candidate_id": "dev_d7f6bd87ab720be875111f97",
+                "claim_text": "A proposed claim synthesized from a fragment.",
+                "evidence_text": "But the evidence stops before completing the thought",
+            },
+            {
+                "candidate_id": "disagreement",
+                "claim_text": "A complete and useful assertion is made.",
+                "evidence_text": long_evidence,
+            },
+        ]
+    }
+    composed = {
+        candidate_id: {
+            "candidate_id": candidate_id,
+            "disposition": "retain",
+            "junk_reason": None,
+        }
+        for candidate_id in (
+            "earlier",
+            "dev_c094b91406c9222943a29eba",
+            "dev_d7f6bd87ab720be875111f97",
+            "disagreement",
+        )
+    }
+    first = {key: dict(value) for key, value in composed.items()}
+    second = {key: dict(value) for key, value in composed.items()}
+    first["disagreement"] = {
+        "candidate_id": "disagreement",
+        "disposition": "reject",
+        "junk_reason": "fragment",
+    }
+
+    screened = true_north.screen_phase_c_junk_candidates(
+        episode_candidates,
+        composed,
+        (first, second),
+    )
+
+    assert "repetition" in screened[
+        "dev_c094b91406c9222943a29eba"
+    ]["screen_classes"]
+    assert "fragment" in screened[
+        "dev_d7f6bd87ab720be875111f97"
+    ]["screen_classes"]
+    assert "ensemble_disagreement" in screened["disagreement"][
+        "screen_classes"
+    ]
+    assert screened["disagreement"]["ensemble_rejectors"] == [0]
+
+
+def test_junk_verify_reject_requires_verbatim_deficiency_quote():
+    candidate = {
+        "candidate_id": "candidate",
+        "evidence_text": "This is only an unfinished fragment",
+    }
+    packet = {
+        "output_schema": true_north.phase_c_junk_verify_schema(
+            ["candidate"]
+        ),
+        "input": {"candidates": [candidate]},
+    }
+    missing_quote = {
+        "schema_version": true_north.MULTIPASS_SCHEMA_VERSION,
+        "items": [
+            {
+                "candidate_id": "candidate",
+                "verdict": "reject",
+                "junk_reason": "fragment",
+                "deficiency_quote": None,
+            }
+        ],
+    }
+    with pytest.raises(true_north.TrueNorthError):
+        true_north.validate_phase_c_junk_verify(missing_quote, packet)
+    invented_quote = {
+        **missing_quote,
+        "items": [
+            {
+                **missing_quote["items"][0],
+                "deficiency_quote": "not in the evidence",
+            }
+        ],
+    }
+    with pytest.raises(
+        true_north.TrueNorthError, match="copied verbatim"
+    ):
+        true_north.validate_phase_c_junk_verify(
+            invented_quote, packet
+        )
+
+
+def test_junk_verify_flip_rule_requires_corroboration_or_spark():
+    composed = {
+        "candidate": {
+            "candidate_id": "candidate",
+            "disposition": "retain",
+            "junk_reason": None,
+        }
+    }
+    screened = {
+        "candidate": {
+            "screen_classes": ["bare_mention_question"],
+            "ensemble_rejectors": [],
+        }
+    }
+    verifier = {
+        "candidate": {
+            "candidate_id": "candidate",
+            "verdict": "reject",
+            "junk_reason": "fragment",
+            "deficiency_quote": "fragment",
+        }
+    }
+
+    pending = true_north.compose_phase_c_junk_verification(
+        composed, screened, verifier, {}
+    )
+
+    assert pending["predictions"]["candidate"]["disposition"] == "retain"
+    assert pending["spark_escalation_candidate_ids"] == ["candidate"]
+
+    decided = true_north.compose_phase_c_junk_verification(
+        composed,
+        screened,
+        verifier,
+        {
+            "candidate": {
+                "candidate_id": "candidate",
+                "verdict": "reject",
+                "junk_reason": "fragment",
+                "deficiency_quote": "fragment",
+            }
+        },
+    )
+    assert decided["predictions"]["candidate"]["disposition"] == "reject"
+
+
+def test_junk_verify_cannot_flip_unscreened_candidate():
+    composed = {
+        "candidate": {
+            "candidate_id": "candidate",
+            "disposition": "retain",
+            "junk_reason": None,
+        }
+    }
+    verifier = {
+        "candidate": {
+            "candidate_id": "candidate",
+            "verdict": "reject",
+            "junk_reason": "fragment",
+            "deficiency_quote": "fragment",
+        }
+    }
+
+    with pytest.raises(
+        true_north.TrueNorthError, match="unscreened"
+    ):
+        true_north.compose_phase_c_junk_verification(
+            composed, {}, verifier, {}
+        )
 
 
 if __name__ == "__main__":

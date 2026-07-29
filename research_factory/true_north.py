@@ -71,6 +71,27 @@ MULTIPASS_JUNK_REASONS = (
     "repetition",
     "unsupported_inference",
 )
+PHASE_C_JUNK_VERIFY_JACCARD = 0.6
+PHASE_C_JUNK_VERIFY_FRAGMENT_MAX_CHARS = 120
+PHASE_C_JUNK_VERIFY_MAX_GLM_CALLS = 8
+PHASE_C_JUNK_VERIFY_MAX_SPARK_CALLS = 3
+PHASE_C_JUNK_VERIFY_MAX_TOKENS = 120_000
+PHASE_C_JUNK_VERIFY_BATCH_SIZE = 25
+PHASE_C_JUNK_VERIFY_SYSTEM_PROMPT = """You are a junk auditor for a private podcast research corpus. Do not use
+tools. Every candidate you receive has been provisionally retained, and most
+are genuinely valuable; your task is to catch the rare junk that slipped
+through. Reject a candidate only when you can quote a concrete deficiency
+from its exact evidence: the evidence merely repeats an assertion already
+made elsewhere without adding new content; the evidence is a truncated
+fragment whose assertion cannot be completed from the text present; the
+evidence only names a person, product, or document without asserting anything
+about it; the evidence is an unanswered question or setup with no recoverable
+assertion; or the evidence is page chrome, navigation, or metadata. If the
+evidence contains any complete, substantive asserted proposition a researcher
+could verify, compare, contradict, or qualify, confirm the retention even
+when the candidate is also partly repetitive or fragmentary. For each reject,
+name the junk class and copy the deficient text verbatim as the deficiency
+quote. Return only the exact schema-valid JSON requested by the packet."""
 MULTIPASS_ENUMS = {
     "certainty": ("low", "medium", "high", "hedged"),
     "stance": (
@@ -1523,6 +1544,54 @@ def multipass_disposition_schema(
     }
 
 
+def phase_c_junk_verify_schema(
+    candidate_ids: Sequence[str],
+) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["schema_version", "items"],
+        "properties": {
+            "schema_version": {
+                "type": "string",
+                "const": MULTIPASS_SCHEMA_VERSION,
+            },
+            "items": {
+                "type": "array",
+                "minItems": len(candidate_ids),
+                "maxItems": len(candidate_ids),
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": [
+                        "candidate_id",
+                        "verdict",
+                        "junk_reason",
+                        "deficiency_quote",
+                    ],
+                    "properties": {
+                        "candidate_id": {
+                            "type": "string",
+                            "enum": list(candidate_ids),
+                        },
+                        "verdict": {
+                            "type": "string",
+                            "enum": ["confirm_retain", "reject"],
+                        },
+                        "junk_reason": {
+                            "type": ["string", "null"],
+                            "enum": [None, *MULTIPASS_JUNK_REASONS],
+                        },
+                        "deficiency_quote": {
+                            "type": ["string", "null"],
+                        },
+                    },
+                },
+            },
+        },
+    }
+
+
 def multipass_decomposition_schema(
     candidate_ids: Sequence[str],
 ) -> dict[str, Any]:
@@ -1765,6 +1834,42 @@ def validate_multipass_disposition(
                 "reject requires junk_reason and non-reject forbids it: "
                 f"{candidate_id}"
             )
+
+
+def validate_phase_c_junk_verify(
+    output: Mapping[str, Any],
+    packet: Mapping[str, Any],
+) -> None:
+    _validate_schema(packet["output_schema"], output, path="$")
+    candidates = {
+        str(row["candidate_id"]): row
+        for row in packet["input"]["candidates"]
+    }
+    items = _validate_multipass_scope(output, list(candidates))
+    for candidate_id, item in items.items():
+        rejected = item["verdict"] == "reject"
+        reason = item["junk_reason"]
+        quote = item["deficiency_quote"]
+        if rejected != (reason is not None and isinstance(quote, str)):
+            raise TrueNorthError(
+                "junk verifier reject requires reason and deficiency quote; "
+                "confirm_retain forbids both: "
+                f"{candidate_id}"
+            )
+        if not rejected and (reason is not None or quote is not None):
+            raise TrueNorthError(
+                "confirmed retention cannot carry junk evidence: "
+                f"{candidate_id}"
+            )
+        if rejected:
+            assert isinstance(quote, str)
+            if not quote or quote not in str(
+                candidates[candidate_id]["evidence_text"]
+            ):
+                raise TrueNorthError(
+                    "junk deficiency quote must be copied verbatim from "
+                    f"evidence: {candidate_id}"
+                )
 
 
 def validate_multipass_decomposition(
@@ -8735,6 +8840,696 @@ def combine_phase_c_disposition_votes(
     return combined
 
 
+def _phase_c_junk_tokens(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", text.casefold()))
+
+
+def _phase_c_token_jaccard(left: str, right: str) -> float:
+    left_tokens = _phase_c_junk_tokens(left)
+    right_tokens = _phase_c_junk_tokens(right)
+    union = left_tokens | right_tokens
+    return len(left_tokens & right_tokens) / len(union) if union else 0.0
+
+
+def _phase_c_has_finite_verb(text: str) -> bool:
+    tokens = re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", text.casefold())
+    finite_words = {
+        "am",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "can",
+        "could",
+        "will",
+        "would",
+        "shall",
+        "should",
+        "may",
+        "might",
+        "must",
+        "say",
+        "says",
+        "said",
+        "make",
+        "makes",
+        "made",
+        "go",
+        "goes",
+        "went",
+        "think",
+        "thinks",
+        "thought",
+        "believe",
+        "believes",
+        "argue",
+        "argues",
+        "predict",
+        "predicts",
+        "need",
+        "needs",
+        "want",
+        "wants",
+    }
+    return any(
+        token in finite_words
+        or (
+            len(token) > 4
+            and (token.endswith("ed") or token.endswith("ing"))
+        )
+        for token in tokens
+    )
+
+
+def _phase_c_bare_mention_or_question(
+    claim_text: str, evidence_text: str
+) -> bool:
+    claim_has_verb = _phase_c_has_finite_verb(claim_text)
+    if not claim_has_verb:
+        return True
+    if "?" not in evidence_text:
+        return False
+    continuation = evidence_text.rsplit("?", 1)[-1].strip()
+    return not continuation or not _phase_c_has_finite_verb(continuation)
+
+
+def screen_phase_c_junk_candidates(
+    episode_candidates: Mapping[str, Sequence[Mapping[str, Any]]],
+    composed: Mapping[str, Mapping[str, Any]],
+    ensemble_members: Sequence[Mapping[str, Mapping[str, Any]]],
+) -> dict[str, dict[str, Any]]:
+    """Apply the frozen, gold-blind Task-4b screen to retained candidates."""
+
+    screened: dict[str, dict[str, Any]] = {}
+    observed: set[str] = set()
+    for episode_id, candidates in episode_candidates.items():
+        earlier_texts: list[str] = []
+        for candidate in candidates:
+            candidate_id = str(candidate["candidate_id"])
+            if candidate_id in observed:
+                raise TrueNorthError(
+                    f"duplicate junk-screen candidate: {candidate_id}"
+                )
+            observed.add(candidate_id)
+            if candidate_id not in composed:
+                raise TrueNorthError(
+                    f"junk-screen candidate lacks disposition: {candidate_id}"
+                )
+            claim_text = str(candidate.get("claim_text") or "")
+            evidence_text = str(candidate.get("evidence_text") or "")
+            comparison_text = f"{claim_text} {evidence_text}".strip()
+            maximum_jaccard = max(
+                (
+                    _phase_c_token_jaccard(comparison_text, earlier)
+                    for earlier in earlier_texts
+                ),
+                default=0.0,
+            )
+            earlier_texts.append(comparison_text)
+            if _gold_value_state(
+                str(composed[candidate_id]["disposition"])
+            ) != "value":
+                continue
+            classes: list[str] = []
+            rejectors = [
+                index
+                for index, member in enumerate(ensemble_members)
+                if candidate_id in member
+                and _gold_value_state(
+                    str(member[candidate_id]["disposition"])
+                )
+                != "value"
+            ]
+            if rejectors:
+                classes.append("ensemble_disagreement")
+            if maximum_jaccard >= PHASE_C_JUNK_VERIFY_JACCARD:
+                classes.append("repetition")
+            terminal_text = evidence_text.rstrip().rstrip(
+                "\"'”’)]}"
+            )
+            if (
+                len(evidence_text.strip())
+                < PHASE_C_JUNK_VERIFY_FRAGMENT_MAX_CHARS
+                or not terminal_text
+                or terminal_text[-1] not in ".!?"
+            ):
+                classes.append("fragment")
+            if _phase_c_bare_mention_or_question(
+                claim_text, evidence_text
+            ):
+                classes.append("bare_mention_question")
+            if classes:
+                screened[candidate_id] = {
+                    "candidate_id": candidate_id,
+                    "episode_id": str(episode_id),
+                    "screen_classes": classes,
+                    "ensemble_rejectors": rejectors,
+                    "maximum_prior_token_jaccard": round(
+                        maximum_jaccard, 6
+                    ),
+                }
+    if observed != set(composed):
+        raise TrueNorthError(
+            "junk screen and disposition scopes differ"
+        )
+    return screened
+
+
+def _phase_c_screen_reason_matches(
+    screen_classes: Sequence[str], junk_reason: str
+) -> bool:
+    if junk_reason == "repetition":
+        return "repetition" in screen_classes
+    if junk_reason == "fragment":
+        return "fragment" in screen_classes
+    if junk_reason in {"bare_mention", "question_or_setup"}:
+        return "bare_mention_question" in screen_classes
+    return False
+
+
+def compose_phase_c_junk_verification(
+    composed: Mapping[str, Mapping[str, Any]],
+    screened: Mapping[str, Mapping[str, Any]],
+    verifier: Mapping[str, Mapping[str, Any]],
+    spark: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Apply Task-4b's asymmetric flip rule without consulting gold."""
+
+    if not set(verifier).issubset(screened):
+        raise TrueNorthError(
+            "junk verifier attempted to decide an unscreened candidate"
+        )
+    if set(verifier) != set(screened):
+        raise TrueNorthError(
+            "junk verifier did not account for every screened candidate"
+        )
+    predictions = {
+        candidate_id: dict(decision)
+        for candidate_id, decision in composed.items()
+    }
+    escalation_ids: list[str] = []
+    flipped: list[str] = []
+    for candidate_id in sorted(screened):
+        decision = verifier[candidate_id]
+        if decision["verdict"] == "confirm_retain":
+            continue
+        reason = str(decision["junk_reason"])
+        screen = screened[candidate_id]
+        corroborated = bool(screen["ensemble_rejectors"]) or (
+            _phase_c_screen_reason_matches(
+                list(screen["screen_classes"]), reason
+            )
+        )
+        final_reject = corroborated
+        if not corroborated:
+            escalation_ids.append(candidate_id)
+            if candidate_id in spark:
+                final_reject = (
+                    spark[candidate_id]["verdict"] == "reject"
+                )
+        if final_reject:
+            predictions[candidate_id] = {
+                "candidate_id": candidate_id,
+                "disposition": "reject",
+                "junk_reason": (
+                    str(spark[candidate_id]["junk_reason"])
+                    if not corroborated
+                    and candidate_id in spark
+                    and spark[candidate_id]["verdict"] == "reject"
+                    else reason
+                ),
+            }
+            flipped.append(candidate_id)
+    if not set(spark).issubset(escalation_ids):
+        raise TrueNorthError(
+            "Spark junk verdict exists without an uncorroborated reject"
+        )
+    return {
+        "predictions": predictions,
+        "spark_escalation_candidate_ids": escalation_ids,
+        "flipped_candidate_ids": flipped,
+    }
+
+
+def _load_phase_c_task4b_inputs(
+    suite_root: Path,
+) -> tuple[
+    dict[str, list[dict[str, Any]]],
+    dict[str, dict[str, Any]],
+    tuple[dict[str, dict[str, Any]], ...],
+]:
+    phase_root = suite_root / "phase-c" / "runs"
+    first = _phase_c_disposition_outputs(
+        phase_root / "phase-c-disposition-20260728-v1"
+    )
+    second = _phase_c_disposition_outputs(
+        phase_root / "phase-c-disposition-20260728-v2"
+    )
+    spark_document = _read_json(
+        phase_root
+        / "phase-c-disposition-20260728-v2-spark-conflicts-v1"
+        / "outputs"
+        / "disposition"
+        / "validated.private.json"
+    )
+    spark = {
+        str(item["candidate_id"]): dict(item)
+        for item in spark_document["items"]
+    }
+    composed = combine_phase_c_disposition_votes(
+        first, second, spark
+    )
+    search_episode_ids = {
+        "ep_90c3b5c995bce501c9aef55c",
+        "ep_7ec9f808a3955c720aeb94ff",
+    }
+    manifest = _read_json(suite_root / "manifest.json")
+    episodes: dict[str, list[dict[str, Any]]] = {}
+    for row in manifest["bundles"]:
+        episode_id = str(row["episode_id"])
+        if episode_id not in search_episode_ids:
+            continue
+        bundle = _read_json(Path(row["bundle_path"]))
+        episodes[episode_id] = [
+            dict(candidate) for candidate in bundle["candidates"]
+        ]
+    if set(episodes) != search_episode_ids:
+        raise TrueNorthError(
+            "Task-4b Search-fold episode scope is incomplete"
+        )
+    return episodes, composed, (first, second, spark)
+
+
+def dry_run_phase_c_junk_screen(
+    *,
+    output_root: str | Path | None = None,
+    suite: str = SUITE_ID,
+) -> dict[str, Any]:
+    suite_root = _suite_root(output_root, suite)
+    if not verify_suite(output_root=output_root, suite=suite)["ok"]:
+        raise TrueNorthError(
+            "suite verification failed before Task-4b screen"
+        )
+    episodes, composed, ensemble = _load_phase_c_task4b_inputs(
+        suite_root
+    )
+    screened = screen_phase_c_junk_candidates(
+        episodes, composed, ensemble
+    )
+    required_known_escapes = {
+        "dev_c094b91406c9222943a29eba",
+        "dev_d7f6bd87ab720be875111f97",
+    }
+    missing = sorted(required_known_escapes - set(screened))
+    if missing:
+        raise TrueNorthError(
+            "Task-4b screen missed a required known escape: "
+            + ", ".join(missing)
+        )
+    class_counts = Counter(
+        screen_class
+        for row in screened.values()
+        for screen_class in row["screen_classes"]
+    )
+    retained_count = sum(
+        _gold_value_state(str(row["disposition"])) == "value"
+        for row in composed.values()
+    )
+    packet_count = (
+        len(screened) + PHASE_C_JUNK_VERIFY_BATCH_SIZE - 1
+    ) // PHASE_C_JUNK_VERIFY_BATCH_SIZE
+    if packet_count > PHASE_C_JUNK_VERIFY_MAX_GLM_CALLS:
+        raise TrueNorthError(
+            "Task-4b deterministic screen exceeds GLM call budget"
+        )
+    report = {
+        "schema_version": MULTIPASS_SCHEMA_VERSION,
+        "phase": "phase_c_junk_verify_screen",
+        "suite_id": suite,
+        "source_disposition_result_sha256": (
+            "f1f5ebda6e8c88ddc845767bdeab7f6fdf45a2e9c7aabd434a0a9e4c48a06fcd"
+        ),
+        "thresholds": {
+            "repetition_token_jaccard": PHASE_C_JUNK_VERIFY_JACCARD,
+            "fragment_max_characters": (
+                PHASE_C_JUNK_VERIFY_FRAGMENT_MAX_CHARS
+            ),
+        },
+        "retained_count": retained_count,
+        "screened_count": len(screened),
+        "screen_class_counts": dict(sorted(class_counts.items())),
+        "packet_count": packet_count,
+        "known_escapes_screened": sorted(required_known_escapes),
+        "screened": [
+            screened[candidate_id]
+            for candidate_id in sorted(screened)
+        ],
+        "gold_accessed": False,
+        "model_calls_made": 0,
+        "holdout_opened": False,
+        "production_mutation": False,
+    }
+    report["screen_sha256"] = sha256_text(dumps_json(report))
+    return report
+
+
+def _phase_c_junk_verify_packet(
+    *,
+    suite: str,
+    candidates: Sequence[Mapping[str, Any]],
+    screened: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    compact_candidates = [
+        {
+            "candidate_id": str(candidate["candidate_id"]),
+            "claim_text": str(candidate["claim_text"]),
+            "evidence_text": str(candidate["evidence_text"]),
+            "screen_classes": list(
+                screened[str(candidate["candidate_id"])][
+                    "screen_classes"
+                ]
+            ),
+        }
+        for candidate in candidates
+    ]
+    candidate_ids = [
+        str(candidate["candidate_id"])
+        for candidate in compact_candidates
+    ]
+    return {
+        "schema_version": MULTIPASS_SCHEMA_VERSION,
+        "suite_id": suite,
+        "multipass_stage": "junk_verify",
+        "task": (
+            "Audit provisionally retained candidates for the closed junk "
+            "classes without rewriting any claim."
+        ),
+        "instructions": [
+            "Return one verdict for every candidate and no others.",
+            "A reject requires a closed junk_reason and a verbatim deficiency_quote from evidence_text.",
+            "A confirmed retention requires null junk_reason and null deficiency_quote.",
+            "Screen classes explain why an item was audited; they are not verdicts.",
+        ],
+        "output_schema": phase_c_junk_verify_schema(candidate_ids),
+        "input": {"candidates": compact_candidates},
+    }
+
+
+def _phase_c_junk_outputs(
+    output_root: Path,
+) -> dict[str, dict[str, Any]]:
+    results: dict[str, dict[str, Any]] = {}
+    for path in sorted(output_root.glob("*/validated.private.json")):
+        for item in _read_json(path)["items"]:
+            candidate_id = str(item["candidate_id"])
+            if candidate_id in results:
+                raise TrueNorthError(
+                    f"duplicate junk-verifier output: {candidate_id}"
+                )
+            results[candidate_id] = dict(item)
+    return results
+
+
+def _phase_c_paid_attempt_receipts(
+    run_root: Path,
+) -> list[dict[str, Any]]:
+    receipts: list[dict[str, Any]] = []
+    paths = list(
+        (run_root / "failed-attempts").glob("*.private.jsonl")
+    )
+    paths.extend(
+        (run_root / "outputs").glob(
+            "**/attempt-*.private.jsonl"
+        )
+    )
+    for path in sorted(paths):
+        stdout = path.read_text(encoding="utf-8")
+        _, finish, stream_count = _parse_opencode_stream(stdout)
+        timestamps = [
+            float(event["timestamp"])
+            for line in stdout.splitlines()
+            if line.strip()
+            for event in [json.loads(line)]
+            if isinstance(event.get("timestamp"), (int, float))
+        ]
+        elapsed_seconds = (
+            (max(timestamps) - min(timestamps)) / 1000
+            if timestamps
+            else 0.0
+        )
+        receipts.append(
+            {
+                "provider_model": MULTIPASS_MODEL,
+                "attempt_artifact": str(path),
+                "semantic_validation_failure": (
+                    "failed-attempts" in path.parts
+                ),
+                "elapsed_seconds": elapsed_seconds,
+                "stream_event_count": stream_count,
+                "usage": _usage(finish),
+            }
+        )
+    return receipts
+
+
+def run_phase_c_junk_verify(
+    *,
+    output_root: str | Path | None = None,
+    suite: str = SUITE_ID,
+    timeout_seconds: int = 900,
+    opencode_binary: str = "/opt/homebrew/bin/opencode",
+    run_id: str = "phase-c-junk-verify-20260728-v1",
+    runner: Any | None = None,
+) -> dict[str, Any]:
+    """Run the bounded Task-4b asymmetric verifier on the Search fold."""
+
+    suite_root = _suite_root(output_root, suite)
+    screen_report = dry_run_phase_c_junk_screen(
+        output_root=output_root, suite=suite
+    )
+    episodes, composed, ensemble = _load_phase_c_task4b_inputs(
+        suite_root
+    )
+    screened = screen_phase_c_junk_candidates(
+        episodes, composed, ensemble
+    )
+    candidate_by_id = {
+        str(candidate["candidate_id"]): candidate
+        for candidates in episodes.values()
+        for candidate in candidates
+    }
+    selected_ids = sorted(screened)
+    batches = [
+        selected_ids[index : index + PHASE_C_JUNK_VERIFY_BATCH_SIZE]
+        for index in range(
+            0, len(selected_ids), PHASE_C_JUNK_VERIFY_BATCH_SIZE
+        )
+    ]
+    if len(batches) > PHASE_C_JUNK_VERIFY_MAX_GLM_CALLS:
+        raise TrueNorthError(
+            "Task-4b batch count exceeds declared GLM budget"
+        )
+    run_root = suite_root / "phase-c" / "runs" / run_id
+    budget = {
+        "max_glm_calls": PHASE_C_JUNK_VERIFY_MAX_GLM_CALLS,
+        "max_spark_calls": PHASE_C_JUNK_VERIFY_MAX_SPARK_CALLS,
+        "max_tokens": PHASE_C_JUNK_VERIFY_MAX_TOKENS,
+    }
+    configuration = {
+        "schema_version": MULTIPASS_SCHEMA_VERSION,
+        "phase": "phase_c_junk_verify",
+        "suite_id": suite,
+        "suite_manifest_sha256": _read_json(
+            suite_root / "manifest.json"
+        )["manifest_sha256"],
+        "source_disposition_result_sha256": screen_report[
+            "source_disposition_result_sha256"
+        ],
+        "screen_sha256": screen_report["screen_sha256"],
+        "system_prompt_sha256": sha256_text(
+            PHASE_C_JUNK_VERIFY_SYSTEM_PROMPT
+        ),
+        "model": MULTIPASS_MODEL,
+        "spark_model": "openai/gpt-5.3-codex-spark",
+        "batch_size": PHASE_C_JUNK_VERIFY_BATCH_SIZE,
+        "budget": budget,
+        "holdout_access_allowed": False,
+        "production_database_open_allowed": False,
+    }
+    configuration["configuration_sha256"] = sha256_text(
+        dumps_json(configuration)
+    )
+    config_path = run_root / "configuration.json"
+    if config_path.is_file():
+        if _read_json(config_path) != configuration:
+            raise TrueNorthError(
+                "Task-4b resume configuration differs"
+            )
+    else:
+        _write_json(config_path, configuration, immutable=True)
+    _write_json(
+        run_root / "screen.private.json",
+        screen_report,
+        immutable=True,
+    )
+    actual_runner = runner or _run_opencode_packet
+    all_receipts = _phase_c_paid_attempt_receipts(run_root)
+    for index, candidate_ids in enumerate(batches, start=1):
+        packet = _phase_c_junk_verify_packet(
+            suite=suite,
+            candidates=[
+                candidate_by_id[candidate_id]
+                for candidate_id in candidate_ids
+            ],
+            screened=screened,
+        )
+        packet_path = (
+            run_root
+            / "packets"
+            / "glm"
+            / f"batch-{index:03d}.private.json"
+        )
+        _write_json(packet_path, packet, immutable=True)
+        kwargs = {
+            "packet_path": packet_path,
+            "output_dir": (
+                run_root
+                / "outputs"
+                / "glm"
+                / f"batch-{index:03d}"
+            ),
+            "models": (MULTIPASS_MODEL,),
+            "stage": "phase-c-junk-verify",
+            "timeout_seconds": timeout_seconds,
+            "opencode_binary": opencode_binary,
+            "system_prompt": PHASE_C_JUNK_VERIFY_SYSTEM_PROMPT,
+            "validator": validate_phase_c_junk_verify,
+        }
+        if runner is None:
+            kwargs["_semantic_retry_remaining"] = 0
+        _, receipts, _ = actual_runner(**kwargs)
+        all_receipts = _phase_c_paid_attempt_receipts(run_root)
+        usage = _multipass_usage(all_receipts)
+        if (
+            usage["calls"] > PHASE_C_JUNK_VERIFY_MAX_GLM_CALLS
+            or usage["tokens"] > PHASE_C_JUNK_VERIFY_MAX_TOKENS
+        ):
+            raise TrueNorthError(
+                "Task-4b GLM usage exceeded its declared budget"
+            )
+    verifier = _phase_c_junk_outputs(
+        run_root / "outputs" / "glm"
+    )
+    preliminary = compose_phase_c_junk_verification(
+        composed, screened, verifier, {}
+    )
+    escalation_ids = preliminary[
+        "spark_escalation_candidate_ids"
+    ]
+    if len(escalation_ids) > PHASE_C_JUNK_VERIFY_MAX_SPARK_CALLS:
+        raise TrueNorthError(
+            "Task-4b needs more Spark escalations than authorized"
+        )
+    spark_results: dict[str, dict[str, Any]] = {}
+    for candidate_id in escalation_ids:
+        packet = _phase_c_junk_verify_packet(
+            suite=suite,
+            candidates=[candidate_by_id[candidate_id]],
+            screened=screened,
+        )
+        packet_path = (
+            run_root
+            / "packets"
+            / "spark"
+            / f"{candidate_id}.private.json"
+        )
+        _write_json(packet_path, packet, immutable=True)
+        kwargs = {
+            "packet_path": packet_path,
+            "output_dir": (
+                run_root / "outputs" / "spark" / candidate_id
+            ),
+            "models": ("openai/gpt-5.3-codex-spark",),
+            "stage": "phase-c-junk-verify-spark",
+            "timeout_seconds": timeout_seconds,
+            "opencode_binary": opencode_binary,
+            "system_prompt": PHASE_C_JUNK_VERIFY_SYSTEM_PROMPT,
+            "validator": validate_phase_c_junk_verify,
+        }
+        if runner is None:
+            kwargs["_semantic_retry_remaining"] = 0
+        output, receipts, _ = actual_runner(**kwargs)
+        all_receipts = _phase_c_paid_attempt_receipts(run_root)
+        spark_results[candidate_id] = dict(output["items"][0])
+        usage = _multipass_usage(all_receipts)
+        if usage["tokens"] > PHASE_C_JUNK_VERIFY_MAX_TOKENS:
+            raise TrueNorthError(
+                "Task-4b total token usage exceeded its declared budget"
+            )
+    composition = compose_phase_c_junk_verification(
+        composed, screened, verifier, spark_results
+    )
+    consensus = _read_json(
+        suite_root
+        / "gold"
+        / "development"
+        / "final"
+        / "consensus.private.json"
+    )
+    score = _score_phase_c_dispositions(
+        consensus, composition["predictions"]
+    )
+    usage = _multipass_usage(all_receipts)
+    result = {
+        "schema_version": MULTIPASS_SCHEMA_VERSION,
+        "phase": "phase_c_junk_verify",
+        "run_id": run_id,
+        "configuration_sha256": configuration[
+            "configuration_sha256"
+        ],
+        "screen_sha256": screen_report["screen_sha256"],
+        "screened_count": len(screened),
+        "screen_class_counts": screen_report[
+            "screen_class_counts"
+        ],
+        "glm_packet_count": len(batches),
+        "spark_escalation_count": len(escalation_ids),
+        "flipped_candidate_ids": composition[
+            "flipped_candidate_ids"
+        ],
+        "score": score,
+        "usage": usage,
+        "budget": budget,
+        "holdout_opened": False,
+        "production_mutation": False,
+    }
+    result["result_sha256"] = sha256_text(dumps_json(result))
+    _write_json(
+        run_root / "outputs" / "combined.private.json",
+        {
+            "items": [
+                composition["predictions"][candidate_id]
+                for candidate_id in sorted(
+                    composition["predictions"]
+                )
+            ]
+        },
+        immutable=True,
+    )
+    _write_json(
+        run_root / "result.private.json", result, immutable=True
+    )
+    return result
+
+
 def run_phase_c_disposition_escalation(
     *,
     first_run_id: str,
@@ -9821,6 +10616,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--opencode-binary", default="/opt/homebrew/bin/opencode"
     )
     phase_c_disposition.add_argument("--run-id")
+    phase_c_junk_verify = sub.add_parser(
+        "phase-c-junk-verify",
+        help="Run the approved asymmetric Task-4b junk verifier.",
+    )
+    phase_c_junk_verify.add_argument(
+        "--timeout-seconds", type=int, default=900
+    )
+    phase_c_junk_verify.add_argument(
+        "--opencode-binary", default="/opt/homebrew/bin/opencode"
+    )
+    phase_c_junk_verify.add_argument(
+        "--run-id", default="phase-c-junk-verify-20260728-v1"
+    )
+    phase_c_junk_verify.add_argument(
+        "--dry-run", action="store_true"
+    )
     report = sub.add_parser("report", help="Render sanitized JSON and HTML reports.")
     report.add_argument("--run-id", required=True)
     for command_parser in (
@@ -9833,6 +10644,7 @@ def build_parser() -> argparse.ArgumentParser:
         multipass,
         multipass_score,
         phase_c_disposition,
+        phase_c_junk_verify,
         report,
     ):
         command_parser.add_argument(
@@ -9944,6 +10756,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 run_id=args.run_id,
                 **common,
             )
+        elif args.command == "phase-c-junk-verify":
+            if args.dry_run:
+                result = dry_run_phase_c_junk_screen(**common)
+            else:
+                result = run_phase_c_junk_verify(
+                    timeout_seconds=args.timeout_seconds,
+                    opencode_binary=args.opencode_binary,
+                    run_id=args.run_id,
+                    **common,
+                )
         elif args.command == "report":
             result = render_report(run_id=args.run_id, **common)
         else:

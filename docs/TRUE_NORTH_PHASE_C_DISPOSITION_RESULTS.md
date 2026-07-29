@@ -47,3 +47,54 @@ Task 4 did not meet its acceptance rule after the allowed iteration and
 bounded conflict escalation. Tasks 5–7 have not been started. Continuing into
 decomposition, actor confirmation, or certification would conceal an upstream
 disposition failure and violate the ordered gate-closure plan.
+
+## Task 4b amendment result
+
+Task 4b implemented the approved asymmetric junk-verification stage without
+changing the frozen Task 4 prompt or composition.
+
+### Deterministic screen
+
+- Retained inputs: 243
+- Screened inputs: 170
+- Planned GLM packets: 7
+- Screen-class memberships:
+  - `ensemble_disagreement`: 17
+  - `repetition`: 13
+  - `fragment`: 157
+  - `bare_mention_question`: 17
+- Both amendment-named escapes were screened before any paid call.
+- Screen SHA-256:
+  `a8eedfe9b4a1f2ded9c73616dcfb35c5dd51b245674cb521bf82dac097f0091f`
+
+The frozen fragment rule selected substantially more items than the
+amendment's approximate 20–40 expectation. The authorized thresholds were
+preserved; compact batches kept the run within seven planned packets.
+
+### Bounded verifier run
+
+- Seven GLM batches completed.
+- One additional GLM attempt failed strict validation because its deficiency
+  quote was not copied verbatim. The failed receipt was preserved and charged;
+  the one remaining authorized GLM call retried that batch successfully.
+- Total paid usage: 8 calls, 68,324 tokens, 289.823 receipt seconds.
+- Spark escalations: 0.
+- Candidates flipped to reject: 2.
+- No holdout or production mutation occurred.
+
+### Composed score
+
+| Measure | Task 4b result | Gate | Pass |
+|---|---:|---:|---|
+| Junk escapes | 3/9 | 0/9 | No |
+| False rejects | 8 | ≤10 | Yes |
+| Retained-value recall | 0.966527 | ≥0.95 | Yes |
+
+All three remaining junk escapes were screened in and the verifier returned
+`confirm_retain` for each. Therefore the amendment's one screen-threshold
+adjustment is not applicable: no escaped junk item was screened out. The
+verifier also produced no uncorroborated rejection requiring Spark.
+
+Task 4b has reached its explicit second-failure stop. Tasks 5–7 remain
+unstarted. The fully accounted result is frozen at SHA-256
+`4b4d46878652394b327315469f6ef3818d236daa83a4f013cdb10fd339d8915d`.
