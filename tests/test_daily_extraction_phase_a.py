@@ -88,6 +88,40 @@ def _ingestion_handler(conn, artifact_dir: Path, *, execute_ingestion: bool):
     )
 
 
+def _outcomes_handler(conn, artifact_dir: Path, *, execute_outcomes: bool):
+    handlers = _default_stage_handlers(
+        conn,
+        source_list=None,
+        since=None,
+        execute_ingestion=False,
+        execute_normalize=False,
+        execute_extraction=False,
+        apply_reconcile=False,
+        record_exception_contracts=False,
+        publish_observer=False,
+        snapshot_output=None,
+        observer_url=None,
+        observer_token=None,
+        lane="podcast",
+        label_pack="ai_discourse_v3_1",
+        model="gpt-5.5",
+        pilot_id=None,
+        execute_outcomes=execute_outcomes,
+        now=lambda: NOW,
+    )
+    return handlers["due_outcomes"], DailyStageContext(
+        conn=conn,
+        run_id="current-run",
+        run_date="2026-07-29",
+        stage_name="due_outcomes",
+        stage_index=7,
+        max_items=5,
+        remaining_seconds=120.0,
+        deadline_monotonic=120.0,
+        artifact_dir=artifact_dir,
+    )
+
+
 def test_validation_stage_uses_injected_clock(tmp_path: Path) -> None:
     conn = db.connect(tmp_path / "factory.sqlite")
     try:
@@ -417,6 +451,88 @@ def test_ingestion_historic_terminal_and_manual_counts_are_telemetry_not_pass_co
         conn.close()
 
 
+def test_execute_outcomes_records_recent_bounded_work_and_satisfies_stage(
+    tmp_path: Path,
+) -> None:
+    conn = db.connect(tmp_path / "factory.sqlite")
+    try:
+        db.init_db(conn)
+        ensure_daily_schema(conn)
+        handler, context = _outcomes_handler(
+            conn,
+            tmp_path / "receipts",
+            execute_outcomes=True,
+        )
+        with patch(
+            "research_factory.daily_cycle._recent_job_window_start",
+            return_value="2026-07-28T12:00:00+00:00",
+        ), patch(
+            "research_factory.production_ops.plan_due_outcome_dispatches",
+            return_value={
+                "ok": True,
+                "due": 2,
+                "due_total": 2,
+                "backlog_total": 25,
+                "recorded": 2,
+                "already_recorded": 0,
+                "dispatch_contracts": [{}, {}],
+                "dispatch_state": "recorded_only",
+            },
+        ) as plan:
+            result = handler(context)
+
+        assert result["status"] == "completed"
+        assert result["processed"] == 2
+        assert result["work_due"] is True
+        assert result["required_work_enabled"] is True
+        assert result["work_satisfied"] is True
+        assert result["recent_due_total"] == 2
+        assert result["backlog_total"] == 25
+        assert plan.call_args.kwargs["record"] is True
+        assert plan.call_args.kwargs["since"] == "2026-07-28T12:00:00+00:00"
+    finally:
+        conn.close()
+
+
+def test_outcome_historic_backlog_is_telemetry_not_recent_pass_condition(
+    tmp_path: Path,
+) -> None:
+    conn = db.connect(tmp_path / "factory.sqlite")
+    try:
+        db.init_db(conn)
+        ensure_daily_schema(conn)
+        handler, context = _outcomes_handler(
+            conn,
+            tmp_path / "receipts",
+            execute_outcomes=False,
+        )
+        with patch(
+            "research_factory.daily_cycle._recent_job_window_start",
+            return_value="2026-07-28T12:00:00+00:00",
+        ), patch(
+            "research_factory.production_ops.plan_due_outcome_dispatches",
+            return_value={
+                "ok": True,
+                "due": 0,
+                "due_total": 0,
+                "backlog_total": 25,
+                "recorded": 0,
+                "already_recorded": 0,
+                "dispatch_contracts": [],
+                "dispatch_state": "contract_only",
+            },
+        ):
+            result = handler(context)
+
+        assert result["status"] == "completed"
+        assert result["work_due"] is False
+        assert result["healthy_no_work"] is True
+        assert result["work_satisfied"] is True
+        assert result["backlog_total"] == 25
+    finally:
+        conn.close()
+
+
 def test_daily_extraction_is_attributed_to_current_release_without_paid_api(
     tmp_path: Path,
 ) -> None:
@@ -548,6 +664,46 @@ def test_target_scoped_claim_does_not_take_unrelated_backfill_work(
         assert conn.execute(
             "SELECT status FROM jobs WHERE id = ?",
             (unrelated,),
+        ).fetchone()["status"] == "pending"
+    finally:
+        conn.close()
+
+
+def test_job_scoped_claim_selects_exact_label_pack_job_on_shared_segment(
+    tmp_path: Path,
+) -> None:
+    conn = db.connect(tmp_path / "factory.sqlite")
+    try:
+        db.init_db(conn)
+        legacy = db.enqueue_job(
+            conn,
+            lane="podcast",
+            job_type="label_segment",
+            target_id="shared-segment",
+            payload={"label_pack": "ai_discourse_v1"},
+            priority=1,
+        )
+        current = db.enqueue_job(
+            conn,
+            lane="podcast",
+            job_type="label_segment",
+            target_id="shared-segment",
+            payload={"label_pack": "ai_discourse_v3_1"},
+            priority=100,
+        )
+
+        claimed = claim_next_job(
+            conn,
+            lane="podcast",
+            worker_id="exact-backfill",
+            job_types=("label_segment",),
+            job_ids=(current,),
+        )
+
+        assert claimed["id"] == current
+        assert conn.execute(
+            "SELECT status FROM jobs WHERE id = ?",
+            (legacy,),
         ).fetchone()["status"] == "pending"
     finally:
         conn.close()
@@ -694,10 +850,18 @@ def test_daily_cli_requires_explicit_extraction_flag() -> None:
     parser = build_parser()
     default = parser.parse_args(["run", "daily"])
     enabled = parser.parse_args(
-        ["run", "daily", "--execute-extraction", "--execute-ingestion"]
+        [
+            "run",
+            "daily",
+            "--execute-extraction",
+            "--execute-ingestion",
+            "--execute-outcomes",
+        ]
     )
     assert default.execute_extraction is False
     assert default.execute_ingestion is False
     assert enabled.execute_extraction is True
     assert enabled.execute_ingestion is True
+    assert default.execute_outcomes is False
+    assert enabled.execute_outcomes is True
     assert default.max_runtime_seconds == DEFAULT_DAILY_RUNTIME_SECONDS == 5_400

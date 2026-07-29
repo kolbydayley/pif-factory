@@ -275,6 +275,7 @@ def run_daily_cycle(
     execute_ingestion: bool = False,
     execute_normalize: bool = False,
     execute_extraction: bool = False,
+    execute_outcomes: bool = False,
     apply_reconcile: bool = False,
     record_exception_contracts: bool = False,
     publish_observer: bool = False,
@@ -317,6 +318,7 @@ def run_daily_cycle(
         "execute_ingestion": bool(execute_ingestion),
         "execute_normalize": bool(execute_normalize),
         "execute_extraction": bool(execute_extraction),
+        "execute_outcomes": bool(execute_outcomes),
         "apply_reconcile": bool(apply_reconcile),
         "record_exception_contracts": bool(record_exception_contracts),
         "publish_observer": bool(publish_observer),
@@ -396,6 +398,7 @@ def run_daily_cycle(
         label_pack=label_pack,
         model=model,
         pilot_id=pilot_id,
+        execute_outcomes=execute_outcomes,
         now=_now,
     )
     handlers.update(stage_handlers or {})
@@ -642,6 +645,7 @@ def _default_stage_handlers(
     label_pack: str,
     model: str,
     pilot_id: str | None,
+    execute_outcomes: bool = False,
     now: Callable[[], str] = now_iso,
 ) -> dict[str, StageHandler]:
     def backup_health(context: DailyStageContext) -> Mapping[str, Any]:
@@ -1016,20 +1020,52 @@ def _default_stage_handlers(
     def outcomes(context: DailyStageContext) -> Mapping[str, Any]:
         from .production_ops import plan_due_outcome_dispatches
 
+        recent_window_start = _recent_job_window_start(
+            conn,
+            current_run_id=context.run_id,
+            at=now(),
+        )
+        enabled = bool(execute_outcomes or record_exception_contracts)
         result = plan_due_outcome_dispatches(
             conn,
             limit=context.max_items,
             max_runtime_ms=min(MAX_EXCEPTION_RUNTIME_MS, max(1, int(context.remaining_seconds * 1_000))),
-            record=record_exception_contracts,
+            record=enabled,
+            since=recent_window_start,
+        )
+        recent_due = int(result.get("due_total", 0) or 0)
+        bounded_due = int(result.get("due", 0) or 0)
+        accounted = int(result.get("recorded", 0) or 0) + int(
+            result.get("already_recorded", 0) or 0
+        )
+        work_due = recent_due > 0
+        work_satisfied = (
+            not work_due
+            or (
+                enabled
+                and bool(result.get("ok"))
+                and recent_due <= context.max_items
+                and accounted == bounded_due
+            )
         )
         return {
-            "status": "skipped" if result.get("due") else "completed",
-            "processed": 0,
-            "due": result.get("due", 0),
-            "work_due": bool(result.get("due")),
-            "required_work_enabled": False,
-            "healthy_no_work": not bool(result.get("due")),
-            "work_satisfied": not bool(result.get("due")),
+            "status": "completed" if work_satisfied else "skipped",
+            "processed": int(result.get("recorded", 0) or 0),
+            "reason": (
+                None
+                if work_satisfied
+                else "outcome_dispatch_not_explicitly_enabled"
+                if not enabled
+                else "recent_outcome_work_exceeds_daily_bound"
+            ),
+            "due": bounded_due,
+            "recent_due_total": recent_due,
+            "backlog_total": int(result.get("backlog_total", 0) or 0),
+            "recent_window_start": recent_window_start,
+            "work_due": work_due,
+            "required_work_enabled": enabled,
+            "healthy_no_work": not work_due,
+            "work_satisfied": work_satisfied,
             "dispatch_contracts": result.get("dispatch_contracts", []),
             "dispatch_state": result.get("dispatch_state"),
             "external_launch_attempted": False,

@@ -938,14 +938,17 @@ def plan_due_outcome_dispatches(
     limit: int = 10,
     max_runtime_ms: int = MAX_EXCEPTION_RUNTIME_MS,
     record: bool = False,
+    since: str | None = None,
 ) -> dict[str, Any]:
     if not 1 <= int(limit) <= 100:
         raise ValueError("limit must be between 1 and 100")
     runtime = min(MAX_EXCEPTION_RUNTIME_MS, int(max_runtime_ms))
     if runtime < 1:
         raise ValueError("max_runtime_ms must be positive")
-    rows = _due_outcome_rows(conn, limit=int(limit))
+    rows = _due_outcome_rows(conn, limit=int(limit), since=since)
     contracts: list[dict[str, Any]] = []
+    recorded = 0
+    already_recorded = 0
     for row in rows:
         contract = build_headless_exception_contract(
             source_task_id=f"outcome:{row['claim_id']}",
@@ -959,12 +962,21 @@ def plan_due_outcome_dispatches(
             max_runtime_ms=runtime,
         )
         if record:
-            record_exception_contract(conn, contract)
+            recording = record_exception_contract(conn, contract)
+            if recording.get("recorded"):
+                recorded += 1
+            else:
+                already_recorded += 1
         contracts.append(contract)
     return {
         "ok": True,
         "mode": "bounded_exception_dispatch_contract",
         "due": len(rows),
+        "due_total": _due_outcome_count(conn, since=since),
+        "backlog_total": _due_outcome_count(conn),
+        "since": since,
+        "recorded": recorded,
+        "already_recorded": already_recorded,
         "dispatch_state": "recorded_only" if record else "contract_only",
         "dispatch_contracts": contracts,
         "external_launch_attempted": False,
@@ -2152,12 +2164,19 @@ def _matching_outcome_resolution(
     return None
 
 
-def _due_outcome_rows(conn: sqlite3.Connection, *, limit: int) -> list[sqlite3.Row]:
+def _due_outcome_rows(
+    conn: sqlite3.Connection,
+    *,
+    limit: int,
+    since: str | None = None,
+) -> list[sqlite3.Row]:
     if not _table_exists(conn, "current_accepted_atomic_claims"):
         return []
     try:
+        since_clause = " AND claims.observed_at >= ?" if since else ""
+        params: tuple[Any, ...] = (since, limit) if since else (limit,)
         return conn.execute(
-            """
+            f"""
             SELECT claims.id AS claim_id, claims.observed_at, claims.time_horizon
             FROM current_accepted_atomic_claims AS claims
             WHERE claims.forecast_probability IS NOT NULL
@@ -2165,14 +2184,17 @@ def _due_outcome_rows(conn: sqlite3.Connection, *, limit: int) -> list[sqlite3.R
                 SELECT 1 FROM current_accepted_outcome_resolutions AS outcomes
                 WHERE outcomes.claim_id = claims.id
               )
+              {since_clause}
             ORDER BY claims.observed_at, claims.id
             LIMIT ?
             """,
-            (limit,),
+            params,
         ).fetchall()
     except sqlite3.OperationalError:
+        since_clause = " AND claims.observed_at >= ?" if since else ""
+        params = (since, limit) if since else (limit,)
         return conn.execute(
-            """
+            f"""
             SELECT claims.id AS claim_id, claims.observed_at, claims.time_horizon
             FROM atomic_claims AS claims
             WHERE claims.review_status = 'accepted'
@@ -2182,11 +2204,56 @@ def _due_outcome_rows(conn: sqlite3.Connection, *, limit: int) -> list[sqlite3.R
                 WHERE outcomes.claim_id = claims.id
                   AND outcomes.review_status = 'accepted'
               )
+              {since_clause}
             ORDER BY claims.observed_at, claims.id
             LIMIT ?
             """,
-            (limit,),
+            params,
         ).fetchall()
+
+
+def _due_outcome_count(
+    conn: sqlite3.Connection,
+    *,
+    since: str | None = None,
+) -> int:
+    if not _table_exists(conn, "current_accepted_atomic_claims"):
+        return 0
+    try:
+        since_clause = " AND claims.observed_at >= ?" if since else ""
+        params: tuple[Any, ...] = (since,) if since else ()
+        row = conn.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM current_accepted_atomic_claims AS claims
+            WHERE claims.forecast_probability IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM current_accepted_outcome_resolutions AS outcomes
+                WHERE outcomes.claim_id = claims.id
+              )
+              {since_clause}
+            """,
+            params,
+        ).fetchone()
+    except sqlite3.OperationalError:
+        since_clause = " AND claims.observed_at >= ?" if since else ""
+        params = (since,) if since else ()
+        row = conn.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM atomic_claims AS claims
+            WHERE claims.review_status = 'accepted'
+              AND claims.forecast_probability IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM outcome_resolution_revisions AS outcomes
+                WHERE outcomes.claim_id = claims.id
+                  AND outcomes.review_status = 'accepted'
+              )
+              {since_clause}
+            """,
+            params,
+        ).fetchone()
+    return int(row[0]) if row else 0
 
 
 def _semantic_pending_count(conn: sqlite3.Connection, target: str, *, limit: int) -> int:

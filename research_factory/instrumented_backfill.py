@@ -28,17 +28,31 @@ MODEL = "gpt-5.5"
 LABEL_PACK = "ai_discourse_v3_1"
 EXPECTED_MUTATION_TABLES = {
     "actor_positions",
+    "coded_observations",
     "claims",
     "discourse_event_contexts",
     "discourse_events",
+    "entity_mentions",
     "episode_context_run_attempts",
     "episode_context_runs",
     "frame_usages",
     "jobs",
     "label_runs",
     "labels",
+    "orgs",
+    "people",
+    "person_person_mentions",
+    "product_signals",
+    "products",
     "quality_audits",
+    "raw_actor_mentions",
+    "raw_speaker_mentions",
+    "relationship_edges",
+    "release_signal_links",
+    "speaker_positions",
+    "term_mentions",
     "term_usages",
+    "topic_mentions",
 }
 
 
@@ -67,17 +81,36 @@ def _table_counts(conn) -> dict[str, int]:
     }
 
 
-def _label_metrics(conn, label_rows: list[Any]) -> dict[str, Any]:
+def _label_metrics(
+    conn,
+    label_rows: list[Any],
+    *,
+    deadline_monotonic: float | None = None,
+    skip_segment_errors: bool = False,
+) -> dict[str, Any]:
     event_counts: list[int] = []
     valid_spans = 0
     total_spans = 0
     zero_by_source: Counter[str] = Counter()
     audit_distribution: Counter[str] = Counter()
+    skipped_reasons: Counter[str] = Counter()
+    timed_out = False
+    rows_examined = 0
     for row in label_rows:
-        output = json.loads(row["output_json"])
-        events = output.get("discourse_events") or []
+        if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+            timed_out = True
+            break
+        rows_examined += 1
+        try:
+            output = json.loads(row["output_json"])
+            events = output.get("discourse_events") or []
+            segment = segment_for_job(conn, {"target_id": row["segment_id"]})
+        except Exception as exc:
+            if not skip_segment_errors:
+                raise
+            skipped_reasons[type(exc).__name__] += 1
+            continue
         event_counts.append(len(events))
-        segment = segment_for_job(conn, {"target_id": row["segment_id"]})
         for event in events:
             if not isinstance(event, dict):
                 continue
@@ -113,7 +146,13 @@ def _label_metrics(conn, label_rows: list[Any]) -> dict[str, Any]:
         )
         audit_distribution[str(audit["status"])] += 1
     return {
-        "labels": len(label_rows),
+        "requested_labels": len(label_rows),
+        "labels": len(event_counts),
+        "labels_measured": len(event_counts),
+        "labels_skipped": len(label_rows) - len(event_counts),
+        "labels_skipped_due_to_time_budget": len(label_rows) - rows_examined,
+        "skip_reasons": dict(sorted(skipped_reasons.items())),
+        "time_budget_exhausted": timed_out,
         "events": sum(event_counts),
         "events_per_segment": (
             sum(event_counts) / len(event_counts) if event_counts else None
@@ -129,7 +168,17 @@ def _label_metrics(conn, label_rows: list[Any]) -> dict[str, Any]:
     }
 
 
-def _historic_baseline(conn, *, before: str, limit: int = 400) -> dict[str, Any]:
+def _historic_baseline(
+    conn,
+    *,
+    before: str,
+    limit: int = 400,
+    max_seconds: float = 45.0,
+) -> dict[str, Any]:
+    if limit < 1:
+        raise ValueError("historical baseline limit must be positive")
+    if max_seconds <= 0:
+        raise ValueError("historical baseline time budget must be positive")
     rows = conn.execute(
         """
         SELECT *
@@ -142,7 +191,21 @@ def _historic_baseline(conn, *, before: str, limit: int = 400) -> dict[str, Any]
         """,
         (LABEL_PACK, MODEL, before, limit),
     ).fetchall()
-    return _label_metrics(conn, list(rows))
+    measured = _label_metrics(
+        conn,
+        list(rows),
+        deadline_monotonic=time.monotonic() + max_seconds,
+        skip_segment_errors=True,
+    )
+    measured["available"] = bool(measured["labels_measured"])
+    measured["baseline_unavailable"] = (
+        None
+        if measured["available"]
+        else "no_historical_segments_measured_within_bounds"
+    )
+    measured["row_limit"] = limit
+    measured["time_limit_seconds"] = max_seconds
+    return measured
 
 
 def _context_candidates(conn, *, limit: int) -> list[dict[str, Any]]:
@@ -244,7 +307,6 @@ def run_instrumented_backfill(
                 """
             ).fetchone()[0]
         )
-        historical = _historic_baseline(conn, before=started_at)
         candidates = _context_candidates(conn, limit=max_contexts)
         context_results: list[dict[str, Any]] = []
         label_results: list[dict[str, Any]] = []
@@ -309,22 +371,23 @@ def run_instrumented_backfill(
             if not successful:
                 continue
             remaining_labels = max_labels - len(label_results)
-            segment_ids = tuple(
-                str(row["target_id"])
-                for row in conn.execute(
+            selected_label_jobs = conn.execute(
                     f"""
-                    SELECT jobs.target_id
+                    SELECT jobs.id, jobs.target_id
                     FROM jobs
                     JOIN segments ON segments.id = jobs.target_id
                     WHERE jobs.job_type = 'label_segment'
                       AND jobs.status = 'pending'
+                      AND jobs.lane = 'podcast'
+                      AND json_extract(jobs.payload_json, '$.label_pack') = ?
                       AND segments.episode_id IN ({','.join('?' for _ in successful)})
                     ORDER BY jobs.priority, jobs.id
                     LIMIT ?
                     """,
-                    (*sorted(successful), remaining_labels),
+                    (LABEL_PACK, *sorted(successful), remaining_labels),
                 ).fetchall()
-            )
+            segment_ids = tuple(str(row["target_id"]) for row in selected_label_jobs)
+            selected_job_ids = tuple(int(row["id"]) for row in selected_label_jobs)
             if not segment_ids:
                 continue
             label_worker = f"{run_id}-labels"
@@ -338,7 +401,7 @@ def run_instrumented_backfill(
                 claim_prompts=True,
                 job_types=("label_segment",),
                 max_label_prompts=len(segment_ids),
-                target_ids=segment_ids,
+                job_ids=selected_job_ids,
             )
             prompt_count = int(prepared.get("claimed_prompts", 0))
             remaining = max(1, int(max_runtime_seconds - (time.monotonic() - started_monotonic)))
@@ -382,9 +445,12 @@ def run_instrumented_backfill(
             if label_ids
             else []
         )
-        sample_ids = sorted(label_ids, key=lambda value: hashlib.sha256(value.encode()).hexdigest())[
-            : min(30, len(label_ids))
-        ]
+        sample_size = min(30, len(label_ids))
+        sample_ids = (
+            random.Random(run_id).sample(sorted(label_ids), sample_size)
+            if sample_size
+            else []
+        )
         sample_rows = (
             conn.execute(
                 f"SELECT * FROM labels WHERE id IN ({','.join('?' for _ in sample_ids)})",
@@ -395,6 +461,58 @@ def run_instrumented_backfill(
         )
         new_metrics = _label_metrics(conn, list(new_label_rows))
         audit_sample = _label_metrics(conn, list(sample_rows))
+        try:
+            historical = _historic_baseline(
+                conn,
+                before=started_at,
+                limit=400,
+                max_seconds=45.0,
+            )
+        except Exception as exc:
+            historical = {
+                "available": False,
+                "baseline_unavailable": f"{type(exc).__name__}: {str(exc)[:500]}",
+                "requested_labels": 400,
+                "labels_measured": 0,
+                "labels_skipped": 0,
+                "labels_skipped_due_to_time_budget": 0,
+                "skip_reasons": {},
+                "time_budget_exhausted": False,
+                "row_limit": 400,
+                "time_limit_seconds": 45.0,
+            }
+        sample_pass_rate = (
+            int(audit_sample["audit_distribution"].get("passed", 0))
+            / int(audit_sample["labels_measured"])
+            if audit_sample.get("labels_measured")
+            else None
+        )
+        baseline_pass_rate = (
+            int((historical.get("audit_distribution") or {}).get("passed", 0))
+            / int(historical["labels_measured"])
+            if historical.get("labels_measured")
+            else None
+        )
+        quality_loss_reasons: list[str] = []
+        if (
+            sample_pass_rate is not None
+            and baseline_pass_rate is not None
+            and sample_pass_rate + 0.10 < baseline_pass_rate
+        ):
+            quality_loss_reasons.append("audit_pass_rate_more_than_10pp_below_baseline")
+        sample_span_rate = audit_sample.get("evidence_span_validity_rate")
+        baseline_span_rate = historical.get("evidence_span_validity_rate")
+        if (
+            isinstance(sample_span_rate, (int, float))
+            and isinstance(baseline_span_rate, (int, float))
+            and sample_span_rate + 0.02 < baseline_span_rate
+        ):
+            quality_loss_reasons.append(
+                "evidence_span_validity_more_than_2pp_below_baseline"
+            )
+        systematic_quality_loss = bool(quality_loss_reasons)
+        if systematic_quality_loss:
+            stop_reason = "audit_sample_systematic_quality_loss"
         after_counts = _table_counts(conn)
         changed_tables = sorted(
             name
@@ -528,9 +646,35 @@ def run_instrumented_backfill(
             "new_labels": new_metrics,
             "historic_baseline": historical,
             "audit_sample": {
-                "selection": "sha256_order_first_30",
+                "selection": "seeded_random_without_replacement",
+                "seed": run_id,
                 "sample_size": len(sample_rows),
                 **audit_sample,
+            },
+            "historical_comparison": {
+                "available": bool(historical.get("available")),
+                "audit_pass_rate": {
+                    "batch_sample": sample_pass_rate,
+                    "historical": baseline_pass_rate,
+                    "delta": (
+                        sample_pass_rate - baseline_pass_rate
+                        if sample_pass_rate is not None
+                        and baseline_pass_rate is not None
+                        else None
+                    ),
+                },
+                "evidence_span_validity_rate": {
+                    "batch_sample": sample_span_rate,
+                    "historical": baseline_span_rate,
+                    "delta": (
+                        sample_span_rate - baseline_span_rate
+                        if isinstance(sample_span_rate, (int, float))
+                        and isinstance(baseline_span_rate, (int, float))
+                        else None
+                    ),
+                },
+                "systematic_quality_loss": systematic_quality_loss,
+                "quality_loss_reasons": quality_loss_reasons,
             },
             "isolation": {
                 "pipeline_lock_acquired": True,
@@ -552,6 +696,8 @@ def run_instrumented_backfill(
             or report["isolation"]["corpus_release_delta"]
             or report["isolation"]["scale_gate_receipt_delta"]
             or report["isolation"]["paid_api_telemetry_delta"]
+            or systematic_quality_loss
+            or (len(label_ids) >= 30 and len(sample_rows) < 30)
             or (
                 report["first_attempt_validation"]["failure_rate"] is not None
                 and report["first_attempt_validation"]["failure_rate"] > 0.20
