@@ -8986,10 +8986,23 @@ def score_multipass_run(
     }
 
 
+def _phase_c_preferred_document(suite_root: Path) -> dict[str, Any]:
+    return _read_json(
+        suite_root
+        / "gold"
+        / "development"
+        / "final"
+        / "gold.private.json"
+    )
+
+
 def _score_phase_c_dispositions(
     consensus_document: Mapping[str, Any],
     predictions: Mapping[str, Mapping[str, Any]],
+    preferred_document: Mapping[str, Any],
 ) -> dict[str, Any]:
+    from .true_north_relational_merge import is_relational_junk_reason
+
     consensus = {
         str(row["candidate_id"]): row
         for row in consensus_document["items"]
@@ -9026,10 +9039,29 @@ def _score_phase_c_dispositions(
         for key in gold_value
         if predicted_states[key] != "value"
     )
-    junk_escapes = sorted(
+    all_junk_escapes = sorted(
         key
         for key in gold_junk
         if predicted_states[key] == "value"
+    )
+    reject_reasons = {
+        str(row["candidate_id"]): str(row.get("reason_code") or "")
+        for row in preferred_document["items"]
+        if str(row.get("disposition")) == "reject"
+    }
+    missing_reasons = sorted(gold_junk - set(reject_reasons))
+    if missing_reasons:
+        raise TrueNorthError(
+            "phase-C intrinsic-junk gate lacks preferred-gold reason codes: "
+            + ", ".join(missing_reasons)
+        )
+    relational_junk_escapes = sorted(
+        key
+        for key in all_junk_escapes
+        if is_relational_junk_reason(reject_reasons[key])
+    )
+    intrinsic_junk_escapes = sorted(
+        set(all_junk_escapes) - set(relational_junk_escapes)
     )
     retained_value_recall = (
         (len(gold_value) - len(false_rejects)) / len(gold_value)
@@ -9037,10 +9069,21 @@ def _score_phase_c_dispositions(
         else 1.0
     )
     junk_escape_rate = (
-        len(junk_escapes) / len(gold_junk) if gold_junk else 0.0
+        len(intrinsic_junk_escapes) / len(gold_junk)
+        if gold_junk
+        else 0.0
     )
+    old_acceptance = {
+        "junk_escapes_zero": len(all_junk_escapes) == 0,
+        "false_rejects_at_most_10": len(false_rejects) <= 10,
+        "retained_value_recall_at_least_0_95": (
+            retained_value_recall >= 0.95
+        ),
+    }
     acceptance = {
-        "junk_escapes_zero": len(junk_escapes) == 0,
+        "intrinsic_junk_escapes_zero": (
+            len(intrinsic_junk_escapes) == 0
+        ),
         "false_rejects_at_most_10": len(false_rejects) <= 10,
         "retained_value_recall_at_least_0_95": (
             retained_value_recall >= 0.95
@@ -9053,9 +9096,41 @@ def _score_phase_c_dispositions(
         "retained_value_recall": retained_value_recall,
         "consensus_junk_escape_rate": junk_escape_rate,
         "false_reject_count": len(false_rejects),
-        "junk_escape_count": len(junk_escapes),
+        "junk_escape_count": len(intrinsic_junk_escapes),
+        "intrinsic_junk_escape_count": len(
+            intrinsic_junk_escapes
+        ),
+        "relational_junk_escape_count": len(
+            relational_junk_escapes
+        ),
+        "all_junk_escape_count": len(all_junk_escapes),
         "false_reject_candidate_ids": false_rejects,
-        "junk_escape_candidate_ids": junk_escapes,
+        "junk_escape_candidate_ids": intrinsic_junk_escapes,
+        "intrinsic_junk_escape_candidate_ids": (
+            intrinsic_junk_escapes
+        ),
+        "relational_junk_escape_candidate_ids": (
+            relational_junk_escapes
+        ),
+        "all_junk_escape_candidate_ids": all_junk_escapes,
+        "measurement_contract": {
+            "version": "pif_true_north_phase_c_option2_v1",
+            "old_gate": {
+                "scope": "all_gold_junk",
+                "acceptance": old_acceptance,
+                "passed": all(old_acceptance.values()),
+            },
+            "new_gate": {
+                "scope": "intrinsic_junk_only",
+                "relational_reason_families": [
+                    "non_useful_repetition*",
+                    "nonasserted_question_frame",
+                ],
+                "relational_acceptance_is_conditional_on": (
+                    "certification.relational_merge_contamination_count == 0"
+                ),
+            },
+        },
         "classification_detail": detail,
         "acceptance": acceptance,
         "passed": all(acceptance.values()),
@@ -9188,7 +9263,11 @@ def run_phase_c_disposition(
                     f"duplicate Phase-C disposition: {candidate_id}"
                 )
             predictions[candidate_id] = dict(item)
-    score = _score_phase_c_dispositions(consensus, predictions)
+    score = _score_phase_c_dispositions(
+        consensus,
+        predictions,
+        _phase_c_preferred_document(suite_root),
+    )
     state = _read_json(state_path)
     state["complete"] = True
     state["candidate_count"] = len(predictions)
@@ -10621,7 +10700,9 @@ def run_phase_c_junk_verify(
         / "consensus.private.json"
     )
     score = _score_phase_c_dispositions(
-        consensus, composition["predictions"]
+        consensus,
+        composition["predictions"],
+        _phase_c_preferred_document(suite_root),
     )
     usage = _multipass_usage(all_receipts)
     result = {
@@ -11050,7 +11131,9 @@ def run_phase_c_marginal_verify(
         / "consensus.private.json"
     )
     score = _score_phase_c_dispositions(
-        consensus, composition["predictions"]
+        consensus,
+        composition["predictions"],
+        _phase_c_preferred_document(suite_root),
     )
     usage = _multipass_usage(
         _phase_c_paid_attempt_receipts(run_root)
@@ -11216,7 +11299,11 @@ def run_phase_c_disposition_escalation(
         / "final"
         / "consensus.private.json"
     )
-    score = _score_phase_c_dispositions(consensus, combined)
+    score = _score_phase_c_dispositions(
+        consensus,
+        combined,
+        _phase_c_preferred_document(suite_root),
+    )
     usage = _multipass_usage(receipts)
     result = {
         "schema_version": MULTIPASS_SCHEMA_VERSION,
@@ -11868,6 +11955,11 @@ def score_run(
         "gold_interannotator_reliability": gold_reliability,
         "certification_policy": {
             "policy_version": CONSENSUS_GOLD_POLICY_VERSION,
+            "measurement_contract_sha256": (
+                measurement_contract.get("contract_sha256")
+                if isinstance(measurement_contract, Mapping)
+                else None
+            ),
             "primary_gate": "research_utility_correct_questions",
             "primary_gate_passed": all(
                 row["passed"] is True for row in primary_metrics
@@ -11875,6 +11967,9 @@ def score_run(
             "gate_count": len(gate_metrics),
             "diagnostic_count": len(metrics) - len(gate_metrics),
         },
+        "relational_merge_certification": (
+            relational_certification
+        ),
         "passed": passed,
         "metrics": metrics,
         "scored_at": now_iso(),

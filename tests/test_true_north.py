@@ -1827,12 +1827,25 @@ def test_phase_c_disposition_acceptance_requires_zero_junk_escapes() -> None:
     }
 
     result = true_north._score_phase_c_dispositions(
-        consensus, predictions
+        consensus,
+        predictions,
+        {
+            "items": [
+                {
+                    "candidate_id": "junk",
+                    "disposition": "reject",
+                    "reason_code": "bare_mention",
+                }
+            ]
+        },
     )
 
     assert result["junk_escape_count"] == 1
     assert result["false_reject_count"] == 0
-    assert result["acceptance"]["junk_escapes_zero"] is False
+    assert (
+        result["acceptance"]["intrinsic_junk_escapes_zero"]
+        is False
+    )
     assert result["passed"] is False
 
 
