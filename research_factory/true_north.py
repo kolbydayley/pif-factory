@@ -6747,6 +6747,7 @@ def execute_gold(
     limit: int | None = None,
     timeout_seconds: int = 1200,
     codex_binary: str = "codex",
+    opencode_binary: str = "/opt/homebrew/bin/opencode",
     workers: int = 1,
 ) -> dict[str, Any]:
     if partition not in {"development", "holdout"}:
@@ -6761,11 +6762,30 @@ def execute_gold(
         "canonical-propositions",
         "relations",
         "utility",
+        "actor-repair",
     }:
         raise TrueNorthError(
             "unsupported gold phase"
         )
     suite_root = _suite_root(output_root, suite)
+    if phase == "actor-repair":
+        if partition != "development":
+            raise TrueNorthError("actor repair is development-only")
+        from . import true_north_actor_repair
+
+        if pass_name == "compile":
+            return {
+                "ok": True,
+                "state": "compiled",
+                **true_north_actor_repair.compile_actor_repair(suite_root),
+            }
+        return true_north_actor_repair.execute_actor_pass(
+            suite_root,
+            pass_name=pass_name,
+            workers=workers,
+            timeout_seconds=timeout_seconds,
+            opencode_binary=opencode_binary,
+        )
     if phase in {"canonical-subjects", "canonical-propositions"}:
         is_subject = phase == "canonical-subjects"
         base = _partition_gold_root(suite_root, partition) / phase
@@ -9187,6 +9207,7 @@ def build_parser() -> argparse.ArgumentParser:
             "canonical-propositions",
             "relations",
             "utility",
+            "actor-repair",
         ),
         default="atomic",
         help="Gold layer to execute. Canonical begins after compiled atomic gold.",
@@ -9194,6 +9215,9 @@ def build_parser() -> argparse.ArgumentParser:
     gold.add_argument("--limit", type=int)
     gold.add_argument("--timeout-seconds", type=int, default=1200)
     gold.add_argument("--codex-binary", default="codex")
+    gold.add_argument(
+        "--opencode-binary", default="/opt/homebrew/bin/opencode"
+    )
     gold.add_argument(
         "--workers",
         type=int,
@@ -9319,6 +9343,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 result = execute_development_gold_pipeline(
                     timeout_seconds=args.timeout_seconds,
                     codex_binary=args.codex_binary,
+                    opencode_binary=args.opencode_binary,
                     workers=args.workers,
                     **common,
                 )
