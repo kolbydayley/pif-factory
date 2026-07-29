@@ -342,7 +342,7 @@ def score_count_first_experiment(
         for row in private_score["private_candidate_scores"]
         if row["strictly_scoreable"]
         and row["consensus_state"] == "consensus_value"
-        and row["value_state"] == "value"
+        and row["value_state"]["predicted"] == "value"
         and row["atomic_count"]["acceptable_count"]
     }
     aligned_predictions = [
@@ -393,7 +393,7 @@ def score_count_first_experiment(
         if (
             row["strictly_scoreable"]
             and row["consensus_state"] == "consensus_value"
-            and row["value_state"] == "value"
+            and row["value_state"]["predicted"] == "value"
             and not row["atomic_count"]["acceptable_count"]
         ):
             predicted = int(row["atomic_count"]["predicted"])
@@ -411,13 +411,13 @@ def score_count_first_experiment(
             >= 0.75
         ),
         "intrinsic_junk_escapes_zero": (
-            int(checkpoint["intrinsic_disposition_gate"][
+            int(checkpoint["disposition_gate"][
                 "intrinsic_junk_escape_count"
             ])
             == 0
         ),
         "relational_contamination_zero": (
-            int(checkpoint["relational_merge_gate"][
+            int(checkpoint["relational_merge_certification"][
                 "contamination_count"
             ])
             == 0
@@ -473,10 +473,10 @@ def score_count_first_experiment(
                 "checkpoint; the Stage-B prompt cannot change candidate state."
             ),
             "intrinsic_junk_escape_count": checkpoint[
-                "intrinsic_disposition_gate"
+                "disposition_gate"
             ]["intrinsic_junk_escape_count"],
             "relational_contamination_count": checkpoint[
-                "relational_merge_gate"
+                "relational_merge_certification"
             ]["contamination_count"],
             "checkpoint_sha256": true_north._sha256_file(
                 root
@@ -503,3 +503,319 @@ def score_count_first_experiment(
     path = run_root / "count-first-score.private.json"
     true_north._write_json(path, document, immutable=False)
     return {**document, "score_path": str(path)}
+
+
+def finalize_partial_count_first_experiment(
+    *,
+    suite_root: str | Path,
+    run_id: str,
+) -> dict[str, Any]:
+    """Freeze a ceiling-terminal run with frozen Task-5 fallback for one packet."""
+
+    root = Path(suite_root).expanduser().resolve()
+    run_root = root / "multipass" / "runs" / run_id
+    configuration = true_north._read_json(run_root / "configuration.json")
+    state = true_north._read_json(run_root / "state.json")
+    if configuration.get("schema_version") != SCHEMA_VERSION:
+        raise CountFirstError("run is not count-first")
+    if state.get("complete") is True:
+        raise CountFirstError("complete run uses the normal scorer")
+    if int(state["usage"]["calls"]) != MAX_CALLS:
+        raise CountFirstError("partial run is not call-budget terminal")
+
+    manifest = true_north._read_json(root / "manifest.json")
+    base_jobs, dispositions, candidates = _load_search_context(root, manifest)
+    (
+        _reference_root,
+        reference_packets,
+        reference_outputs,
+        _reference_provenance,
+    ) = _reference_artifacts(root)
+    valid_outputs: dict[tuple[str, str], dict[str, Any]] = {}
+    for path in sorted(
+        (run_root / "outputs" / "adjudication").glob(
+            "*/*/validated.private.json"
+        )
+    ):
+        key = (path.parents[1].name, path.parent.name)
+        output = true_north._read_json(path)
+        true_north.validate_multipass_adjudication(
+            output, reference_packets[key]
+        )
+        valid_outputs[key] = output
+    missing_keys = sorted(set(reference_packets) - set(valid_outputs))
+    if not missing_keys:
+        raise CountFirstError("partial finalizer found complete coverage")
+
+    predictions: list[dict[str, Any]] = []
+    measured_candidate_ids: set[str] = set()
+    for key in sorted(base_jobs):
+        adjudication = valid_outputs.get(key, reference_outputs.get(key))
+        if adjudication is None:
+            raise CountFirstError("fallback adjudication is missing")
+        if key in valid_outputs:
+            measured_candidate_ids.update(
+                str(row["candidate_id"])
+                for row in adjudication["items"]
+            )
+        output = true_north.compose_multipass_output(
+            base_jobs[key],
+            dispositions[key],
+            adjudication,
+            None,
+            stage_b_mode="adjudication",
+        )
+        predictions.extend(output["items"])
+        true_north._write_json(
+            run_root
+            / "outputs"
+            / "composed-partial-fallback"
+            / key[0]
+            / key[1]
+            / "validated.private.json",
+            output,
+            immutable=False,
+        )
+
+    consensus_document = true_north._read_json(
+        root / "gold" / "development" / "final" / "consensus.private.json"
+    )
+    preferred_document = true_north._read_json(
+        root / "gold" / "development" / "final" / "gold.private.json"
+    )
+    prediction_ids = {str(row["candidate_id"]) for row in predictions}
+    consensus = [
+        row for row in consensus_document["items"]
+        if str(row["candidate_id"]) in prediction_ids
+    ]
+    preferred = [
+        row for row in preferred_document["items"]
+        if str(row["candidate_id"]) in prediction_ids
+    ]
+    speaker_maps: dict[str, Any] = {}
+    for bundle_row in manifest["bundles"]:
+        if str(bundle_row["episode_id"]) not in configuration["episode_ids"]:
+            continue
+        bundle = true_north._read_json(Path(bundle_row["bundle_path"]))
+        for candidate in bundle["candidates"]:
+            speaker_maps[str(candidate["candidate_id"])] = (
+                bundle["episode_context"].get("speaker_map", [])
+            )
+    score = score_campaign(
+        predictions,
+        consensus,
+        preferred,
+        speaker_maps_by_candidate=speaker_maps,
+    )
+    core = true_north._consensus_atomic_metrics(
+        {**consensus_document, "items": consensus},
+        {
+            str(row["candidate_id"]): row
+            for row in predictions
+        },
+        require_complete_scope=True,
+    )
+    score["aggregate"].update(
+        {str(row["metric"]): row["value"] for row in core}
+    )
+    aligned_ids = {
+        str(row["candidate_id"])
+        for row in score["candidates"]
+        if row["strictly_scoreable"]
+        and row["consensus_state"] == "consensus_value"
+        and row["value_state"]["predicted"] == "value"
+        and row["atomic_count"]["acceptable_count"]
+    }
+    prediction_map = {
+        str(row["candidate_id"]): row for row in predictions
+    }
+    aligned = score_campaign(
+        [
+            prediction_map[candidate_id]
+            for candidate_id in sorted(aligned_ids)
+        ],
+        consensus_document["items"],
+        preferred_document["items"],
+        subset_candidate_ids=aligned_ids,
+        speaker_maps_by_candidate=speaker_maps,
+    )
+    count_errors = {"under": 0, "over": 0}
+    for row in score["candidates"]:
+        if (
+            row["strictly_scoreable"]
+            and row["consensus_state"] == "consensus_value"
+            and row["value_state"]["predicted"] == "value"
+            and not row["atomic_count"]["acceptable_count"]
+        ):
+            if int(row["atomic_count"]["predicted"]) < int(
+                row["atomic_count"]["minimum"]
+            ):
+                count_errors["under"] += 1
+            elif int(row["atomic_count"]["predicted"]) > int(
+                row["atomic_count"]["maximum"]
+            ):
+                count_errors["over"] += 1
+    checkpoint_path = (
+        root / "certification" / true_north.TASK5_CHECKPOINT_FILENAME
+    )
+    checkpoint = true_north._read_json(checkpoint_path)
+    baseline = true_north._read_json(
+        root
+        / "multipass"
+        / "runs"
+        / REFERENCE_RUN_ID
+        / "task5-score.private.json"
+    )
+    baseline_private = true_north._read_json(
+        root
+        / "multipass"
+        / "runs"
+        / REFERENCE_RUN_ID
+        / "score.private.json"
+    )
+    current_candidate_scores = {
+        str(row["candidate_id"]): row for row in score["candidates"]
+    }
+    baseline_candidate_scores = {
+        str(row["candidate_id"]): row
+        for row in baseline_private["private_candidate_scores"]
+    }
+    count_transition = {
+        "improved_wrong_to_acceptable": 0,
+        "regressed_acceptable_to_wrong": 0,
+        "remained_acceptable": 0,
+        "remained_wrong": 0,
+        "predicted_count_changed": 0,
+    }
+    for candidate_id in sorted(measured_candidate_ids):
+        current_row = current_candidate_scores[candidate_id]
+        baseline_row = baseline_candidate_scores[candidate_id]
+        current_ok = bool(
+            current_row["atomic_count"]["acceptable_count"]
+        )
+        baseline_ok = bool(
+            baseline_row["atomic_count"]["acceptable_count"]
+        )
+        if not baseline_ok and current_ok:
+            count_transition["improved_wrong_to_acceptable"] += 1
+        elif baseline_ok and not current_ok:
+            count_transition["regressed_acceptable_to_wrong"] += 1
+        elif current_ok:
+            count_transition["remained_acceptable"] += 1
+        else:
+            count_transition["remained_wrong"] += 1
+        count_transition["predicted_count_changed"] += int(
+            int(current_row["atomic_count"]["predicted"])
+            != int(baseline_row["atomic_count"]["predicted"])
+        )
+    aggregate = score["aggregate"]
+    aligned_aggregate = aligned["aggregate"]
+    document = {
+        "schema_version": SCHEMA_VERSION,
+        "experiment_id": EXPERIMENT_ID,
+        "run_id": run_id,
+        "complete": False,
+        "acceptance_eligible": False,
+        "terminal_reason": "experiment_call_ceiling_with_one_invalid_packet",
+        "coverage": {
+            "validated_packet_count": len(valid_outputs),
+            "expected_packet_count": len(reference_packets),
+            "measured_candidate_count": len(measured_candidate_ids),
+            "search_candidate_count": len(candidates),
+            "missing_packet_count": len(missing_keys),
+        },
+        "partial_fallback_composition": {
+            "definition": (
+                "count-first output for validated packets and frozen Task-5 "
+                "output for the single invalid packet"
+            ),
+            "acceptable_atomic_count_rate": aggregate[
+                "acceptable_atomic_count_rate"
+            ],
+            "claim_text_faithfulness_full_fold": aggregate[
+                "claim_text_faithfulness_proxy"
+            ],
+            "speaker_exactness_full_fold": aggregate[
+                "speaker_exactness"
+            ],
+            "aligned_candidate_count": len(aligned_ids),
+            "aligned_claim_text_faithfulness": aligned_aggregate[
+                "claim_text_faithfulness_proxy"
+            ],
+            "aligned_speaker_exactness": aligned_aggregate[
+                "speaker_exactness"
+            ],
+            "count_error_direction": count_errors,
+            "measured_candidate_count_transition": count_transition,
+        },
+        "frozen_task5_reference": {
+            "acceptable_atomic_count_rate": baseline["search_fold"][
+                "atomic_count_accuracy"
+            ],
+            "claim_text_faithfulness_full_fold": baseline[
+                "search_fold"
+            ]["claim_text_faithfulness"],
+            "speaker_exactness_full_fold": baseline["search_fold"][
+                "aggregate"
+            ]["speaker_exactness"],
+            "aligned_claim_text_faithfulness": 0.7449,
+        },
+        "junk_and_contamination": {
+            "intrinsic_junk_escape_count": checkpoint[
+                "disposition_gate"
+            ]["intrinsic_junk_escape_count"],
+            "relational_contamination_count": checkpoint[
+                "relational_merge_certification"
+            ]["contamination_count"],
+            "checkpoint_sha256": true_north._sha256_file(
+                checkpoint_path
+            ),
+        },
+        "acceptance": {
+            "complete_full_search_measurement": False,
+            "atomic_count_accuracy_at_least_0_90": (
+                float(aggregate["acceptable_atomic_count_rate"]) >= 0.90
+            ),
+            "aligned_faithfulness_at_least_0_75": (
+                float(
+                    aligned_aggregate[
+                        "claim_text_faithfulness_proxy"
+                    ]
+                )
+                >= 0.75
+            ),
+            "intrinsic_junk_escapes_zero": (
+                int(
+                    checkpoint["disposition_gate"][
+                        "intrinsic_junk_escape_count"
+                    ]
+                )
+                == 0
+            ),
+            "relational_contamination_zero": (
+                int(
+                    checkpoint["relational_merge_certification"][
+                        "contamination_count"
+                    ]
+                )
+                == 0
+            ),
+        },
+        "passed": False,
+        "usage": state["usage"],
+        "cumulative_calls_after_run": (
+            CUMULATIVE_CALLS_BEFORE_RUN + int(state["usage"]["calls"])
+        ),
+        "known_cumulative_tokens_after_run": (
+            1_177_814 + int(state["usage"]["tokens"])
+        ),
+        "known_token_accounting_excludes_actor_gold_repair": True,
+        "holdout_opened": False,
+        "production_mutation": False,
+    }
+    document["result_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(document)
+    )
+    path = run_root / "terminal-partial-result.private.json"
+    true_north._write_json(path, document, immutable=False)
+    return {**document, "result_path": str(path)}

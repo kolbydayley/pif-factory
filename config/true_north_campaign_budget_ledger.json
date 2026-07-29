@@ -42,7 +42,17 @@
       "max_tokens": 300000,
       "max_wall_seconds": 7200,
       "prompt_freeze_exception": "owner_authorized_single_factor_count_first_variant",
-      "status": "declared"
+      "status": "budget_terminal_partial",
+      "actual": {
+        "run_id": "task5-count-first-20260729-v1",
+        "calls": 25,
+        "tokens": 249496,
+        "validated_packets": 20,
+        "expected_packets": 21,
+        "result_sha256": "cc51e1ce81440fa6f463210254da5eecd547fd17472038d9959c0c7512daa2d2",
+        "cumulative_calls_after": 185,
+        "known_cumulative_tokens_after": 1427310
+      }
     },
     {
       "experiment_id": "actor-two-stage-20260729-v1",
