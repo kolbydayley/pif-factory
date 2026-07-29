@@ -172,3 +172,61 @@ The combined checkpoint failed and Task 5 was not authorized or started. No
 sealed holdout was opened, no paid model call was made, and the production
 source remained unchanged. The checkpoint is frozen at SHA-256
 `52b10ea706fb381f9c9bef1c2e9246a290ba408f8441bf96b2a5c8889d8c1c92`.
+
+## Task 4d checkpoint correction: canonical-map join and held symmetry
+
+The preceding contamination result is superseded. The verifier had read the
+database's unresolved proposition keys without joining each
+`canonical_subject_key` through the run's authoritative
+`canonical-map/final.private.json`. That defect converted every group to
+`subject::unmapped` and made a merge impossible by construction.
+
+The corrected loader now requires the canonical-map artifact, verifies its
+schema and matching run ID, resolves subject keys to real subject IDs, and
+raises if the artifact is missing or inconsistent. The option-2 measurement
+contract was versioned again:
+
+- Previous manifest SHA-256:
+  `519250505f6b458502b8825cb8a6d65c66d93c9b6bd6d7892e94663b3b98d961`
+- Corrected manifest SHA-256:
+  `3b2401c4200f0f5068335116e0d7d98d2b4dac475b7f482a2e16614e5286a5fb`
+- Corrected contract SHA-256:
+  `aa69eb6b1035f1346c9aeae9d259e93630b92bd2b6ec1cd720b5adf0a71e739d`
+
+Held-item accounting is now symmetric. A `held_needs_review` candidate with no
+atomic claims did not enter the claim corpus, so it is excluded from junk
+escape and contamination numerators. The same rule prevents a held gold-value
+candidate from counting as a retained-value recall success; the gold-value
+denominator remains unchanged.
+
+The zero-call `bracket_link_chrome_only_v1` composition rule rejected only
+`dev_6184abb2048d10e9496e6ee4`. It added zero false rejects: the pre-held false
+reject count remained 8.
+
+### Corrected coupled result
+
+| Measure | Corrected result | Required | Pass |
+|---|---:|---:|---|
+| Intrinsic junk escapes | 0 | 0 | Yes |
+| Relational contamination | 0 | 0 | Yes |
+| Materialized relational merges | 1 | 1 | Yes |
+| Held relational candidates excluded | 1 | — | — |
+| False rejects before held accounting | 8 | ≤10 | Yes |
+| False rejects after held accounting | 24 | ≤10 | No |
+| Recall before held accounting | 0.966527 | ≥0.95 | Yes |
+| Recall after held accounting | 0.899582 | ≥0.95 | No |
+
+`dev_ab9794e907ab6d420d4a9bea` resolves to a real canonical subject group with
+corroborating retained peers and is classified
+`merged_duplicate_retained`. `dev_fcec890304c9c2b40332af53` is held with zero
+atomic claims and is therefore neither a corpus contaminant nor a retained
+success.
+
+The join fix makes contamination genuinely zero, and the deterministic rule
+makes intrinsic escapes zero. However, symmetric held accounting identifies 17
+held gold-value candidates, adding 16 net false rejects and reducing retained
+recall below the gate. Task 5 therefore remains unauthorized. The corrected
+checkpoint is frozen at SHA-256
+`92b450191e34d3b54d23aaeba11e90931202563e2d7a1664412d43c09bcec4c9`.
+No sealed holdout was opened, no model call was made, and production remained
+unchanged.

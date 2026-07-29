@@ -2,6 +2,14 @@
 
 Date: 2026-07-28
 
+> **Correction:** The original offline result later in this document is
+> superseded. Its loader did not join `canonical_subject_key` through the run's
+> `canonical-map/final.private.json`, so it emitted `::unmapped` groups and
+> forced a false contamination count of 2. The corrected loader requires and
+> validates that artifact, resolves real subject IDs, and measures zero
+> contamination for the frozen Task 4b escape set after excluding the one held
+> zero-atomic candidate. See “Corrected offline result” below.
+
 Module: `research_factory/true_north_relational_merge.py`
 Tests: `tests/test_true_north_relational_merge.py`
 
@@ -198,6 +206,26 @@ originals — it left them in placeholder groups, and the ledger disposition the
 option cites is never emitted. Option 2 is not free; it requires canonicalization
 work first, and even then it addresses only two of the three residual Task 4b
 escapes.
+
+## Corrected offline result
+
+The preceding headline is retained only as an audit trail and is not current.
+After resolving canonical subject keys through the matching run artifact:
+
+- `dev_ab9794e907ab6d420d4a9bea` joins a real identifying subject group with
+  corroborating retained peers and derives ledger category
+  `merged_duplicate_retained`.
+- `dev_fcec890304c9c2b40332af53` is `held_needs_review` with zero atomic claims.
+  It never entered the claim corpus and is excluded from contamination.
+- Relational escapes entering the corpus: 1.
+- Canonically merged relational escapes: 1.
+- Unmerged relational escapes: 0.
+- Corrected contamination: **0**.
+
+The loader now raises instead of manufacturing placeholder groups when
+`canonical-map/final.private.json` is missing, has the wrong schema, carries a
+different run ID, omits a referenced subject key, or disagrees with the
+database's subject ID.
 
 ## Verification
 
