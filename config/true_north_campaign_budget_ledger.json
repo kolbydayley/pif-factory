@@ -1,0 +1,58 @@
+{
+  "schema_version": "pif_true_north_campaign_budget_ledger_v1",
+  "suite_id": "ai-safety-v1",
+  "owner_decisions": [
+    {
+      "decision_id": "owner-lift-campaign-stop-20260729-v1",
+      "owner": "Kolby Dayley",
+      "recorded_at": "2026-07-29",
+      "source_kind": "owner_directive_in_active_codex_thread",
+      "provenance": {
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Kolby lifted the 160-call campaign hard stop and authorized continued bounded iteration until the gates pass.",
+        "prior_frozen_result_commit": "faf1424"
+      },
+      "supersedes": {
+        "campaign_call_hard_stop": 160
+      },
+      "authorizes": {
+        "campaign_total_policy": "report_only_no_hard_stop",
+        "continued_iteration_until_gates_pass": true
+      },
+      "unchanged_controls": {
+        "per_experiment_ceiling_required_before_first_call": true,
+        "per_experiment_ledger_enforcement_required": true,
+        "cumulative_spend_reporting_required": true,
+        "uncontrolled_spend_forbidden": true,
+        "sealed_holdouts_forbidden": true
+      }
+    }
+  ],
+  "cumulative_before_new_authorization": {
+    "calls": 160,
+    "known_tokens_excluding_actor_gold_repair": 1177814,
+    "token_accounting_note": "The 45-call actor gold-repair ledger did not record tokens; cumulative calls are exact and cumulative known tokens exclude that stage."
+  },
+  "declared_experiments": [
+    {
+      "experiment_id": "stage-b-count-first-20260729-v1",
+      "sequence": 1,
+      "model": "zai-coding-plan/glm-5.2",
+      "max_calls": 25,
+      "max_tokens": 300000,
+      "max_wall_seconds": 7200,
+      "prompt_freeze_exception": "owner_authorized_single_factor_count_first_variant",
+      "status": "declared"
+    },
+    {
+      "experiment_id": "actor-two-stage-20260729-v1",
+      "sequence": 2,
+      "model": "zai-coding-plan/glm-5.2",
+      "max_calls": 30,
+      "max_tokens": 400000,
+      "max_wall_seconds": 7200,
+      "dispatch_condition": "experiment_1_result_frozen",
+      "status": "declared"
+    }
+  ]
+}
