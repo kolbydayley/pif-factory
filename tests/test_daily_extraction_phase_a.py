@@ -54,6 +54,39 @@ def _baseline_handler(conn, artifact_dir: Path, *, execute_extraction: bool):
     )
 
 
+def _ingestion_handler(conn, artifact_dir: Path, *, execute_ingestion: bool):
+    handlers = _default_stage_handlers(
+        conn,
+        source_list=artifact_dir / "sources.yaml",
+        since=None,
+        execute_ingestion=execute_ingestion,
+        execute_normalize=False,
+        execute_extraction=False,
+        apply_reconcile=False,
+        record_exception_contracts=False,
+        publish_observer=False,
+        snapshot_output=None,
+        observer_url=None,
+        observer_token=None,
+        lane="podcast",
+        label_pack="ai_discourse_v3_1",
+        model="gpt-5.5",
+        pilot_id=None,
+        now=lambda: NOW,
+    )
+    return handlers["rss_ingestion_and_due_transcript_strategies"], DailyStageContext(
+        conn=conn,
+        run_id="current-run",
+        run_date="2026-07-29",
+        stage_name="rss_ingestion_and_due_transcript_strategies",
+        stage_index=2,
+        max_items=5,
+        remaining_seconds=120.0,
+        deadline_monotonic=120.0,
+        artifact_dir=artifact_dir,
+    )
+
+
 def test_validation_stage_uses_injected_clock(tmp_path: Path) -> None:
     conn = db.connect(tmp_path / "factory.sqlite")
     try:
@@ -265,6 +298,120 @@ def test_execute_extraction_enables_real_bounded_baseline_and_honest_counts(tmp_
         assert run_jobs.call_args.kwargs["limit"] == 5
         assert execute.call_args.kwargs["concurrency"] == 3
         assert execute.call_args.kwargs["limit"] == 2
+    finally:
+        conn.close()
+
+
+def test_execute_ingestion_enables_recent_bounded_work_and_honest_counts(
+    tmp_path: Path,
+) -> None:
+    conn = db.connect(tmp_path / "factory.sqlite")
+    try:
+        db.init_db(conn)
+        ensure_daily_schema(conn)
+        handler, context = _ingestion_handler(
+            conn,
+            tmp_path / "receipts",
+            execute_ingestion=True,
+        )
+        ingestion = {
+            "sources": 10,
+            "episodes": 2,
+            "episodes_inserted": 1,
+            "source_errors": 0,
+            "skipped_after_max_items": 0,
+            "sources_deferred_due_to_runtime": 0,
+            "runtime_exhausted": False,
+        }
+        strategy = {
+            "strategy_count": 3,
+            "totals": {
+                "manual_transcript_required": 1_227,
+                "terminal_failures": 1_891,
+            },
+        }
+        with patch(
+            "research_factory.transcript_strategies.transcript_strategy_report",
+            return_value=strategy,
+        ), patch(
+            "research_factory.daily_cycle._recent_job_window_start",
+            return_value="2026-07-28T12:00:00+00:00",
+        ), patch(
+            "research_factory.ingest.enqueue_sources",
+            return_value=ingestion,
+        ) as enqueue_sources, patch(
+            "research_factory.ingest.route_terminal_fetch_failures",
+            return_value={"routed": 1, "by_reason": {}, "by_source": {}},
+        ), patch(
+            "research_factory.ingest.enqueue_transcript_backlog",
+            return_value={"selected": 2, "enqueued": 2},
+        ):
+            result = handler(context)
+
+        assert result["status"] == "completed"
+        assert result["processed"] == 5
+        assert result["work_due"] is True
+        assert result["work_satisfied"] is True
+        assert result["required_work_enabled"] is True
+        assert result["recent_window_start"] == "2026-07-28T12:00:00+00:00"
+        assert result["backlog_total"] == strategy["totals"]
+        assert enqueue_sources.call_args.kwargs["since"] == "2026-07-28T12:00:00+00:00"
+        assert enqueue_sources.call_args.kwargs["max_items"] == 5
+        assert enqueue_sources.call_args.kwargs["max_runtime_seconds"] == 120.0
+    finally:
+        conn.close()
+
+
+def test_ingestion_historic_terminal_and_manual_counts_are_telemetry_not_pass_condition(
+    tmp_path: Path,
+) -> None:
+    conn = db.connect(tmp_path / "factory.sqlite")
+    try:
+        db.init_db(conn)
+        ensure_daily_schema(conn)
+        handler, context = _ingestion_handler(
+            conn,
+            tmp_path / "receipts",
+            execute_ingestion=True,
+        )
+        with patch(
+            "research_factory.transcript_strategies.transcript_strategy_report",
+            return_value={
+                "strategy_count": 3,
+                "totals": {
+                    "manual_transcript_required": 1_227,
+                    "terminal_failures": 1_891,
+                },
+            },
+        ), patch(
+            "research_factory.daily_cycle._recent_job_window_start",
+            return_value="2026-07-28T12:00:00+00:00",
+        ), patch(
+            "research_factory.ingest.enqueue_sources",
+            return_value={
+                "sources": 10,
+                "episodes": 0,
+                "episodes_inserted": 0,
+                "source_errors": 0,
+                "skipped_after_max_items": 0,
+                "sources_deferred_due_to_runtime": 0,
+                "runtime_exhausted": False,
+            },
+        ), patch(
+            "research_factory.ingest.route_terminal_fetch_failures",
+            return_value={"routed": 0, "by_reason": {}, "by_source": {}},
+        ), patch(
+            "research_factory.ingest.enqueue_transcript_backlog",
+            return_value={"selected": 0, "enqueued": 0},
+        ):
+            result = handler(context)
+
+        assert result["processed"] == 0
+        assert result["work_due"] is False
+        assert result["healthy_no_work"] is True
+        assert result["work_satisfied"] is True
+        assert result["backlog_total"]["manual_transcript_required"] == 1_227
+        assert result["backlog_total"]["terminal_failures"] == 1_891
     finally:
         conn.close()
 
@@ -505,7 +652,11 @@ def test_claimed_execution_finalizes_submission_failure(tmp_path: Path) -> None:
 def test_daily_cli_requires_explicit_extraction_flag() -> None:
     parser = build_parser()
     default = parser.parse_args(["run", "daily"])
-    enabled = parser.parse_args(["run", "daily", "--execute-extraction"])
+    enabled = parser.parse_args(
+        ["run", "daily", "--execute-extraction", "--execute-ingestion"]
+    )
     assert default.execute_extraction is False
+    assert default.execute_ingestion is False
     assert enabled.execute_extraction is True
+    assert enabled.execute_ingestion is True
     assert default.max_runtime_seconds == DEFAULT_DAILY_RUNTIME_SECONDS == 5_400

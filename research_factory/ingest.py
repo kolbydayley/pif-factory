@@ -7,6 +7,7 @@ import json
 import mimetypes
 import re
 import sqlite3
+import time
 import urllib.request
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -80,7 +81,7 @@ GCP_OFFICIAL_SOURCE_ID = "google-cloud-platform-podcast"
 GCP_MIN_TRANSCRIPT_WORDS = 100
 
 
-def fetch_url(url: str) -> tuple[str, str | None]:
+def fetch_url(url: str, *, timeout_seconds: float = 30) -> tuple[str, str | None]:
     if url.startswith("file://"):
         path = Path(urllib.request.url2pathname(url[7:]))
         return path.read_text(encoding="utf-8"), mimetypes.guess_type(path.name)[0]
@@ -88,7 +89,7 @@ def fetch_url(url: str) -> tuple[str, str | None]:
         path = Path(url).expanduser().resolve()
         return path.read_text(encoding="utf-8"), mimetypes.guess_type(path.name)[0]
     req = urllib.request.Request(url, headers={"User-Agent": "podcast-intelligence-factory/0.1"})
-    with urllib.request.urlopen(req, timeout=30) as response:
+    with urllib.request.urlopen(req, timeout=max(0.1, float(timeout_seconds))) as response:
         charset = response.headers.get_content_charset() or "utf-8"
         raw = response.read()
         if raw.startswith(b"\x1f\x8b"):
@@ -968,6 +969,7 @@ def enqueue_sources(
     dry_run: bool = False,
     enqueue_transcripts: bool = True,
     fetch_concurrency: int = 1,
+    max_runtime_seconds: float | None = None,
 ) -> dict[str, Any]:
     sources = _filter_sources(load_source_list(source_list), source_filter)
     since_dt = parse_date(since)
@@ -986,6 +988,8 @@ def enqueue_sources(
         "transcript_jobs": 0,
         "missing_transcripts": 0,
         "source_errors": 0,
+        "sources_deferred_due_to_runtime": 0,
+        "runtime_exhausted": False,
         "skipped_before_since": 0,
         "skipped_after_until": 0,
         "skipped_after_max_items": 0,
@@ -1011,7 +1015,25 @@ def enqueue_sources(
             stats["source_stats"].append({"source_id": source_id, "source": source["name"], "feed_items_seen": 0, "selected": 0, "error": None})
 
     selected_total = 0
-    for result in _fetch_feeds(source_inputs, concurrency=fetch_concurrency):
+    for result in _fetch_feeds(
+        source_inputs,
+        concurrency=fetch_concurrency,
+        max_runtime_seconds=max_runtime_seconds,
+    ):
+        if result.get("deferred_due_to_runtime"):
+            stats["sources_deferred_due_to_runtime"] += 1
+            stats["runtime_exhausted"] = True
+            stats["source_stats"].append(
+                {
+                    "source_id": result["source_id"],
+                    "source": result["source"]["name"],
+                    "feed_items_seen": 0,
+                    "selected": 0,
+                    "error": None,
+                    "deferred_due_to_runtime": True,
+                }
+            )
+            continue
         source = result["source"]
         source_id = result["source_id"]
         source_name = source["name"]
@@ -1169,25 +1191,74 @@ def _enqueue_transcript_work(conn, *, lane: str, label_pack: str, episode_id: st
     return {"transcript_jobs": 0, "missing_transcripts": 1}
 
 
-def _fetch_feeds(source_inputs: list[tuple[dict[str, Any], str]], *, concurrency: int) -> list[dict[str, Any]]:
+def _fetch_feeds(
+    source_inputs: list[tuple[dict[str, Any], str]],
+    *,
+    concurrency: int,
+    max_runtime_seconds: float | None = None,
+) -> list[dict[str, Any]]:
     if concurrency < 1:
         raise ValueError("--fetch-concurrency must be at least 1")
-    if concurrency == 1 or len(source_inputs) <= 1:
-        return [_fetch_one_feed(source, source_id) for source, source_id in source_inputs]
-    results: dict[int, dict[str, Any]] = {}
-    with ThreadPoolExecutor(max_workers=min(concurrency, len(source_inputs))) as executor:
-        futures = {
-            executor.submit(_fetch_one_feed, source, source_id): index
-            for index, (source, source_id) in enumerate(source_inputs)
-        }
-        for future in as_completed(futures):
-            results[futures[future]] = future.result()
-    return [results[index] for index in range(len(source_inputs))]
+    deadline = (
+        time.monotonic() + max(0.0, float(max_runtime_seconds))
+        if max_runtime_seconds is not None
+        else None
+    )
+    results: list[dict[str, Any]] = []
+    batch_size = min(concurrency, len(source_inputs)) if source_inputs else 1
+    for offset in range(0, len(source_inputs), batch_size):
+        batch = source_inputs[offset : offset + batch_size]
+        remaining = deadline - time.monotonic() if deadline is not None else 30.0
+        if deadline is not None and remaining <= 0:
+            results.extend(
+                {
+                    "source": source,
+                    "source_id": source_id,
+                    "episodes": [],
+                    "deferred_due_to_runtime": True,
+                }
+                for source, source_id in source_inputs[offset:]
+            )
+            break
+        timeout_seconds = min(30.0, max(0.1, remaining))
+        if len(batch) == 1:
+            source, source_id = batch[0]
+            results.append(
+                _fetch_one_feed(
+                    source,
+                    source_id,
+                    timeout_seconds=timeout_seconds,
+                )
+            )
+            continue
+        batch_results: dict[int, dict[str, Any]] = {}
+        with ThreadPoolExecutor(max_workers=len(batch)) as executor:
+            futures = {
+                executor.submit(
+                    _fetch_one_feed,
+                    source,
+                    source_id,
+                    timeout_seconds=timeout_seconds,
+                ): index
+                for index, (source, source_id) in enumerate(batch)
+            }
+            for future in as_completed(futures):
+                batch_results[futures[future]] = future.result()
+        results.extend(batch_results[index] for index in range(len(batch)))
+    return results
 
 
-def _fetch_one_feed(source: dict[str, Any], source_id: str) -> dict[str, Any]:
+def _fetch_one_feed(
+    source: dict[str, Any],
+    source_id: str,
+    *,
+    timeout_seconds: float = 30,
+) -> dict[str, Any]:
     try:
-        feed_text, _ = fetch_url(str(source["rss_url"]))
+        feed_text, _ = fetch_url(
+            str(source["rss_url"]),
+            timeout_seconds=timeout_seconds,
+        )
         return {"source": source, "source_id": source_id, "episodes": parse_feed(feed_text, source_id=source_id)}
     except Exception as exc:
         return {"source": source, "source_id": source_id, "episodes": [], "error": _short_error(exc)}

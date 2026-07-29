@@ -686,6 +686,11 @@ def _default_stage_handlers(
         from .transcript_strategies import transcript_strategy_report
 
         strategy = transcript_strategy_report(conn)
+        recent_window_start = _recent_job_window_start(
+            conn,
+            current_run_id=context.run_id,
+            at=now(),
+        )
         if not execute_ingestion:
             return {
                 "status": "skipped",
@@ -697,18 +702,21 @@ def _default_stage_handlers(
                 "work_satisfied": False,
                 "strategy_count": strategy.get("strategy_count", 0),
                 "strategy_totals": strategy.get("totals", {}),
+                "recent_window_start": recent_window_start,
             }
         if not source_list:
             raise ValueError("source_list is required when ingestion is enabled")
+        effective_since = since or recent_window_start
         ingestion = enqueue_sources(
             conn,
             source_list,
             lane=lane,
-            since=since,
+            since=effective_since,
             label_pack=label_pack,
             max_items=context.max_items,
             enqueue_transcripts=True,
             fetch_concurrency=min(4, context.max_items),
+            max_runtime_seconds=context.remaining_seconds,
         )
         processed = min(context.max_items, int(ingestion.get("episodes", 0)))
         remaining = context.max_items - processed
@@ -729,18 +737,36 @@ def _default_stage_handlers(
                 label_pack=label_pack,
                 limit=remaining,
             )
+        processed_total = processed + int(backlog.get("selected", 0))
+        bounded_remainder = (
+            int(ingestion.get("skipped_after_max_items", 0))
+            + int(ingestion.get("sources_deferred_due_to_runtime", 0))
+        )
+        work_due = bool(processed_total or bounded_remainder)
+        work_satisfied = not (
+            int(ingestion.get("source_errors", 0))
+            or bool(ingestion.get("runtime_exhausted"))
+            or bounded_remainder
+        )
         return {
             "status": "completed",
-            "processed": processed + int(backlog.get("selected", 0)),
-            "work_due": True,
+            "processed": processed_total,
+            "work_due": work_due,
             "required_work_enabled": True,
-            "healthy_no_work": False,
-            "work_satisfied": not int(ingestion.get("source_errors", 0)),
+            "healthy_no_work": not work_due,
+            "work_satisfied": work_satisfied,
+            "recent_window_start": recent_window_start,
+            "effective_since": effective_since,
+            "backlog_total": strategy.get("totals", {}),
+            "bounded_remainder": bounded_remainder,
             "ingestion": {
                 "sources": ingestion.get("sources", 0),
                 "episodes": ingestion.get("episodes", 0),
                 "episodes_inserted": ingestion.get("episodes_inserted", 0),
                 "source_errors": ingestion.get("source_errors", 0),
+                "skipped_after_max_items": ingestion.get("skipped_after_max_items", 0),
+                "sources_deferred_due_to_runtime": ingestion.get("sources_deferred_due_to_runtime", 0),
+                "runtime_exhausted": bool(ingestion.get("runtime_exhausted")),
             },
             "due_transcript_strategies": {
                 "selected": backlog.get("selected", 0),
