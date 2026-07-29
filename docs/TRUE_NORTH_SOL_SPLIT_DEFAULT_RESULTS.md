@@ -54,7 +54,8 @@ scores:
 - aligned faithfulness: 0.755012;
 - full-fold matched faithfulness: 0.733522;
 - candidate-state macro F1: 0.863223;
-- hallucination proxy: 0.193548;
+- matched-pair hallucination proxy: 0.129032;
+- live/coupled hallucination diagnostic: 0.193548;
 - intrinsic junk escapes: 0;
 - relational contamination: 0.
 
@@ -67,6 +68,6 @@ Cumulative known campaign spend is 264 calls and 2,782,670 tokens. As before,
 the token total is a known minimum because historical actor-gold-repair tokens
 were never captured in the ledger.
 
-Terminal diagnostic SHA-256:
-`07ead4df1381ddab070ae5e278398489f51e3767c9e783ef145cbb7b17d1a3fa`.
-
+The v7 zero-call rescore supersedes the prior v6 terminal diagnostic hash.
+Current terminal diagnostic SHA-256:
+`11ce7d70d3c090d7b717e66cf4e33e668067115a81b567efa6e4b89165d2ea6f`.

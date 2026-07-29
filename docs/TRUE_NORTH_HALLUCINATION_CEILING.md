@@ -2,7 +2,8 @@
 
 Date: 2026-07-29
 
-Status: zero-call measurement-contract finding; gate unchanged.
+Status: frozen zero-call measurement-contract finding; subsequently adopted by
+Ruling 3.
 
 Pass A was scored as prediction against pass B as reference with the exact
 current semantic scorer.
@@ -17,14 +18,13 @@ current hard gate scores. The matched-only reading excludes those claims but
 retains hallucination-severity flags on aligned pairs. Both readings exceed
 2%.
 
-The requested `min(current_target, observed gold-vs-gold rate)` framing returns
-0.02, so it supplies no automatic threshold change. More importantly, the gold
-process itself fails the current gate by 12.56 percentage points. This is a
-measurement-contract finding for Kolby. The gate remains unchanged pending an
-explicit owner ruling.
+The original `min(current_target, observed gold-vs-gold rate)` framing returned
+0.02 and supplied no automatic threshold change. Ruling 3 subsequently adopted
+the established lower-is-better convention: matched-pair gold-vs-gold rate
+0.073684 plus a 0.02 margin, producing the final v7 gate of **0.093684**. The
+live 0.145614 reading and original 0.02 aspiration remain diagnostics.
 
-No provider call, holdout access, production mutation, or gate change occurred.
+No provider call, holdout access, or production mutation occurred.
 
 Result SHA-256:
 `f9b99c77045e0ad5daa183badc49426a17fdc9510bc7d414298479fc4c877ed8`.
-

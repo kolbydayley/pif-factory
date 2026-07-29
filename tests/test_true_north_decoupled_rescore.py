@@ -16,6 +16,7 @@ def _aggregate() -> dict:
         "reported_actor_exactness": 0.4,
         "claim_text_faithfulness_proxy": 0.6,
     }
+    values["hallucination_rate_proxy_coupled_diagnostic"] = 0.2
     return values
 
 
@@ -29,6 +30,9 @@ def test_gate_table_uses_matched_results_and_discloses_coupled() -> None:
     assert table["acceptable_atomic_count_rate"][
         "coupled_diagnostic"
     ] is None
+    assert table["hallucination_rate_proxy"][
+        "coupled_diagnostic"
+    ] == 0.2
     assert len(table) == 9
 
 

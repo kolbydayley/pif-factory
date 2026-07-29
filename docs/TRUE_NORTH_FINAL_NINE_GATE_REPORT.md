@@ -1,5 +1,8 @@
 # True-North Final Nine-Gate Development Report
 
+> Historical v6 report. Superseded by
+> `docs/TRUE_NORTH_CERTIFICATION_20260729.md` and measurement contract v7.
+
 Date: 2026-07-29
 
 This is the consolidated result under measurement contract v6. The selected

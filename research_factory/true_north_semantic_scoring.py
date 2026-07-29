@@ -24,7 +24,7 @@ from difflib import SequenceMatcher
 from typing import Any, Iterable, Mapping, Sequence
 
 
-SCHEMA_VERSION = "pif_true_north_semantic_scoring_v2"
+SCHEMA_VERSION = "pif_true_north_semantic_scoring_v3"
 METRIC_KIND = "deterministic_lexical_and_field_proxy"
 
 _FIELD_NAMES = (
@@ -1285,12 +1285,32 @@ def score_campaign(
             ),
             "qualifier_micro_denominator": qualifier_denominator,
             "hallucination_rate_proxy": _mean(
+                float(
+                    any(
+                        flag["severity"] == "hallucination"
+                        for pair in score["alignment"]
+                        for flag in pair["unsupported_field_flags"]
+                    )
+                )
+                for score in strict_scores
+            ),
+            "hallucination_rate_proxy_coupled_diagnostic": _mean(
                 float(score["hallucination_or_unsupported_proxy"]["flagged"])
                 for score in strict_scores
             ),
             # Compatibility name retained as the hard-gate alias for one
             # release. It now reflects only hallucination-severity flags.
             "unsupported_candidate_rate_proxy": _mean(
+                float(
+                    any(
+                        flag["severity"] == "hallucination"
+                        for pair in score["alignment"]
+                        for flag in pair["unsupported_field_flags"]
+                    )
+                )
+                for score in strict_scores
+            ),
+            "unsupported_candidate_rate_proxy_coupled_diagnostic": _mean(
                 float(score["hallucination_or_unsupported_proxy"]["flagged"])
                 for score in strict_scores
             ),

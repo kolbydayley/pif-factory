@@ -67,6 +67,38 @@
         "prompt_changes": false,
         "sealed_holdout_access": false
       }
+    },
+    {
+      "decision_id": "owner-delegated-final-ruling-20260729-v1",
+      "owner": "Kolby Dayley",
+      "recorded_at": "2026-07-29",
+      "source_kind": "review_thread_directive_in_active_codex_thread",
+      "delegation": {
+        "delegated_by": "Kolby Dayley",
+        "delegated_to": "true_north_review_loop",
+        "explicit": true
+      },
+      "provenance": {
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Ruling 3 final: re-reference hallucination to the matched-pair gold-vs-gold rate plus 0.02; retain atomicity at 0.90; certify a development-fold-only hybrid architecture with disclosed limitations; keep transfer sealed and decomposition experiments stopped."
+      },
+      "authorizes": {
+        "measurement_contract_version": "pif_true_north_measurement_contract_v7",
+        "hallucination_gate": 0.093684,
+        "hallucination_gate_rule": "matched_pair_gold_vs_gold_rate_plus_0.02",
+        "hallucination_live_coupled_reading": "mandatory_diagnostic",
+        "hallucination_original_0_02_target": "mandatory_diagnostic",
+        "acceptable_atomic_count_rate_gate": 0.9,
+        "certification": "development_fold_only_hybrid",
+        "compound_decomposition_lane": "codex_class",
+        "sealed_transfer_episodes": "remain_closed",
+        "decomposition_experiment_lane": "stopped"
+      },
+      "future_work_not_authorized": [
+        "glm_plus_sol_independent_passes_plus_cheap_adjudicator",
+        "actor_value_selection_on_157_atomic_residual",
+        "sealed_transfer_execution"
+      ]
     }
   ],
   "cumulative_before_new_authorization": {
@@ -232,7 +264,7 @@
         "sol_over_extraction_errors": 15,
         "partial_fallback_full_fold_atomic_accuracy": 0.7974137931034483,
         "partial_fallback_aligned_faithfulness": 0.755012,
-        "result_sha256": "07ead4df1381ddab070ae5e278398489f51e3767c9e783ef145cbb7b17d1a3fa",
+        "result_sha256": "11ce7d70d3c090d7b717e66cf4e33e668067115a81b567efa6e4b89165d2ea6f",
         "cumulative_calls_after": 264,
         "known_cumulative_tokens_after": 2782670,
         "acceptance_eligible": false,

@@ -629,8 +629,44 @@ class TrueNorthSemanticScoringTest(unittest.TestCase):
             2,
         )
         self.assertIn("hallucination_rate_proxy", aggregate)
+        self.assertIn(
+            "hallucination_rate_proxy_coupled_diagnostic", aggregate
+        )
         self.assertIn("field_divergence_rate", aggregate)
         self.assertIn("unsupported_candidate_rate_proxy_legacy", aggregate)
+
+    def test_campaign_hallucination_gate_excludes_unmatched_but_discloses_it(
+        self,
+    ) -> None:
+        reference = claim("The policy changed.")
+        extra = claim("An unrelated unsupported assertion appears.")
+        result = score_campaign(
+            [
+                {
+                    "candidate_id": "candidate-1",
+                    "disposition": "revise",
+                    "atomic_claims": [reference, extra],
+                }
+            ],
+            [consensus(reference["claim_text"])],
+            [
+                {
+                    "candidate_id": "candidate-1",
+                    "disposition": "revise",
+                    "atomic_claims": [reference],
+                }
+            ],
+        )
+
+        self.assertEqual(
+            result["aggregate"]["hallucination_rate_proxy"], 0.0
+        )
+        self.assertEqual(
+            result["aggregate"][
+                "hallucination_rate_proxy_coupled_diagnostic"
+            ],
+            1.0,
+        )
 
     def test_consensus_only_real_shape_disables_unavailable_field_scoring(self) -> None:
         contract = {

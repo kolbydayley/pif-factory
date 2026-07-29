@@ -8,7 +8,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from . import true_north
 from .true_north_actor_span_rule import apply_actor_span_rule
-from .true_north_decoupled_contract import CONTRACT_VERSION
+from .true_north_final_contract import CONTRACT_VERSION
 from .true_north_semantic_scoring import (
     SCHEMA_VERSION as SCORER_VERSION,
     score_campaign,
@@ -90,8 +90,15 @@ def _gate_table(aggregate: Mapping[str, Any]) -> list[dict[str, Any]]:
             "speaker_exactness",
             "reported_actor_exactness",
             "claim_text_faithfulness_proxy",
+            "hallucination_rate_proxy",
         }:
-            diagnostic = diagnostics[metric]
+            diagnostic = (
+                aggregate[
+                    "hallucination_rate_proxy_coupled_diagnostic"
+                ]
+                if metric == "hallucination_rate_proxy"
+                else diagnostics[metric]
+            )
         rows.append(
             {
                 "metric": metric,

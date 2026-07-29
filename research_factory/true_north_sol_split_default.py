@@ -705,6 +705,9 @@ def compose_and_score_sol_probe(
             "hallucination_rate_proxy": aggregate[
                 "hallucination_rate_proxy"
             ],
+            "hallucination_live_coupled_diagnostic": aggregate[
+                "hallucination_rate_proxy_coupled_diagnostic"
+            ],
             "nine_gate_table": decoupled["nine_gate_table"],
             "passed_gate_count": decoupled["passed_gate_count"],
         },
@@ -981,6 +984,9 @@ def finalize_partial_sol_probe(
             ],
             "hallucination_rate_proxy": aggregate[
                 "hallucination_rate_proxy"
+            ],
+            "hallucination_live_coupled_diagnostic": aggregate[
+                "hallucination_rate_proxy_coupled_diagnostic"
             ],
             "nine_gate_table": decoupled["nine_gate_table"],
             "passed_gate_count": decoupled["passed_gate_count"],

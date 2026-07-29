@@ -184,7 +184,7 @@ TASK5_DEFAULT_BUDGET = {
     "max_tokens": 800_000,
     "max_wall_seconds": 2 * 60 * 60,
 }
-APPROVED_GATE_POLICY_VERSION = "pif_true_north_gate_policy_v3"
+APPROVED_GATE_POLICY_VERSION = "pif_true_north_gate_policy_v4"
 APPROVED_GATE_POLICY = {
     "consensus_candidate_state_macro_f1": (">=", 0.90),
     "retained_value_recall": (">=", 0.90),
@@ -193,7 +193,7 @@ APPROVED_GATE_POLICY = {
     "claim_text_faithfulness_proxy": (">=", 0.744435),
     "speaker_exactness": (">=", 0.954615),
     "reported_actor_exactness": (">=", 0.735385),
-    "hallucination_rate_proxy": ("<=", 0.02),
+    "hallucination_rate_proxy": ("<=", 0.093684),
     "schema_parse_success_rate": (">=", 0.99),
 }
 MULTIPASS_OPEN_DEVELOPMENT_EPISODES = (
@@ -1452,9 +1452,13 @@ def verify_suite(
             suite_root
             / "diagnostics"
             / (
-                "gate-policy-v3.json"
-                if APPROVED_GATE_POLICY_VERSION.endswith("_v3")
-                else "gate-policy-v2.json"
+                "gate-policy-v4.json"
+                if APPROVED_GATE_POLICY_VERSION.endswith("_v4")
+                else (
+                    "gate-policy-v3.json"
+                    if APPROVED_GATE_POLICY_VERSION.endswith("_v3")
+                    else "gate-policy-v2.json"
+                )
             )
         )
         gold_path = (
@@ -9118,9 +9122,21 @@ def _task5_resolved_dispositions(
             "measurement_contract", {}
         )
         current_contract = manifest.get("measurement_contract", {})
-        inherited_contract = current_contract.get(
-            "disposition_contract", {}
-        )
+        inherited_contract: Mapping[str, Any] = current_contract
+        for _ in range(4):
+            if inherited_contract.get(
+                "version"
+            ) == "pif_true_north_phase_c_option2_v5":
+                break
+            next_contract = (
+                inherited_contract.get("disposition_contract")
+                or inherited_contract.get("previous_contract")
+                or {}
+            )
+            if not isinstance(next_contract, Mapping):
+                inherited_contract = {}
+                break
+            inherited_contract = next_contract
         if (
             historical_manifest.get("manifest_sha256")
             != checkpoint_manifest_sha

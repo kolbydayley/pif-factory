@@ -1,5 +1,9 @@
 # True-North Decoupled Scoring Results
 
+> Historical v6 result. Hallucination scoring and final certification are
+> superseded by contract v7 and
+> `docs/TRUE_NORTH_CERTIFICATION_20260729.md`.
+
 Date: 2026-07-29
 
 Status: frozen development-fold result; sealed holdouts unopened.
