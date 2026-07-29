@@ -106,7 +106,105 @@ The prior floor decides this phase's scope. GLM is needed only where the floor f
 - [ ] **Step 2: Run stage A on the two Search episodes (≤25 calls, declared); score; verify acceptance; one further single-sentence iteration permitted if a named class still dominates.**
 - [ ] **Step 3: Commit.**
 
+### Task 4b (AMENDMENT 2026-07-28): Asymmetric junk-verification stage
+
+Task 4 failed its frozen acceptance after its permitted iteration (best GLM: 1 escape / 12 false rejects / 94.98% recall; corrected GLM×2+Spark-tiebreak ensemble: 3 escapes / 6 false rejects / 97.49% recall — see `docs/TRUE_NORTH_PHASE_C_DISPOSITION_RESULTS.md`). Root cause, verified against run artifacts: two escaped junk items (`dev_c094b91406c9222943a29eba` non_useful_repetition, `dev_d7f6bd87ab720be875111f97` truncated fragment) were retained by **both** GLM runs, so no tiebreak composition can ever reject them, and they belong to precisely the classes Task 4's prompt softened to protect recall. Recall and junk-precision cannot share one prompt. This amendment keeps the zero-junk gate and authorizes one precision-tilted verification stage over retained items. Prompt iterations on Task 4's disposition prompt remain exhausted — the disposition stage is frozen as the corrected ensemble composition (result SHA `f1f5ebda…a06fcd`).
+
+**Files:**
+- Modify: `research_factory/true_north.py` (add `junk-verify` stage after disposition composition)
+- Test: `tests/test_true_north.py`
+
+**Interfaces:**
+- **Deterministic screen** selects which retained candidates get verified (no model involvement in scoping). A retained candidate is screened in when any of: (a) either GLM disposition run or Spark rejected it (value-state disagreement anywhere in the ensemble); (b) repetition screen — token-Jaccard of its `claim_text`+`evidence_text` against any earlier candidate in the same episode ≥0.6; (c) fragment screen — `evidence_text` does not end in terminal punctuation, or is under 120 characters; (d) bare-mention/question screen — `claim_text` contains no finite verb outside a name/title, or evidence is interrogative without a declarative continuation. Thresholds are frozen constants; record screened-in count per class in the run report. Expected scope: ~20–40 of ~230 retained candidates.
+- **Verifier call** (GLM, batched screened candidates, closed schema): `{"candidate_id", "verdict": "confirm_retain"|"reject", "junk_reason": <same closed set as stage A>|null, "deficiency_quote": str|null}` where `reject` requires both `junk_reason` and a `deficiency_quote` copied verbatim from the evidence.
+- **Asymmetric flip rule** (deterministic composition): a retained candidate flips to reject only when the verifier rejects AND at least one corroborator agrees — either (i) some ensemble member had already rejected it, or (ii) the verifier's `junk_reason` matches the deterministic screen class that selected the candidate (e.g. verifier says `repetition` on a repetition-screened item). A verifier reject with no corroboration escalates that single candidate to Spark with the same verifier contract; Spark's verdict then decides. Unanimity-retained, unscreened candidates are never touched.
+- Verifier system prompt (final text, verbatim):
+
+```
+You are a junk auditor for a private podcast research corpus. Do not use
+tools. Every candidate you receive has been provisionally retained, and most
+are genuinely valuable; your task is to catch the rare junk that slipped
+through. Reject a candidate only when you can quote a concrete deficiency
+from its exact evidence: the evidence merely repeats an assertion already
+made elsewhere without adding new content; the evidence is a truncated
+fragment whose assertion cannot be completed from the text present; the
+evidence only names a person, product, or document without asserting anything
+about it; the evidence is an unanswered question or setup with no recoverable
+assertion; or the evidence is page chrome, navigation, or metadata. If the
+evidence contains any complete, substantive asserted proposition a researcher
+could verify, compare, contradict, or qualify, confirm the retention even
+when the candidate is also partly repetitive or fragmentary. For each reject,
+name the junk class and copy the deficient text verbatim as the deficiency
+quote. Return only the exact schema-valid JSON requested by the packet.
+```
+
+- Budget for this amendment: ≤8 GLM calls + ≤3 Spark single-candidate escalations, ≤120k tokens, declared in the ledger before the first call.
+- Acceptance on the Search fold (frozen composed pipeline = ensemble disposition + junk-verify flips): junk escapes 0/9, false rejects ≤10, retained-value recall ≥0.95. One screen-threshold adjustment (constants only, no prompt change) is permitted if a screened-out junk item escapes; a second failure stops Phase C and returns to Kolby with the falloff ledger.
+
+- [ ] **Step 1: Write failing tests** — screen classes select the two known both-run escapes from stored v1/v2 outputs; flip rule refuses an uncorroborated verifier reject without Spark; `reject` without `deficiency_quote` fails validation; unscreened candidates cannot be flipped.
+- [ ] **Step 2: Implement screen, verifier stage, and composition; tests pass.**
+- [ ] **Step 3: Dry-run the screen offline** against stored v1/v2 outputs and report per-class screened-in counts — the two known escapes MUST be screened in before any paid call; if not, fix screen constants first.
+- [ ] **Step 4: Run the verifier on the Search fold; compose; score against the frozen acceptance rule.**
+- [ ] **Step 5: Write results appendix into `docs/TRUE_NORTH_PHASE_C_DISPOSITION_RESULTS.md`; commit** `git commit -m "feat(true-north): asymmetric junk-verification stage for Phase C disposition"`
+
+### Task 4c (AMENDMENT 2 — 2026-07-28): Marginal-utility verification with neighbor and segment context
+
+Task 4b failed at its stop condition: all three residual escapes were screened in, and the verifier confirmed each (3/9 escapes, 8 false rejects, 96.65% recall — see the Task 4b appendix in `docs/TRUE_NORTH_PHASE_C_DISPOSITION_RESULTS.md`). Root cause, verified against the bundles and gold: the residual junk is **relational, not intrinsic**. "Nilay summarizes Fable as Mythos with security guardrails" is a substantive sentence in isolation; it is junk only because the same proposition is already carried elsewhere in the retained set (gold reason codes: `non_useful_repetition`, `non_useful_repetition_of_model_definition`, `nonasserted_question_frame` — the question's proposition exists verbatim in a retained candidate at 0.41 claim-token Jaccard). A verifier shown one candidate alone answered the wrong question correctly. Task 4b's intrinsic-junk contract is retired; this task replaces the packet contents and the question being asked. No further iterations of the 4b design are authorized.
+
+**Files:**
+- Modify: `research_factory/true_north.py` (`junk-verify` stage: packet builder + contract v2)
+- Test: `tests/test_true_north.py`
+
+**Interfaces:**
+- **Scope** (deterministic, tightened — the 4b fragment screen at 157/243 was uninformative and is retired): a retained candidate is screened in when any of: (a) repetition — token-Jaccard of its `claim_text ∪ evidence_text` against another retained candidate's `claim_text ∪ evidence_text` ≥0.45 (pairs recorded); (b) chrome/bare-mention — `evidence_text` contains bracketed link text (`[...]`), or `claim_text`'s main verb is a reference verb (references, mentions, cites, names, points to) with no further predicate; (c) pure-interrogative — `evidence_text` consists only of interrogative sentences; (d) dangling fragment — no terminal punctuation AND begins lowercase AND under 160 characters; (e) any ensemble value-state disagreement. Constants frozen; per-class counts reported. Expected scope ≈30–50.
+- **Packet per screened candidate** (all drawn from the same frozen bundle — no new sources): the candidate; the full text of its segment cropped ±400 characters around the evidence span (original offsets preserved); and its top-3 nearest **retained** neighbors by the same token-Jaccard, each with `candidate_id`, `claim_text`, `evidence_text`. For repetition-screened items the matched pair is always included.
+- **Verifier contract v2 output**: `{"candidate_id", "verdict": "confirm_retain"|"reject", "junk_reason": <stage-A closed set>|null, "duplicate_of": <candidate_id>|null, "deficiency_quote": str|null}` — a `repetition` reject must name `duplicate_of` from the shown neighbors; a fragment/question/bare-mention reject must include the verbatim `deficiency_quote`.
+- **Verifier system prompt v2 (final text, verbatim):**
+
+```
+You are a marginal-utility auditor for a private podcast research corpus. Do
+not use tools. Each packet shows one provisionally retained candidate, the
+surrounding transcript text of its segment, and the most similar already
+retained candidates. Most inputs are valuable; your task is to catch the rare
+candidate that adds nothing to the corpus. Reject a candidate only in these
+cases. Repetition: every proposition in its evidence is already carried by
+one of the shown retained neighbors, in the same or different words, and the
+candidate adds no new subject, predicate, outcome, qualifier, or attribution;
+name which neighbor carries it. Non-assertion: read the surrounding segment
+text and confirm the evidence is a question, setup, or fragment whose
+recoverable content is either absent or already carried by a shown neighbor.
+Bare reference: the evidence only points to a document, product, page
+element, or name without asserting any verifiable proposition about it. If
+the candidate contributes any independently citable proposition that no shown
+neighbor carries, confirm the retention, even when partly repetitive,
+interrogative, or fragmentary. Quote the deficiency verbatim for every
+non-repetition reject. Return only the exact schema-valid JSON requested by
+the packet.
+```
+
+- **Composition rule** (asymmetry preserved, one addition): flips still require corroboration (prior ensemble reject, screen-class match, or a named `duplicate_of` whose pair similarity ≥0.45). New: a `confirm_retain` verdict on a repetition-screened candidate whose pair similarity is ≥0.60 gets one Spark second opinion with the identical packet; junk-reject requires the two models to agree, else retain stands. Unscreened unanimous retains remain untouchable.
+- **Route:** GLM batched verification (≤6 calls); Spark only for the high-similarity confirm double-checks and uncorroborated-reject escalations (≤4 calls). Budget ≤10 calls / ≤150k tokens, declared before the first call.
+- **Acceptance** (unchanged): 0/9 escapes, ≤10 false rejects, recall ≥0.95 on the Search fold with the frozen ensemble + 4c flips.
+- **Hard stop:** one run, no prompt or constant iteration. On failure, proceed directly to the Task 4d decision checkpoint — do not retry.
+
+- [ ] **Step 1: Write failing tests** — screen selects all five known development junk candidates from stored outputs (`dev_c094…`, `dev_d7f6…`, `dev_ab97…`, `dev_6184…`, `dev_fcec…`) without referencing gold in runtime code (test-only fixture IDs); packet builder includes segment crop with correct offsets and the matched repetition pair; `repetition` reject without `duplicate_of` fails validation; high-similarity confirm triggers the Spark double-check.
+- [ ] **Step 2: Implement; tests pass; commit code before the paid run.**
+- [ ] **Step 3: Offline dry-run of screen + packet builder; verify the five known junk items are screened in and their packets contain the relevant neighbor or segment context.**
+- [ ] **Step 4: Execute the bounded run; compose; score.**
+- [ ] **Step 5: Append results; commit** `git commit -m "feat(true-north): marginal-utility junk verification with neighbor context"`
+
+### Task 4d (decision checkpoint if 4c fails): gate-semantics ruling
+
+If 4c fails, the remaining escapes are items two independent Codex gold passes both rejected but which survive neighbor-context adjudication by two different models. That is no longer an extraction defect; it is a disagreement about where duplicate suppression belongs. Present Kolby one decision with two options:
+
+1. **Keep the 0/9 disposition gate as-is** and accept that the extraction stack cannot certify; the campaign ends with the falloff ledger (status quo, no further spend).
+2. **Move relational junk downstream**: reclassify `non_useful_repetition*` and `nonasserted_question_frame` escapes as acceptable at disposition **if and only if** the downstream canonicalization stage merges them into their duplicate's canonical group (the ledger already defines `merged_duplicate_retained`). The disposition gate then binds to intrinsic junk only (chrome, bare mention, fragment); a new certification-time check asserts every relational escape was actually merged, so corpus contamination stays zero. This is a measurement-contract change: record it in the manifest with this evidence trail if approved.
+
+No implementation happens in 4d without Kolby's explicit choice in the current conversation.
+
 ### Task 5: Split/no-split minimal-edit decomposition
+
+Precondition (amended): Task 4b acceptance passed — superseded: Task 4c acceptance passed, or Task 4d option 2 approved and implemented.
 
 **Files:**
 - Modify: `research_factory/true_north.py` (replace stage-B contract)
@@ -161,6 +259,8 @@ JSON requested by the packet.
 ## Budget
 
 Declared ceilings for the whole plan: ≤160 paid calls, ≤2.5M tokens, ≤5h provider wall time (Phase A: 0; Phase B: ≤60 Spark; Phase C: ≤75 GLM + ≤25 Spark escalation/confirmation). Enforced through the existing reservation ledger.
+
+Amendment accounting (2026-07-28): Phase C has consumed 43 calls / 311,822 tokens through Task 4, plus 8 calls / 68,324 tokens in Task 4b (51 calls total). Task 4c adds ≤10 calls / ≤150k tokens inside the Phase C ceiling; the remaining envelope after Task 4c is reserved for Tasks 5–7. Task 4d spends nothing.
 
 ## Assumptions
 
