@@ -91,7 +91,9 @@ def _budget_ledger() -> tuple[dict[str, Any], str]:
         or str(declared["model"]) != GLM_MODEL
     ):
         raise CountFirstError("count-first declared budget drifted")
-    return ledger, true_north._sha256_file(LEDGER_PATH)
+    return ledger, true_north.sha256_text(
+        true_north.dumps_json(ledger)
+    )
 
 
 def run_count_first_experiment(
@@ -122,7 +124,11 @@ def run_count_first_experiment(
         / "owner-lift-campaign-stop-20260729-v1.json"
     )
     true_north._write_json(ledger_snapshot, ledger, immutable=True)
-    if true_north._sha256_file(ledger_snapshot) != ledger_sha:
+    if true_north.sha256_text(
+        true_north.dumps_json(
+            true_north._read_json(ledger_snapshot)
+        )
+    ) != ledger_sha:
         raise CountFirstError("runtime budget-ledger snapshot hash mismatch")
 
     base_jobs, dispositions, candidates = _load_search_context(root, manifest)
