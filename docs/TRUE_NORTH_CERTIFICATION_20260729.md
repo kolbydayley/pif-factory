@@ -30,6 +30,17 @@ does **not** stand as transfer validation, production readiness, or evidence
 that the stack is ready to scale. Nothing was tuned after observing sealed
 results. See `docs/TRUE_NORTH_SEALED_TRANSFER_RESULTS_20260729.md`.
 
+The zero-call attribution is recorded in
+`docs/TRUE_NORTH_TRANSFER_COLLAPSE_DIAGNOSTIC_20260729.md`. Reweighting sealed
+conditional decisions to development's class priors yields macro F1 0.726363:
+68.0% of the headline macro drop is class-prior/scorer discontinuity and
+32.0% is conditional decision degradation. The latter remains material:
+all 52 retained-value misses were disposition rejects. Hold resolution was
+dormant with zero input holds. Disabling actor suppression would worsen actor
+from 0.734694 to 0.726531 and hallucination from 0.075163 to 0.133987, so its
+threshold remains directionally useful but did not preserve joint gate
+compliance.
+
 ## Authority and scope
 
 Kolby explicitly delegated the final ruling to the True-North review loop.
@@ -366,6 +377,15 @@ lanes, an all-Codex baseline that actually emits downstream atomic and
 canonical outputs under the same contract, identical episode/candidate scope,
 and retained-valid-atomic lineage on both sides. See
 `docs/TRUE_NORTH_PHASE_E_EXECUTION_STOP_20260729.md`.
+
+### Prospective cost trial cancellation
+
+The closeout plan's prospective Task 3 cost trial is cancelled. Measuring the
+cost efficiency of a stack that fails quality transfer answers the second
+question before the first and risks producing a favorable-looking cost number
+whose quality caveats outlive it. The prospective design remains documented
+and armed for a future, separately authorized campaign. Approximately **90
+provider calls** were not spent.
 
 ### Future work
 

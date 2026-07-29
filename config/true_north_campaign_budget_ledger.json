@@ -428,6 +428,32 @@
         "post_result_tuning_forbidden": true,
         "second_holdout_opening_forbidden": true
       }
+    },
+    {
+      "decision_id": "review-loop-campaign-closeout-20260729-v1",
+      "owner": "true_north_review_loop",
+      "recorded_at": "2026-07-29",
+      "source_kind": "review_thread_directive_in_active_codex_thread",
+      "delegation": {
+        "delegated_by": "Kolby Dayley",
+        "delegated_to": "true_north_review_loop",
+        "explicit": true
+      },
+      "provenance": {
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Accept the blind transfer result without tuning, diagnose the structured collapse from frozen artifacts, cancel the prospective cost trial, and close the campaign with a no-go production recommendation."
+      },
+      "ruling": {
+        "production_promotion": "no_go",
+        "prospective_cost_trial": "cancelled",
+        "estimated_calls_not_spent": 90,
+        "reason": "Cost efficiency is not decision-relevant for a stack that failed quality transfer; a favorable cost number would outlive its quality caveat.",
+        "diagnostic_ablations_may_change_configuration": false,
+        "post_transfer_tuning_forbidden": true,
+        "second_holdout_id": "ep_044f1d2d020e021cfaf99e90",
+        "second_holdout_opening_forbidden": true,
+        "provider_calls_authorized": 0
+      }
     }
   ],
   "post_certification_phase_results": [
@@ -664,6 +690,27 @@
       ],
       "sealed_holdout_opened": false,
       "production_mutated": false
+    },
+    {
+      "phase": "closeout",
+      "name": "transfer_collapse_diagnostic_and_final_scoreboard",
+      "status": "completed_zero_call",
+      "provider_calls": 0,
+      "known_tokens": 0,
+      "development_passed_gate_count": 7,
+      "transfer_passed_gate_count": 4,
+      "production_recommendation": "no_go",
+      "prospective_cost_trial_status": "cancelled",
+      "estimated_calls_not_spent": 90,
+      "diagnostic_ablations_adopted": false,
+      "post_transfer_tuning_performed": false,
+      "second_holdout_id": "ep_044f1d2d020e021cfaf99e90",
+      "second_holdout_opened": false,
+      "production_mutated": false,
+      "result_documents": [
+        "docs/TRUE_NORTH_TRANSFER_COLLAPSE_DIAGNOSTIC_20260729.md",
+        "docs/TRUE_NORTH_FINAL_SCOREBOARD_20260729.md"
+      ]
     }
   ],
   "cumulative_before_new_authorization": {
