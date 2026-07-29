@@ -104,6 +104,98 @@ def test_document_separates_matched_pair_ceiling_from_coupled_diagnostic() -> No
     )
 
 
+def atomic_pair(
+    candidate_id: str,
+    *,
+    claim_texts: list[str],
+    reported_actor: str | None,
+) -> dict:
+    """A candidate carrying an arbitrary number of atomic claims."""
+    base = atomic(
+        candidate_id,
+        claim_text=claim_texts[0],
+        reported_actor=reported_actor,
+    )
+    template = base["atomic_claims"][0]
+    base["atomic_claims"] = [
+        {**template, "claim_text": text, "proposition_text": text}
+        for text in claim_texts
+    ]
+    return base
+
+
+def test_ceiling_document_reports_gate_denominator_alignment() -> None:
+    """The live gate scores correct/max(predicted, gold); the ceiling must too.
+
+    Pass A emits two atomics, pass B one, and the aligned pair agrees on speaker.
+    Matched-pair agreement is therefore 1.0, while the live gate's own
+    denominator yields 1/max(2, 1) = 0.5. A threshold derived from the
+    matched-pair number is calibrated against a measurement the gate never
+    makes, which is how an unpassable gate survives recalibration.
+    """
+    pass_a = {
+        "one": atomic_pair(
+            "one",
+            claim_texts=[
+                "AI systems require careful safety evaluation.",
+                "Funding for interpretability research is increasing.",
+            ],
+            reported_actor="AI Lab",
+        )
+    }
+    pass_b = {
+        "one": atomic_pair(
+            "one",
+            claim_texts=["AI systems require careful safety evaluation."],
+            reported_actor="AI Lab",
+        )
+    }
+    result = calibration.compute_ceiling_document(pass_a, pass_b)
+
+    alignment = result["gate_denominator_alignment"]
+    assert alignment["live_gate_changed"] is False
+
+    speaker = alignment["metrics"]["speaker_exactness"]
+    assert speaker["matched_pair_ceiling_mean"] == 1.0
+    assert speaker["coupled_ceiling_mean"] == 0.5
+    assert speaker["live_target"] == 0.97
+    assert speaker["gate_exceeds_coupled_ceiling"] is True
+    assert speaker["recommended_threshold_on_gate_denominator"] == 0.46
+
+    for metric in (
+        "speaker_exactness",
+        "reported_actor_exactness",
+        "claim_text_faithfulness_proxy",
+    ):
+        assert metric in alignment["metrics"]
+
+
+def test_gate_denominator_alignment_clears_when_gate_is_attainable() -> None:
+    """Equal atomic counts and full agreement leave the gate inside the ceiling."""
+    pass_a = {
+        "one": atomic(
+            "one",
+            claim_text="AI systems require careful safety evaluation.",
+            reported_actor="AI Lab",
+        )
+    }
+    pass_b = {
+        "one": atomic(
+            "one",
+            claim_text="AI systems require careful safety evaluation.",
+            reported_actor="AI Lab",
+        )
+    }
+    result = calibration.compute_ceiling_document(pass_a, pass_b)
+
+    speaker = result["gate_denominator_alignment"]["metrics"][
+        "speaker_exactness"
+    ]
+    assert speaker["matched_pair_ceiling_mean"] == 1.0
+    assert speaker["coupled_ceiling_mean"] == 1.0
+    assert speaker["gate_exceeds_coupled_ceiling"] is False
+
+
 def test_pass_scopes_must_match() -> None:
     with pytest.raises(calibration.GateCalibrationError, match="same non-empty"):
         calibration.compute_ceiling_document(

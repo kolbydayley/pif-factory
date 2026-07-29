@@ -88,6 +88,66 @@ def _synthetic_consensus(item: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+_GATE_DENOMINATOR_METRICS = (
+    "speaker_exactness",
+    "reported_actor_exactness",
+    "claim_text_faithfulness_proxy",
+)
+
+
+def _gate_denominator_alignment(
+    coupled_values: Mapping[str, Sequence[float]],
+    matched_ceilings: Mapping[str, Mapping[str, Any]],
+    targets: Mapping[str, float],
+) -> dict[str, Any]:
+    """Compare each gate's target against a ceiling on the gate's own denominator.
+
+    `summarize_ceiling` derives its recommendation from matched atomic pairs
+    only, while the live gate scores `correct / max(predicted, gold)`. When the
+    two denominators disagree, a gate can sit above the agreement its own gold
+    achieves and stay unpassable through recalibration. This block reports both
+    numbers side by side; it changes no threshold and no gate wiring.
+    """
+
+    metrics: dict[str, Any] = {}
+    for metric in _GATE_DENOMINATOR_METRICS:
+        values = list(coupled_values.get(metric, ()))
+        target = float(targets[metric])
+        if not values:
+            metrics[metric] = {
+                "coupled_sample_count": 0,
+                "matched_pair_ceiling_mean": matched_ceilings[metric]["mean"],
+                "coupled_ceiling_mean": None,
+                "live_target": target,
+                "gate_exceeds_coupled_ceiling": None,
+                "recommended_threshold_on_gate_denominator": None,
+            }
+            continue
+        coupled = summarize_ceiling(values, current_target=target)
+        metrics[metric] = {
+            "coupled_sample_count": len(values),
+            "matched_pair_ceiling_mean": matched_ceilings[metric]["mean"],
+            "coupled_ceiling_mean": coupled["mean"],
+            "live_target": target,
+            "gate_exceeds_coupled_ceiling": coupled["mean"] < target,
+            "recommended_threshold_on_gate_denominator": coupled[
+                "recommended_threshold"
+            ],
+        }
+    return {
+        "live_gate_changed": False,
+        "metrics": metrics,
+        "rationale": (
+            "A gate threshold is only meaningful against a ceiling measured on "
+            "the same denominator the gate scores on. Where "
+            "gate_exceeds_coupled_ceiling is true, the gold process itself "
+            "cannot pass that gate, so the reading certifies nothing about the "
+            "extractor. Adopting any of these thresholds is a "
+            "measurement-contract change and requires explicit approval."
+        ),
+    }
+
+
 def compute_ceiling_document(
     pass_a: Mapping[str, Mapping[str, Any]],
     pass_b: Mapping[str, Mapping[str, Any]],
@@ -110,6 +170,12 @@ def compute_ceiling_document(
     campaign_actor_correct = 0
     campaign_actor_denominator = 0
     matched_pair_count = 0
+    # Per-candidate agreement scored on the denominator the live gate itself
+    # uses (correct / max(predicted_atoms, gold_atoms)), so a recommended
+    # threshold is calibrated against the measurement the gate actually makes.
+    coupled_values: dict[str, list[float]] = {
+        metric: [] for metric in _GATE_DENOMINATOR_METRICS
+    }
     for candidate_id in sorted(pass_a):
         item_a = pass_a[candidate_id]
         item_b = pass_b[candidate_id]
@@ -144,6 +210,10 @@ def compute_ceiling_document(
         actor_metric = scored["reported_actor_exactness"]
         campaign_actor_correct += int(actor_metric["correct_pairs"])
         campaign_actor_denominator += int(actor_metric["micro_denominator"])
+        for metric in _GATE_DENOMINATOR_METRICS:
+            coupled_score = scored[metric]["score"]
+            if coupled_score is not None:
+                coupled_values[metric].append(float(coupled_score))
         for pair in scored["alignment"]:
             matched_pair_count += 1
             values["claim_text_faithfulness_proxy"].append(
@@ -167,6 +237,11 @@ def compute_ceiling_document(
         "candidate_count": len(pass_a),
         "matched_atomic_pair_count": matched_pair_count,
         "ceilings": ceilings,
+        "gate_denominator_alignment": _gate_denominator_alignment(
+            coupled_values,
+            ceilings,
+            targets,
+        ),
         "coupled_diagnostics": {
             "claim_text_campaign_micro_including_unmatched_atomics": round(
                 (
