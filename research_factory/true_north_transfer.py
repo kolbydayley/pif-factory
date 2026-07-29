@@ -13,6 +13,7 @@ import json
 import math
 import shutil
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -1042,4 +1043,284 @@ def compile_selected_gold(*, suite_root: str | Path) -> dict[str, Any]:
         "item_count": len(items),
         "atomic_count": sum(len(row["atomic_claims"]) for row in items),
         "counts": consensus["counts"],
+    }
+
+
+def _selected_actor_root(root: Path) -> Path:
+    return _run_root(root) / "gold" / "actor-repair"
+
+
+def prepare_selected_actor_repair(
+    *, suite_root: str | Path
+) -> dict[str, Any]:
+    root = _root(suite_root)
+    verify_blind_freeze(suite_root=root)
+    gold_path = _selected_gold_root(root) / "final" / "gold.private.json"
+    gold = true_north._read_json(gold_path)
+    if gold["episode_id"] != AUTHORIZED_EPISODE_ID:
+        raise TransferError("actor repair gold episode mismatch")
+    rows = true_north_actor_repair._atomic_rows(gold)
+    repair_root = _selected_actor_root(root)
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "episode_id": AUTHORIZED_EPISODE_ID,
+        "field_scope": ["reported_actor"],
+        "model": true_north_actor_repair.MODEL,
+        "actor_contract": true_north_actor_repair.ACTOR_CONTRACT,
+        "source_gold_path": str(gold_path),
+        "source_gold_file_sha256": true_north._sha256_file(gold_path),
+        "source_gold_sha256": gold["gold_sha256"],
+        "atomic_count": len(rows),
+        "batch_size": true_north_actor_repair.BATCH_SIZE,
+        "pass_a_packet_count": math.ceil(
+            len(rows) / true_north_actor_repair.BATCH_SIZE
+        ),
+        "pass_b_packet_count": math.ceil(
+            len(rows) / true_north_actor_repair.BATCH_SIZE
+        ),
+        "canonical_gold_mutation_allowed": False,
+    }
+    manifest["manifest_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(manifest)
+    )
+    true_north._write_json(
+        repair_root / "manifest.json", manifest, immutable=True
+    )
+    for pass_name in ("pass-a", "pass-b"):
+        for offset in range(
+            0, len(rows), true_north_actor_repair.BATCH_SIZE
+        ):
+            batch_number = (
+                offset // true_north_actor_repair.BATCH_SIZE
+            )
+            packet = true_north_actor_repair._packet(
+                rows[
+                    offset : offset
+                    + true_north_actor_repair.BATCH_SIZE
+                ],
+                pass_name=pass_name,
+                batch_number=batch_number,
+            )
+            packet["partition"] = "sealed-holdout"
+            packet["episode_id"] = AUTHORIZED_EPISODE_ID
+            true_north._write_json(
+                repair_root / pass_name / "jobs"
+                / f"actor-{batch_number:03d}.private.json",
+                packet,
+                immutable=True,
+            )
+    return manifest
+
+
+def _prepare_selected_actor_adjudication(root: Path) -> dict[str, Any]:
+    repair_root = _selected_actor_root(root)
+    values_a = true_north_actor_repair._load_actor_values(
+        repair_root / "pass-a"
+    )
+    values_b = true_north_actor_repair._load_actor_values(
+        repair_root / "pass-b"
+    )
+    if set(values_a) != set(values_b):
+        raise TransferError("actor independent pass scopes differ")
+    source_gold = true_north._read_json(
+        _selected_gold_root(root) / "final" / "gold.private.json"
+    )
+    source_rows = {
+        str(row["atomic_id"]): row
+        for row in true_north_actor_repair._atomic_rows(source_gold)
+    }
+    disagreement_ids = [
+        atomic_id
+        for atomic_id in sorted(values_a)
+        if values_a[atomic_id] != values_b[atomic_id]
+    ]
+    rows = [
+        {
+            **source_rows[atomic_id],
+            "pass_a_reported_actor": values_a[atomic_id],
+            "pass_b_reported_actor": values_b[atomic_id],
+        }
+        for atomic_id in disagreement_ids
+    ]
+    pass_root = repair_root / "pass-c-adjudication"
+    for offset in range(
+        0, len(rows), true_north_actor_repair.BATCH_SIZE
+    ):
+        batch_number = offset // true_north_actor_repair.BATCH_SIZE
+        packet = true_north_actor_repair._packet(
+            rows[
+                offset : offset + true_north_actor_repair.BATCH_SIZE
+            ],
+            pass_name="pass-c-adjudication",
+            batch_number=batch_number,
+        )
+        packet["partition"] = "sealed-holdout"
+        packet["episode_id"] = AUTHORIZED_EPISODE_ID
+        true_north._write_json(
+            pass_root / "jobs"
+            / f"actor-{batch_number:03d}.private.json",
+            packet,
+            immutable=True,
+        )
+    return {
+        "atomic_count": len(values_a),
+        "agreement_count": len(values_a) - len(disagreement_ids),
+        "disagreement_count": len(disagreement_ids),
+        "packet_count": math.ceil(
+            len(disagreement_ids)
+            / true_north_actor_repair.BATCH_SIZE
+        ),
+    }
+
+
+def execute_selected_actor_pass(
+    *,
+    suite_root: str | Path,
+    pass_name: str,
+    workers: int = 3,
+    timeout_seconds: int = 1200,
+    opencode_binary: str = "/opt/homebrew/bin/opencode",
+) -> dict[str, Any]:
+    root = _root(suite_root)
+    prepare_selected_actor_repair(suite_root=root)
+    if pass_name not in {"pass-a", "pass-b", "pass-c"}:
+        raise TransferError("actor pass must be A, B, or C")
+    preparation = None
+    directory = pass_name
+    if pass_name == "pass-c":
+        preparation = _prepare_selected_actor_adjudication(root)
+        directory = "pass-c-adjudication"
+    pass_root = _selected_actor_root(root) / directory
+    jobs = sorted((pass_root / "jobs").glob("*.private.json"))
+    _check_total_budget(root, pending_calls=len(jobs))
+
+    def execute(job_path: Path) -> dict[str, Any]:
+        name = job_path.name.removesuffix(".private.json")
+        output_dir = pass_root / "outputs" / name
+        output, receipts, model = true_north._run_opencode_packet(
+            packet_path=job_path,
+            output_dir=output_dir,
+            models=(true_north_actor_repair.MODEL,),
+            stage=f"sealed-actor-repair-{pass_name}",
+            timeout_seconds=timeout_seconds,
+            opencode_binary=opencode_binary,
+            system_prompt=true_north_actor_repair.SYSTEM_PROMPT,
+            validator=true_north_actor_repair._validate_actor_output,
+            _semantic_retry_remaining=0,
+        )
+        receipt = {
+            "schema_version": SCHEMA_VERSION,
+            "episode_id": AUTHORIZED_EPISODE_ID,
+            "packet_path": str(job_path),
+            "packet_sha256": true_north._sha256_file(job_path),
+            "provider_model": model,
+            "output_sha256": true_north.sha256_text(
+                true_north.dumps_json(output)
+            ),
+            "receipts": receipts,
+        }
+        true_north._write_json(
+            output_dir / "receipt.private.json",
+            receipt,
+            immutable=True,
+        )
+        return receipt
+
+    receipts: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=max(1, min(3, workers))) as pool:
+        futures = [pool.submit(execute, path) for path in jobs]
+        for future in as_completed(futures):
+            receipts.append(future.result())
+    usage = _total_usage(root)
+    if usage["calls"] > MAX_CALLS or usage["tokens"] > MAX_TOKENS:
+        raise TransferError("actor pass exceeded Ruling-8 ceiling")
+    return {
+        "pass": pass_name,
+        "executed_count": len(receipts),
+        "preparation": preparation,
+        "usage": usage,
+    }
+
+
+def compile_selected_actor_repair(
+    *, suite_root: str | Path
+) -> dict[str, Any]:
+    root = _root(suite_root)
+    repair_root = _selected_actor_root(root)
+    manifest = true_north._read_json(repair_root / "manifest.json")
+    source_path = Path(manifest["source_gold_path"])
+    if (
+        true_north._sha256_file(source_path)
+        != manifest["source_gold_file_sha256"]
+    ):
+        raise TransferError("atomic gold drifted during actor repair")
+    audit_a: dict[str, int] = {}
+    audit_b: dict[str, int] = {}
+    audit_c: dict[str, int] = {}
+    values_a = true_north_actor_repair._load_actor_values(
+        repair_root / "pass-a", audit=audit_a
+    )
+    values_b = true_north_actor_repair._load_actor_values(
+        repair_root / "pass-b", audit=audit_b
+    )
+    disagreements = {
+        atomic_id
+        for atomic_id in values_a
+        if values_a[atomic_id] != values_b[atomic_id]
+    }
+    values_c = (
+        true_north_actor_repair._load_actor_values(
+            repair_root / "pass-c-adjudication", audit=audit_c
+        )
+        if disagreements
+        else {}
+    )
+    if not disagreements <= set(values_c):
+        raise TransferError("actor pass C does not cover disagreements")
+    final_values = {
+        atomic_id: (
+            values_a[atomic_id]
+            if values_a[atomic_id] == values_b[atomic_id]
+            else values_c[atomic_id]
+        )
+        for atomic_id in values_a
+    }
+    source_gold = true_north._read_json(source_path)
+    revised = true_north_actor_repair.apply_actor_repairs(
+        source_gold, final_values
+    )
+    revised.pop("gold_sha256", None)
+    revised["actor_repair"] = {
+        "schema_version": true_north_actor_repair.SCHEMA_VERSION,
+        "source_gold_sha256": manifest["source_gold_sha256"],
+        "contract": true_north_actor_repair.ACTOR_CONTRACT,
+        "model": true_north_actor_repair.MODEL,
+        "pass_a_b_agreement": round(
+            sum(values_a[key] == values_b[key] for key in values_a)
+            / len(values_a),
+            6,
+        ),
+        "disagreement_count": len(disagreements),
+        "evidence_span_enforcement": {
+            "pass_a": audit_a,
+            "pass_b": audit_b,
+            "pass_c": audit_c,
+        },
+        "canonical_switch_approved": False,
+        "sealed_transfer_scoring_reference": True,
+    }
+    revised["gold_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(revised)
+    )
+    output_path = repair_root / "final-span-enforced" / "gold.private.json"
+    true_north._write_json(output_path, revised, immutable=True)
+    return {
+        "gold_path": str(output_path),
+        "gold_sha256": revised["gold_sha256"],
+        "atomic_count": len(values_a),
+        "disagreement_count": len(disagreements),
+        "usage": _total_usage(root),
+        "evidence_span_enforcement": revised["actor_repair"][
+            "evidence_span_enforcement"
+        ],
     }
