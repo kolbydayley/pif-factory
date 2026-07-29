@@ -169,3 +169,37 @@ def test_v31_repair_suppresses_only_ungrounded_metric_object() -> None:
     assert repaired["quality_flags"] == ["validator_rejected_metric"]
     assert output["needs_review"] is True
     assert "suppressed 1 ungrounded metric" in output["review_reason"]
+
+
+def test_v31_repair_bounds_long_exact_evidence_around_claim_terms() -> None:
+    prefix = "background material " * 70
+    conclusion = "The system reduced inference latency for production users."
+    segment_text = prefix + conclusion
+    output = {
+        "needs_review": False,
+        "review_reason": None,
+        "discourse_events": [
+            {
+                "claim_text": conclusion,
+                "evidence": segment_text,
+                "evidence_start": 0,
+                "evidence_end": len(segment_text),
+                "quality_flags": [],
+            }
+        ],
+    }
+
+    repairs = repair_label_output_for_submission(
+        "ai_discourse_v3_1",
+        output,
+        segment_text=segment_text,
+    )
+
+    repaired = output["discourse_events"][0]
+    assert repairs == 1
+    assert len(repaired["evidence"]) == 1000
+    assert conclusion in repaired["evidence"]
+    assert (
+        segment_text[repaired["evidence_start"] : repaired["evidence_end"]]
+        == repaired["evidence"]
+    )

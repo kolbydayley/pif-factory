@@ -106,28 +106,97 @@ def repair_label_output_for_submission(label_pack: str, value: dict[str, Any], *
     if label_pack not in {"ai_discourse_v2", "ai_discourse_v3", "ai_discourse_v3_1"}:
         return 0
     repairs = 0
+    evidence_limit = 320 if label_pack == "ai_discourse_v2" else 1000
     for item in _iter_items_with_evidence(value):
         evidence = item.get("evidence")
         start = item.get("evidence_start")
         end = item.get("evidence_end")
+        original_start = start
+        original_end = end
         if not isinstance(evidence, str) or not evidence:
             continue
-        if isinstance(start, int) and isinstance(end, int) and 0 <= start < end <= len(segment_text) and segment_text[start:end] == evidence:
-            continue
-        positions = [match.start() for match in re.finditer(re.escape(evidence), segment_text)]
-        if not positions:
-            continue
-        preferred = start if isinstance(start, int) else positions[0]
-        repaired_start = min(positions, key=lambda position: abs(position - preferred))
-        repaired_end = repaired_start + len(evidence)
-        item["evidence_start"] = repaired_start
-        item["evidence_end"] = repaired_end
-        _append_repair_note(item, f"deterministic evidence offset repair from {start}-{end} to {repaired_start}-{repaired_end}")
-        repairs += 1
+        exact = (
+            isinstance(start, int)
+            and isinstance(end, int)
+            and 0 <= start < end <= len(segment_text)
+            and segment_text[start:end] == evidence
+        )
+        if not exact:
+            positions = [
+                match.start() for match in re.finditer(re.escape(evidence), segment_text)
+            ]
+            if not positions:
+                continue
+            preferred = start if isinstance(start, int) else positions[0]
+            repaired_start = min(
+                positions, key=lambda position: abs(position - preferred)
+            )
+            repaired_end = repaired_start + len(evidence)
+            item["evidence_start"] = repaired_start
+            item["evidence_end"] = repaired_end
+            start = repaired_start
+            end = repaired_end
+            _append_repair_note(
+                item,
+                "deterministic evidence offset repair "
+                f"from {original_start}-{original_end} "
+                f"to {repaired_start}-{repaired_end}",
+            )
+            repairs += 1
+        if len(evidence) > evidence_limit:
+            window_start = _best_bounded_evidence_window(
+                evidence,
+                item=item,
+                limit=evidence_limit,
+            )
+            bounded = evidence[window_start : window_start + evidence_limit]
+            item["evidence"] = bounded
+            item["evidence_start"] = int(start) + window_start
+            item["evidence_end"] = int(start) + window_start + len(bounded)
+            _append_repair_note(
+                item,
+                f"deterministic evidence length repair to {evidence_limit} characters",
+            )
+            repairs += 1
     if label_pack == "ai_discourse_v3_1":
         repairs += _drop_v31_items_with_unresolved_evidence(value, segment_text=segment_text)
         repairs += _clear_v31_ungrounded_metrics(value)
     return repairs
+
+
+def _best_bounded_evidence_window(
+    evidence: str,
+    *,
+    item: dict[str, Any],
+    limit: int,
+) -> int:
+    """Choose a deterministic exact-evidence window centered on claim terms."""
+
+    if len(evidence) <= limit:
+        return 0
+    anchors = " ".join(
+        str(item.get(field) or "")
+        for field in (
+            "claim_text",
+            "causal_mechanism",
+            "counterclaim",
+            "signal_reason",
+        )
+    )
+    tokens = {
+        token
+        for token in re.findall(r"[a-z0-9]+", anchors.casefold())
+        if len(token) >= 4
+    }
+    last_start = len(evidence) - limit
+    candidates = {0, last_start}
+    candidates.update(range(0, last_start + 1, 64))
+
+    def score(offset: int) -> tuple[int, int]:
+        window = evidence[offset : offset + limit].casefold()
+        return (sum(token in window for token in tokens), -offset)
+
+    return max(candidates, key=score)
 
 
 def _clear_v31_ungrounded_metrics(value: dict[str, Any]) -> int:
