@@ -94,11 +94,13 @@ name the junk class and copy the deficient text verbatim as the deficiency
 quote. Return only the exact schema-valid JSON requested by the packet."""
 PHASE_C_MARGINAL_JACCARD = 0.45
 PHASE_C_MARGINAL_SPARK_CONFIRM_JACCARD = 0.60
+PHASE_C_MARGINAL_LOCAL_DISTANCE = 600
+PHASE_C_MARGINAL_LOCAL_MIN_STEMS = 2
 PHASE_C_MARGINAL_SEGMENT_RADIUS = 400
 PHASE_C_MARGINAL_MAX_GLM_CALLS = 6
 PHASE_C_MARGINAL_MAX_SPARK_CALLS = 4
 PHASE_C_MARGINAL_MAX_TOKENS = 150_000
-PHASE_C_MARGINAL_BATCH_SIZE = 12
+PHASE_C_MARGINAL_BATCH_SIZE = 37
 PHASE_C_MARGINAL_SYSTEM_PROMPT = """You are a marginal-utility auditor for a private podcast research corpus. Do
 not use tools. Each packet shows one provisionally retained candidate, the
 surrounding transcript text of its segment, and the most similar already
@@ -9001,6 +9003,141 @@ def _phase_c_token_jaccard(left: str, right: str) -> float:
     return len(left_tokens & right_tokens) / len(union) if union else 0.0
 
 
+PHASE_C_MARGINAL_STEM_STOPWORDS = frozenset(
+    {
+        "about",
+        "after",
+        "again",
+        "also",
+        "although",
+        "another",
+        "anything",
+        "around",
+        "because",
+        "before",
+        "being",
+        "between",
+        "both",
+        "could",
+        "different",
+        "does",
+        "doing",
+        "down",
+        "during",
+        "each",
+        "even",
+        "everything",
+        "from",
+        "further",
+        "going",
+        "have",
+        "having",
+        "here",
+        "hers",
+        "herself",
+        "himself",
+        "into",
+        "itself",
+        "just",
+        "know",
+        "like",
+        "look",
+        "made",
+        "make",
+        "many",
+        "more",
+        "most",
+        "much",
+        "myself",
+        "other",
+        "ours",
+        "ourselves",
+        "over",
+        "people",
+        "person",
+        "really",
+        "right",
+        "said",
+        "same",
+        "says",
+        "should",
+        "some",
+        "something",
+        "source",
+        "sources",
+        "speaker",
+        "such",
+        "than",
+        "that",
+        "their",
+        "theirs",
+        "them",
+        "themselves",
+        "then",
+        "there",
+        "these",
+        "they",
+        "this",
+        "thing",
+        "things",
+        "think",
+        "those",
+        "thought",
+        "through",
+        "told",
+        "under",
+        "until",
+        "very",
+        "want",
+        "well",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "while",
+        "with",
+        "would",
+        "yeah",
+        "your",
+        "yours",
+        "yourself",
+        "yourselves",
+    }
+)
+
+
+def _phase_c_simple_stem(token: str) -> str:
+    for suffix, replacement in (
+        ("ations", ""),
+        ("ation", ""),
+        ("ingly", ""),
+        ("edly", ""),
+        ("ies", "y"),
+        ("ing", ""),
+        ("ed", ""),
+        ("es", ""),
+        ("s", ""),
+    ):
+        if token.endswith(suffix):
+            stem = token[: -len(suffix)] + replacement
+            if len(stem) >= 4:
+                return stem
+    return token
+
+
+def _phase_c_informative_stems(text: str) -> set[str]:
+    stems: set[str] = set()
+    for token in re.findall(r"[a-z0-9]+", text.casefold()):
+        if (
+            len(token) < 4
+            or token in PHASE_C_MARGINAL_STEM_STOPWORDS
+        ):
+            continue
+        stems.add(_phase_c_simple_stem(token))
+    return stems
+
+
 def _phase_c_has_finite_verb(text: str) -> bool:
     tokens = re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", text.casefold())
     finite_words = {
@@ -9294,6 +9431,10 @@ def screen_phase_c_marginal_candidates(
             ).strip()
             for candidate in retained
         }
+        informative_stems = {
+            candidate_id: _phase_c_informative_stems(text)
+            for candidate_id, text in comparison_text.items()
+        }
         for candidate in candidates:
             candidate_id = str(candidate["candidate_id"])
             if candidate_id in observed:
@@ -9331,6 +9472,60 @@ def screen_phase_c_marginal_candidates(
                 ),
             )
             top_neighbors = neighbor_scores[:3]
+            score_by_neighbor = {
+                str(row["candidate_id"]): float(row["similarity"])
+                for row in neighbor_scores
+            }
+            local_proximity_neighbors: list[dict[str, Any]] = []
+            segment_id = candidate.get("segment_id")
+            evidence_start = candidate.get("evidence_start")
+            if (
+                segment_id is not None
+                and isinstance(evidence_start, (int, float))
+            ):
+                for neighbor in retained:
+                    neighbor_id = str(neighbor["candidate_id"])
+                    neighbor_start = neighbor.get("evidence_start")
+                    if (
+                        neighbor_id == candidate_id
+                        or neighbor.get("segment_id") != segment_id
+                        or not isinstance(
+                            neighbor_start, (int, float)
+                        )
+                    ):
+                        continue
+                    distance = abs(
+                        int(evidence_start) - int(neighbor_start)
+                    )
+                    if distance > PHASE_C_MARGINAL_LOCAL_DISTANCE:
+                        continue
+                    shared_stems = sorted(
+                        informative_stems[candidate_id]
+                        & informative_stems[neighbor_id]
+                    )
+                    if (
+                        len(shared_stems)
+                        < PHASE_C_MARGINAL_LOCAL_MIN_STEMS
+                    ):
+                        continue
+                    local_proximity_neighbors.append(
+                        {
+                            "candidate_id": neighbor_id,
+                            "similarity": score_by_neighbor.get(
+                                neighbor_id, 0.0
+                            ),
+                            "evidence_distance": distance,
+                            "shared_informative_stems": shared_stems,
+                        }
+                    )
+            local_proximity_neighbors.sort(
+                key=lambda row: (
+                    -len(row["shared_informative_stems"]),
+                    int(row["evidence_distance"]),
+                    -float(row["similarity"]),
+                    str(row["candidate_id"]),
+                )
+            )
             maximum_similarity = (
                 float(top_neighbors[0]["similarity"])
                 if top_neighbors
@@ -9350,6 +9545,8 @@ def screen_phase_c_marginal_candidates(
             ]
             if maximum_similarity >= PHASE_C_MARGINAL_JACCARD:
                 classes.append("repetition")
+            if local_proximity_neighbors:
+                classes.append("local_paraphrase_repetition")
             if re.search(r"\[[^\]\r\n]+\]", evidence_text) or (
                 _phase_c_is_reference_only_claim(claim_text)
             ):
@@ -9378,6 +9575,9 @@ def screen_phase_c_marginal_candidates(
                     "ensemble_rejectors": rejectors,
                     "maximum_neighbor_similarity": maximum_similarity,
                     "top_neighbors": top_neighbors,
+                    "local_proximity_neighbors": (
+                        local_proximity_neighbors
+                    ),
                 }
     if observed != set(composed):
         raise TrueNorthError(
@@ -9394,7 +9594,11 @@ def build_phase_c_marginal_packet(
     segment_by_id: Mapping[str, Mapping[str, Any]],
     screened: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, Any]:
-    packet_candidates: list[dict[str, Any]] = []
+    prepared: dict[str, dict[str, Any]] = {}
+    intervals_by_segment: dict[
+        str, list[tuple[int, int, str]]
+    ] = defaultdict(list)
+    neighbor_catalog: dict[str, dict[str, Any]] = {}
     neighbors_by_candidate: dict[str, list[str]] = {}
     for candidate_id in candidate_ids:
         candidate = candidate_by_id[candidate_id]
@@ -9421,46 +9625,132 @@ def build_phase_c_marginal_packet(
             len(segment_text),
             evidence_end + PHASE_C_MARGINAL_SEGMENT_RADIUS,
         )
+        intervals_by_segment[segment_id].append(
+            (crop_start, crop_end, candidate_id)
+        )
+        neighbor_rows: list[Mapping[str, Any]] = list(
+            screened[candidate_id]["top_neighbors"]
+        )
+        included_neighbor_ids = {
+            str(row["candidate_id"]) for row in neighbor_rows
+        }
+        for local_row in screened[candidate_id].get(
+            "local_proximity_neighbors", []
+        )[:1]:
+            if str(local_row["candidate_id"]) not in included_neighbor_ids:
+                neighbor_rows.append(local_row)
+                included_neighbor_ids.add(
+                    str(local_row["candidate_id"])
+                )
         neighbors = []
-        for neighbor_row in screened[candidate_id]["top_neighbors"]:
+        local_ids = {
+            str(row["candidate_id"])
+            for row in screened[candidate_id].get(
+                "local_proximity_neighbors", []
+            )[:1]
+        }
+        for neighbor_row in neighbor_rows:
             neighbor_id = str(neighbor_row["candidate_id"])
             neighbor = candidate_by_id[neighbor_id]
+            neighbor_catalog[neighbor_id] = {
+                "candidate_id": neighbor_id,
+                "claim_text": str(neighbor["claim_text"]),
+                "evidence_text": str(neighbor["evidence_text"]),
+            }
             neighbors.append(
                 {
                     "candidate_id": neighbor_id,
-                    "claim_text": str(neighbor["claim_text"]),
-                    "evidence_text": str(neighbor["evidence_text"]),
                     "similarity": float(neighbor_row["similarity"]),
+                    "local_proximity_match": neighbor_id in local_ids,
                 }
             )
         neighbors_by_candidate[candidate_id] = [
             str(row["candidate_id"]) for row in neighbors
         ]
-        packet_candidates.append(
-            {
-                "candidate_id": candidate_id,
-                "claim_text": str(candidate["claim_text"]),
-                "evidence_text": evidence_text,
-                "evidence_start": evidence_start,
-                "evidence_end": evidence_end,
-                "screen_classes": list(
-                    screened[candidate_id]["screen_classes"]
-                ),
-                "segment_context": {
+        prepared[candidate_id] = {
+            "candidate_id": candidate_id,
+            "claim_text": str(candidate["claim_text"]),
+            "evidence_text": evidence_text,
+            "evidence_start": evidence_start,
+            "evidence_end": evidence_end,
+            "screen_classes": list(
+                screened[candidate_id]["screen_classes"]
+            ),
+            "segment_id": segment_id,
+            "crop_start": crop_start,
+            "crop_end": crop_end,
+            "neighbors": neighbors,
+        }
+    context_catalog: list[dict[str, Any]] = []
+    context_by_candidate: dict[str, dict[str, Any]] = {}
+    for segment_id in sorted(intervals_by_segment):
+        segment_text = str(segment_by_id[segment_id]["text"])
+        intervals = sorted(intervals_by_segment[segment_id])
+        groups: list[dict[str, Any]] = []
+        for start, end, candidate_id in intervals:
+            if not groups or start > int(groups[-1]["end"]):
+                groups.append(
+                    {
+                        "start": start,
+                        "end": end,
+                        "candidate_ids": [candidate_id],
+                    }
+                )
+            else:
+                groups[-1]["end"] = max(
+                    int(groups[-1]["end"]), end
+                )
+                groups[-1]["candidate_ids"].append(candidate_id)
+        for index, group in enumerate(groups, start=1):
+            start = int(group["start"])
+            end = int(group["end"])
+            context_id = f"{segment_id}:crop:{index}"
+            context_catalog.append(
+                {
+                    "context_id": context_id,
                     "segment_id": segment_id,
-                    "crop_text": segment_text[crop_start:crop_end],
-                    "crop_start": crop_start,
-                    "crop_end": crop_end,
-                    "evidence_start": evidence_start,
-                    "evidence_end": evidence_end,
-                    "evidence_start_in_crop": (
-                        evidence_start - crop_start
+                    "crop_start": start,
+                    "crop_end": end,
+                    "crop_text": segment_text[start:end],
+                }
+            )
+            for candidate_id in group["candidate_ids"]:
+                row = prepared[candidate_id]
+                context_by_candidate[candidate_id] = {
+                    "context_id": context_id,
+                    "segment_id": segment_id,
+                    "crop_start": row["crop_start"],
+                    "crop_end": row["crop_end"],
+                    "catalog_start": start,
+                    "catalog_end": end,
+                    "evidence_start": row["evidence_start"],
+                    "evidence_end": row["evidence_end"],
+                    "evidence_start_in_catalog": (
+                        row["evidence_start"] - start
                     ),
-                    "evidence_end_in_crop": evidence_end - crop_start,
-                },
-                "neighbors": neighbors,
-            }
-        )
+                    "evidence_end_in_catalog": (
+                        row["evidence_end"] - start
+                    ),
+                }
+    packet_candidates = [
+        {
+            "candidate_id": candidate_id,
+            "claim_text": prepared[candidate_id]["claim_text"],
+            "evidence_text": prepared[candidate_id][
+                "evidence_text"
+            ],
+            "evidence_start": prepared[candidate_id][
+                "evidence_start"
+            ],
+            "evidence_end": prepared[candidate_id]["evidence_end"],
+            "screen_classes": prepared[candidate_id][
+                "screen_classes"
+            ],
+            "segment_context": context_by_candidate[candidate_id],
+            "neighbors": prepared[candidate_id]["neighbors"],
+        }
+        for candidate_id in candidate_ids
+    ]
     return {
         "schema_version": MULTIPASS_SCHEMA_VERSION,
         "suite_id": suite,
@@ -9471,6 +9761,7 @@ def build_phase_c_marginal_packet(
         ),
         "instructions": [
             "Return one verdict for every candidate and no others.",
+            "Resolve segment_context.context_id in segment_context_catalog and each neighbor candidate_id in neighbor_catalog.",
             "A repetition reject must name duplicate_of from the shown neighbors.",
             "Every non-repetition reject requires a verbatim deficiency_quote from evidence_text.",
             "A confirmed retention requires null junk_reason, duplicate_of, and deficiency_quote.",
@@ -9478,7 +9769,14 @@ def build_phase_c_marginal_packet(
         "output_schema": phase_c_marginal_schema(
             candidate_ids, neighbors_by_candidate
         ),
-        "input": {"candidates": packet_candidates},
+        "input": {
+            "candidates": packet_candidates,
+            "segment_context_catalog": context_catalog,
+            "neighbor_catalog": [
+                neighbor_catalog[neighbor_id]
+                for neighbor_id in sorted(neighbor_catalog)
+            ],
+        },
     }
 
 
@@ -9486,7 +9784,10 @@ def _phase_c_marginal_reason_matches(
     screen_classes: Sequence[str], junk_reason: str
 ) -> bool:
     if junk_reason == "repetition":
-        return "repetition" in screen_classes
+        return bool(
+            {"repetition", "local_paraphrase_repetition"}
+            & set(screen_classes)
+        )
     if junk_reason in {"bare_mention", "metadata"}:
         return "chrome_bare_mention" in screen_classes
     if junk_reason == "question_or_setup":
@@ -10107,7 +10408,15 @@ def dry_run_phase_c_marginal_screen(
     screened = screen_phase_c_marginal_candidates(
         episodes, composed, ensemble
     )
-    selected_ids = sorted(screened)
+    selected_ids = sorted(
+        screened,
+        key=lambda candidate_id: (
+            screened[candidate_id]["episode_id"],
+            candidate_by_id[candidate_id]["segment_id"],
+            int(candidate_by_id[candidate_id]["evidence_start"]),
+            candidate_id,
+        ),
+    )
     batches = [
         selected_ids[index : index + PHASE_C_MARGINAL_BATCH_SIZE]
         for index in range(
@@ -10146,6 +10455,12 @@ def dry_run_phase_c_marginal_screen(
         ),
         "thresholds": {
             "repetition_token_jaccard": PHASE_C_MARGINAL_JACCARD,
+            "local_proximity_characters": (
+                PHASE_C_MARGINAL_LOCAL_DISTANCE
+            ),
+            "local_minimum_informative_stems": (
+                PHASE_C_MARGINAL_LOCAL_MIN_STEMS
+            ),
             "spark_confirm_token_jaccard": (
                 PHASE_C_MARGINAL_SPARK_CONFIRM_JACCARD
             ),
@@ -10211,7 +10526,15 @@ def run_phase_c_marginal_verify(
     screened = screen_phase_c_marginal_candidates(
         episodes, composed, ensemble
     )
-    selected_ids = sorted(screened)
+    selected_ids = sorted(
+        screened,
+        key=lambda candidate_id: (
+            screened[candidate_id]["episode_id"],
+            candidate_by_id[candidate_id]["segment_id"],
+            int(candidate_by_id[candidate_id]["evidence_start"]),
+            candidate_id,
+        ),
+    )
     batches = [
         selected_ids[index : index + PHASE_C_MARGINAL_BATCH_SIZE]
         for index in range(
