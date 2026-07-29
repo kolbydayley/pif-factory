@@ -85,11 +85,26 @@
       "max_wall_seconds": 7200,
       "input_contract_exception": "owner_authorized_flagged_clause_segmentation_and_merge_default",
       "unflagged_control": "reuse_frozen_task5_outputs_without_new_calls",
-      "status": "declared",
+      "status": "budget_terminal_partial",
       "provenance": {
         "source_kind": "review_thread_directive_in_active_codex_thread",
         "directive_received_at": "2026-07-29",
         "directive_summary": "Run one input-side split-default inversion on conjunction-or-comma flagged Search candidates, then stop if it fails."
+      },
+      "actual": {
+        "run_id": "task5-input-split-default-20260729-v1",
+        "calls": 28,
+        "tokens": 328682,
+        "validated_flagged_packets": 17,
+        "expected_flagged_packets": 19,
+        "measured_flagged_candidates": 91,
+        "flagged_candidates": 106,
+        "diagnostic_atomic_count_accuracy": 0.8060344827586207,
+        "diagnostic_aligned_faithfulness": 0.745206,
+        "diagnostic_over_extraction_errors": 0,
+        "result_sha256": "8741d6f886e64b42e7a8dc3d8f10735a9a45304e51e601d3e0430dd9594f71c3",
+        "cumulative_calls_after": 236,
+        "known_cumulative_tokens_after": 2017646
       }
     }
   ]

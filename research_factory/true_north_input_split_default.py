@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import math
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -808,3 +807,394 @@ def score_input_split_default_experiment(
     path = run_root / "input-split-default-score.private.json"
     true_north._write_json(path, document, immutable=False)
     return {**document, "score_path": str(path)}
+
+
+def finalize_partial_input_split_default_experiment(
+    *,
+    suite_root: str | Path,
+    run_id: str,
+) -> dict[str, Any]:
+    """Freeze an ineligible partial run with explicit Task-5 fallbacks."""
+
+    root = Path(suite_root).expanduser().resolve()
+    run_root = root / "multipass" / "runs" / run_id
+    configuration = true_north._read_json(run_root / "configuration.json")
+    state = true_north._read_json(run_root / "state.json")
+    if configuration.get("schema_version") != SCHEMA_VERSION:
+        raise InputSplitDefaultError("run is not input split-default")
+    if state.get("complete") is True:
+        raise InputSplitDefaultError("complete run uses the normal scorer")
+    remaining_calls = (
+        int(state["budget"]["max_calls"]) - int(state["usage"]["calls"])
+    )
+    remaining_tokens = (
+        int(state["budget"]["max_tokens"]) - int(state["usage"]["tokens"])
+    )
+
+    manifest = true_north._read_json(root / "manifest.json")
+    base_jobs, dispositions, candidates = _load_search_context(root, manifest)
+    (
+        _reference_root,
+        reference_packets,
+        reference_outputs,
+        _reference_provenance,
+    ) = _reference_artifacts(root)
+    valid_flagged: dict[tuple[str, str], dict[str, Any]] = {}
+    for path in sorted(
+        (run_root / "outputs" / "input-split-default").glob(
+            "*/*/validated.private.json"
+        )
+    ):
+        key = (path.parents[1].name, path.parent.name)
+        packet = true_north._read_json(
+            run_root
+            / "packets"
+            / "input-split-default"
+            / key[0]
+            / f"{key[1]}.private.json"
+        )
+        output = true_north._read_json(path)
+        validate_merge_adjudication(output, packet)
+        valid_flagged[key] = output
+    expected_flagged_keys = {
+        (
+            path.parent.name,
+            path.stem.removesuffix(".private"),
+        )
+        for path in (
+            run_root / "packets" / "input-split-default"
+        ).glob("*/*.private.json")
+    }
+    missing_keys = sorted(expected_flagged_keys - set(valid_flagged))
+    if not missing_keys:
+        raise InputSplitDefaultError("partial finalizer found complete coverage")
+    if (
+        remaining_calls >= len(missing_keys)
+        and remaining_tokens
+        >= len(missing_keys) * RESERVED_TOKENS_PER_CALL
+    ):
+        raise InputSplitDefaultError(
+            "partial run still has budget for every missing packet"
+        )
+
+    flagged_ids = set(
+        configuration["selector"]["flagged_candidate_ids"]
+    )
+    measured_flagged_ids: set[str] = set()
+    final_adjudication: dict[tuple[str, str], dict[str, Any]] = {}
+    for key, reference in sorted(reference_outputs.items()):
+        replacements = {
+            str(row["candidate_id"]): {
+                field: value
+                for field, value in row.items()
+                if field != "merge_reason"
+            }
+            for row in valid_flagged.get(key, {}).get("items", [])
+        }
+        measured_flagged_ids.update(replacements)
+        output = {
+            "schema_version": true_north.MULTIPASS_SCHEMA_VERSION,
+            "items": [
+                copy.deepcopy(
+                    replacements.get(str(row["candidate_id"]), row)
+                )
+                for row in reference["items"]
+            ],
+        }
+        true_north.validate_multipass_adjudication(
+            output, reference_packets[key]
+        )
+        final_adjudication[key] = output
+
+    predictions: list[dict[str, Any]] = []
+    for key in sorted(base_jobs):
+        output = true_north.compose_multipass_output(
+            base_jobs[key],
+            dispositions[key],
+            final_adjudication.get(key),
+            None,
+            stage_b_mode="adjudication",
+        )
+        predictions.extend(output["items"])
+        true_north._write_json(
+            run_root
+            / "outputs"
+            / "composed-partial-fallback"
+            / key[0]
+            / key[1]
+            / "validated.private.json",
+            output,
+            immutable=False,
+        )
+
+    consensus_document = true_north._read_json(
+        root / "gold" / "development" / "final" / "consensus.private.json"
+    )
+    preferred_document = true_north._read_json(
+        root / "gold" / "development" / "final" / "gold.private.json"
+    )
+    prediction_map = {
+        str(row["candidate_id"]): row for row in predictions
+    }
+    prediction_ids = set(prediction_map)
+    consensus = [
+        row for row in consensus_document["items"]
+        if str(row["candidate_id"]) in prediction_ids
+    ]
+    preferred = [
+        row for row in preferred_document["items"]
+        if str(row["candidate_id"]) in prediction_ids
+    ]
+    speaker_maps: dict[str, Any] = {}
+    for bundle_row in manifest["bundles"]:
+        if str(bundle_row["episode_id"]) not in configuration["episode_ids"]:
+            continue
+        bundle = true_north._read_json(Path(bundle_row["bundle_path"]))
+        for candidate in bundle["candidates"]:
+            speaker_maps[str(candidate["candidate_id"])] = (
+                bundle["episode_context"].get("speaker_map", [])
+            )
+    score = score_campaign(
+        predictions,
+        consensus,
+        preferred,
+        speaker_maps_by_candidate=speaker_maps,
+    )
+    core = true_north._consensus_atomic_metrics(
+        {**consensus_document, "items": consensus},
+        prediction_map,
+        require_complete_scope=True,
+    )
+    score["aggregate"].update(
+        {str(row["metric"]): row["value"] for row in core}
+    )
+    candidate_scores = {
+        str(row["candidate_id"]): row for row in score["candidates"]
+    }
+    eligible_ids = {
+        candidate_id
+        for candidate_id, row in prediction_map.items()
+        if str(row["disposition"]) in {"retain", "revise"}
+    }
+    unflagged_ids = eligible_ids - flagged_ids
+    flagged_metrics = _subset_atomic_metrics(
+        consensus_document=consensus_document,
+        predictions=prediction_map,
+        candidate_ids=flagged_ids,
+    )
+    unflagged_metrics = _subset_atomic_metrics(
+        consensus_document=consensus_document,
+        predictions=prediction_map,
+        candidate_ids=unflagged_ids,
+    )
+    aligned_ids = {
+        candidate_id
+        for candidate_id, row in candidate_scores.items()
+        if row["strictly_scoreable"]
+        and row["consensus_state"] == "consensus_value"
+        and row["value_state"]["predicted"] == "value"
+        and row["atomic_count"]["acceptable_count"]
+    }
+    aligned = score_campaign(
+        [
+            prediction_map[candidate_id]
+            for candidate_id in sorted(aligned_ids)
+        ],
+        consensus_document["items"],
+        preferred_document["items"],
+        subset_candidate_ids=aligned_ids,
+        speaker_maps_by_candidate=speaker_maps,
+    )
+    error_direction = {
+        "full": {"under": 0, "over": 0},
+        "flagged": {"under": 0, "over": 0},
+        "unflagged": {"under": 0, "over": 0},
+    }
+    for candidate_id, row in candidate_scores.items():
+        if (
+            not row["strictly_scoreable"]
+            or row["consensus_state"] != "consensus_value"
+            or row["value_state"]["predicted"] != "value"
+            or row["atomic_count"]["acceptable_count"]
+        ):
+            continue
+        direction = (
+            "under"
+            if int(row["atomic_count"]["predicted"])
+            < int(row["atomic_count"]["minimum"])
+            else "over"
+        )
+        error_direction["full"][direction] += 1
+        group = "flagged" if candidate_id in flagged_ids else "unflagged"
+        error_direction[group][direction] += 1
+
+    baseline = true_north._read_json(
+        root
+        / "multipass"
+        / "runs"
+        / REFERENCE_RUN_ID
+        / "task5-score.private.json"
+    )
+    baseline_private = true_north._read_json(
+        root
+        / "multipass"
+        / "runs"
+        / REFERENCE_RUN_ID
+        / "score.private.json"
+    )
+    baseline_scores = {
+        str(row["candidate_id"]): row
+        for row in baseline_private["private_candidate_scores"]
+    }
+    transitions = {
+        "improved_wrong_to_acceptable": 0,
+        "regressed_acceptable_to_wrong": 0,
+        "remained_acceptable": 0,
+        "remained_wrong": 0,
+        "predicted_count_changed": 0,
+    }
+    for candidate_id in sorted(measured_flagged_ids):
+        current = candidate_scores[candidate_id]
+        prior = baseline_scores[candidate_id]
+        current_ok = bool(current["atomic_count"]["acceptable_count"])
+        prior_ok = bool(prior["atomic_count"]["acceptable_count"])
+        if not prior_ok and current_ok:
+            transitions["improved_wrong_to_acceptable"] += 1
+        elif prior_ok and not current_ok:
+            transitions["regressed_acceptable_to_wrong"] += 1
+        elif current_ok:
+            transitions["remained_acceptable"] += 1
+        else:
+            transitions["remained_wrong"] += 1
+        transitions["predicted_count_changed"] += int(
+            int(current["atomic_count"]["predicted"])
+            != int(prior["atomic_count"]["predicted"])
+        )
+
+    checkpoint_path = (
+        root / "certification" / true_north.TASK5_CHECKPOINT_FILENAME
+    )
+    checkpoint = true_north._read_json(checkpoint_path)
+    aggregate = score["aggregate"]
+    aligned_aggregate = aligned["aggregate"]
+    document = {
+        "schema_version": SCHEMA_VERSION,
+        "experiment_id": EXPERIMENT_ID,
+        "run_id": run_id,
+        "complete": False,
+        "acceptance_eligible": False,
+        "terminal_reason": (
+            "experiment_token_ceiling_with_reproducible_local_validation_failures"
+        ),
+        "coverage": {
+            "validated_flagged_packet_count": len(valid_flagged),
+            "expected_flagged_packet_count": len(expected_flagged_keys),
+            "measured_flagged_candidate_count": len(measured_flagged_ids),
+            "flagged_candidate_count": len(flagged_ids),
+            "eligible_candidate_count": len(eligible_ids),
+            "search_candidate_count": len(candidates),
+            "missing_flagged_packet_count": len(missing_keys),
+            "missing_flagged_packet_keys": [
+                f"{key[0]}/{key[1]}" for key in missing_keys
+            ],
+        },
+        "partial_fallback_composition": {
+            "definition": (
+                "split-default output for validated flagged packets, frozen "
+                "Task-5 output for two invalid flagged packets and all "
+                "unflagged candidates"
+            ),
+            "acceptable_atomic_count_rate": aggregate[
+                "acceptable_atomic_count_rate"
+            ],
+            "claim_text_faithfulness_full_fold": aggregate[
+                "claim_text_faithfulness_proxy"
+            ],
+            "speaker_exactness_full_fold": aggregate["speaker_exactness"],
+            "aligned_candidate_count": len(aligned_ids),
+            "aligned_claim_text_faithfulness": aligned_aggregate[
+                "claim_text_faithfulness_proxy"
+            ],
+            "aligned_speaker_exactness": aligned_aggregate[
+                "speaker_exactness"
+            ],
+            "flagged_acceptable_atomic_count_rate": flagged_metrics[
+                "acceptable_atomic_count_rate"
+            ],
+            "unflagged_acceptable_atomic_count_rate": unflagged_metrics[
+                "acceptable_atomic_count_rate"
+            ],
+            "count_error_direction": error_direction,
+            "measured_flagged_candidate_count_transition": transitions,
+        },
+        "frozen_task5_reference": {
+            "acceptable_atomic_count_rate": baseline["search_fold"][
+                "atomic_count_accuracy"
+            ],
+            "claim_text_faithfulness_full_fold": baseline[
+                "search_fold"
+            ]["claim_text_faithfulness"],
+            "speaker_exactness_full_fold": baseline["search_fold"][
+                "aggregate"
+            ]["speaker_exactness"],
+            "aligned_claim_text_faithfulness": 0.7449,
+        },
+        "junk_and_contamination": {
+            "intrinsic_junk_escape_count": checkpoint[
+                "disposition_gate"
+            ]["intrinsic_junk_escape_count"],
+            "relational_contamination_count": checkpoint[
+                "relational_merge_certification"
+            ]["contamination_count"],
+            "checkpoint_sha256": true_north._sha256_file(
+                checkpoint_path
+            ),
+        },
+        "acceptance": {
+            "complete_full_search_measurement": False,
+            "atomic_count_accuracy_at_least_0_90": (
+                float(aggregate["acceptable_atomic_count_rate"]) >= 0.90
+            ),
+            "aligned_faithfulness_at_least_0_75": (
+                float(
+                    aligned_aggregate["claim_text_faithfulness_proxy"]
+                )
+                >= 0.75
+            ),
+            "intrinsic_junk_escapes_zero": (
+                int(
+                    checkpoint["disposition_gate"][
+                        "intrinsic_junk_escape_count"
+                    ]
+                )
+                == 0
+            ),
+            "relational_contamination_zero": (
+                int(
+                    checkpoint["relational_merge_certification"][
+                        "contamination_count"
+                    ]
+                )
+                == 0
+            ),
+        },
+        "passed": False,
+        "stop_if_failed": True,
+        "usage": state["usage"],
+        "cumulative_calls_after_run": (
+            CUMULATIVE_CALLS_BEFORE_RUN + int(state["usage"]["calls"])
+        ),
+        "known_cumulative_tokens_after_run": (
+            KNOWN_CUMULATIVE_TOKENS_BEFORE_RUN
+            + int(state["usage"]["tokens"])
+        ),
+        "known_token_accounting_excludes_actor_gold_repair": True,
+        "holdout_opened": False,
+        "production_mutation": False,
+    }
+    document["result_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(document)
+    )
+    path = run_root / "terminal-partial-result.private.json"
+    true_north._write_json(path, document, immutable=False)
+    return {**document, "result_path": str(path)}

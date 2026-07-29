@@ -102,3 +102,23 @@ def test_merge_validator_binds_reason_to_count() -> None:
         InputSplitDefaultError, match="merge_reason"
     ):
         validate_merge_adjudication(invalid, packet)
+
+    over_split = {
+        **valid,
+        "items": [
+            {
+                **valid["items"][0],
+                "atomic_claims": [
+                    {"claim_text": "A rises"},
+                    {"claim_text": "B falls"},
+                    {"claim_text": "C stays flat"},
+                    {"claim_text": "A rises again"},
+                ],
+                "merge_reason": "none",
+            }
+        ],
+    }
+    with pytest.raises(
+        InputSplitDefaultError, match="introduced more pieces"
+    ):
+        validate_merge_adjudication(over_split, packet)
