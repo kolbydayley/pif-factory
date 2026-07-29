@@ -12,7 +12,7 @@ from . import true_north
 from .true_north_semantic_scoring import score_candidate
 
 
-SCHEMA_VERSION = "pif_true_north_gate_calibration_v1"
+SCHEMA_VERSION = "pif_true_north_gate_calibration_v2"
 DEFAULT_CURRENT_TARGETS = {
     "claim_text_faithfulness_proxy": 0.90,
     "speaker_exactness": 0.97,
@@ -200,18 +200,22 @@ def compute_ceiling_document(
             )
         )
         faith = scored["claim_text_faithfulness_proxy"]
-        if faith["score"] is not None:
+        coupled_faith = faith["coupled_diagnostic"]
+        if coupled_faith["score"] is not None:
             campaign_faithfulness_numerator += (
-                float(faith["score"]) * int(faith["micro_denominator"])
+                float(coupled_faith["score"])
+                * int(coupled_faith["micro_denominator"])
             )
             campaign_faithfulness_denominator += int(
-                faith["micro_denominator"]
+                coupled_faith["micro_denominator"]
             )
         actor_metric = scored["reported_actor_exactness"]
         campaign_actor_correct += int(actor_metric["correct_pairs"])
-        campaign_actor_denominator += int(actor_metric["micro_denominator"])
+        campaign_actor_denominator += int(
+            actor_metric["coupled_diagnostic"]["micro_denominator"]
+        )
         for metric in _GATE_DENOMINATOR_METRICS:
-            coupled_score = scored[metric]["score"]
+            coupled_score = scored[metric]["coupled_diagnostic"]["score"]
             if coupled_score is not None:
                 coupled_values[metric].append(float(coupled_score))
         for pair in scored["alignment"]:

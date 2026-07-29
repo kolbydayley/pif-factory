@@ -5,6 +5,7 @@ import json
 
 import pytest
 
+from research_factory import true_north
 from research_factory import true_north_actor_repair as actor_repair
 
 
@@ -231,5 +232,5 @@ def test_approved_promotion_versions_predecessor_and_bumps_manifest(
     updated_manifest = json.loads((root / "manifest.json").read_text())
     assert (
         updated_manifest["frozen_interfaces"]["gate_policy_version"]
-        == "pif_true_north_gate_policy_v2"
+        == true_north.APPROVED_GATE_POLICY_VERSION
     )

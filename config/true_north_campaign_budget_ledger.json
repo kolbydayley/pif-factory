@@ -26,6 +26,30 @@
         "uncontrolled_spend_forbidden": true,
         "sealed_holdouts_forbidden": true
       }
+    },
+    {
+      "decision_id": "owner-decouple-fields-and-retain-atomic-gate-20260729-v1",
+      "owner": "Kolby Dayley",
+      "recorded_at": "2026-07-29",
+      "source_kind": "review_thread_directive_in_active_codex_thread",
+      "provenance": {
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Kolby selected matched-pair field scoring, retained the 0.90 atomic range-acceptance gate, accepted deterministic actor span enforcement as the zero-call baseline, and authorized one bounded Spark split-default probe."
+      },
+      "authorizes": {
+        "semantic_field_denominator": "matched_atomic_pairs_only",
+        "coupled_field_readings": "required_diagnostics_not_gate_inputs",
+        "field_gate_calibration_rule": "min(previous_target, matched_pair_ceiling_mean - 0.04)",
+        "acceptable_atomic_count_rate_gate": 0.9,
+        "actor_stage_baseline": "deterministic_actor_span_rule_v1",
+        "spark_split_default_probe": true
+      },
+      "computed_thresholds": {
+        "speaker_exactness": 0.954615,
+        "reported_actor_exactness": 0.735385,
+        "claim_text_faithfulness_proxy": 0.744435
+      },
+      "arithmetic_note": "The authoritative formula yields speaker 0.954615; the directive's displayed 0.9700 result was arithmetic, not the adopted rule."
     }
   ],
   "cumulative_before_new_authorization": {
@@ -105,6 +129,28 @@
         "result_sha256": "8741d6f886e64b42e7a8dc3d8f10735a9a45304e51e601d3e0430dd9594f71c3",
         "cumulative_calls_after": 236,
         "known_cumulative_tokens_after": 2017646
+      }
+    },
+    {
+      "experiment_id": "stage-b-spark-input-split-default-20260729-v1",
+      "sequence": 4,
+      "model": "openai/gpt-5.3-codex-spark",
+      "max_calls": 14,
+      "max_tokens": 250000,
+      "max_wall_seconds": 7200,
+      "status": "declared",
+      "input_contract": "exact_19_flagged_packets_from_task5-input-split-default-20260729-v1",
+      "provider_envelopes": 14,
+      "batching_contract": "deterministically pack the 19 immutable semantic packets into 14 provider envelopes; validate every inner output against its original packet",
+      "unflagged_control": "reuse_frozen_task5_outputs_without_new_calls",
+      "cumulative_before": {
+        "calls": 236,
+        "known_tokens": 2017646
+      },
+      "provenance": {
+        "source_kind": "review_thread_directive_in_active_codex_thread",
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Run one Spark x split-default probe, then stop decomposition if it fails."
       }
     }
   ]

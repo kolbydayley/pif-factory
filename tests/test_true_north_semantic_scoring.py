@@ -194,7 +194,15 @@ class TrueNorthSemanticScoringTest(unittest.TestCase):
         self.assertEqual(len(missing["unmatched_gold"]), 1)
         self.assertEqual(missing["unmatched_predicted"], [])
         self.assertFalse(missing["atomic_count"]["acceptable_count"])
-        self.assertLess(missing["claim_text_faithfulness_proxy"]["score"], 1.0)
+        self.assertEqual(
+            missing["claim_text_faithfulness_proxy"]["score"], 1.0
+        )
+        self.assertLess(
+            missing["claim_text_faithfulness_proxy"][
+                "coupled_diagnostic"
+            ]["score"],
+            1.0,
+        )
 
         extra_claim = claim("The moon is made of cheese.")
         extra = score_candidate(
@@ -208,7 +216,15 @@ class TrueNorthSemanticScoringTest(unittest.TestCase):
         )
         self.assertEqual(len(extra["unmatched_predicted"]), 1)
         self.assertEqual(extra["unmatched_gold"], [])
-        self.assertLess(extra["claim_text_faithfulness_proxy"]["score"], 1.0)
+        self.assertEqual(
+            extra["claim_text_faithfulness_proxy"]["score"], 1.0
+        )
+        self.assertLess(
+            extra["claim_text_faithfulness_proxy"][
+                "coupled_diagnostic"
+            ]["score"],
+            1.0,
+        )
         self.assertTrue(extra["hallucination_or_unsupported_proxy"]["flagged"])
         self.assertIn(
             "unmatched_predicted_claim",
@@ -217,6 +233,11 @@ class TrueNorthSemanticScoringTest(unittest.TestCase):
         self.assertIn(
             "hallucination",
             {flag["severity"] for flag in extra["unsupported_field_flags"]},
+        )
+        self.assertEqual(missing["speaker_exactness"]["score"], 1.0)
+        self.assertEqual(
+            missing["speaker_exactness"]["coupled_diagnostic"]["score"],
+            0.5,
         )
 
     def test_wrong_speaker_and_reported_actor_fail_exactness(self) -> None:
@@ -599,6 +620,12 @@ class TrueNorthSemanticScoringTest(unittest.TestCase):
             aggregate["required_field_exactness"]["reported_actor"][
                 "micro_denominator"
             ],
+            1,
+        )
+        self.assertEqual(
+            aggregate["required_field_exactness"]["reported_actor"][
+                "coupled_diagnostic"
+            ]["micro_denominator"],
             2,
         )
         self.assertIn("hallucination_rate_proxy", aggregate)

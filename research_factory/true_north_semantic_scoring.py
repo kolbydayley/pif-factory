@@ -24,7 +24,7 @@ from difflib import SequenceMatcher
 from typing import Any, Iterable, Mapping, Sequence
 
 
-SCHEMA_VERSION = "pif_true_north_semantic_scoring_v1"
+SCHEMA_VERSION = "pif_true_north_semantic_scoring_v2"
 METRIC_KIND = "deterministic_lexical_and_field_proxy"
 
 _FIELD_NAMES = (
@@ -472,9 +472,14 @@ def _field_metric(
             "recall": None,
             "f1": None,
             "score": None,
+            "coupled_diagnostic": {
+                "micro_denominator": None,
+                "score": None,
+            },
         }
     correct = sum(1 for pair in pairs if pair["field_exactness"][field])
-    denominator = max(predicted_atom_count, gold_atom_count)
+    denominator = len(pairs)
+    coupled_denominator = max(predicted_atom_count, gold_atom_count)
     precision = correct / predicted_atom_count if predicted_atom_count else None
     recall = correct / gold_atom_count if gold_atom_count else None
     f1 = (
@@ -497,6 +502,14 @@ def _field_metric(
         "recall": None if recall is None else round(recall, 6),
         "f1": None if f1 is None else round(f1, 6),
         "score": None if denominator == 0 else round(correct / denominator, 6),
+        "coupled_diagnostic": {
+            "micro_denominator": coupled_denominator,
+            "score": (
+                None
+                if coupled_denominator == 0
+                else round(correct / coupled_denominator, 6)
+            ),
+        },
     }
 
 
@@ -658,14 +671,19 @@ def _align(
         key=lambda flag: (flag["predicted_ref"], flag["field"], flag["kind"])
     )
     denominator = max(len(predicted), len(gold))
+    faithfulness_numerator = sum(
+        pair["claim_text_faithfulness_proxy"]["score"] for pair in pairs
+    )
+    matched_denominator = len(pairs)
     faithfulness = (
+        None
+        if matched_denominator == 0
+        else round(faithfulness_numerator / matched_denominator, 6)
+    )
+    coupled_faithfulness = (
         1.0
         if denominator == 0
-        else round(
-            sum(pair["claim_text_faithfulness_proxy"]["score"] for pair in pairs)
-            / denominator,
-            6,
-        )
+        else round(faithfulness_numerator / denominator, 6)
     )
     qualifier = (
         1.0
@@ -710,8 +728,12 @@ def _align(
         "unsupported_field_flags": unsupported_flags,
         "predicted_atom_count": len(predicted),
         "gold_atom_count": len(gold),
-        "micro_denominator": denominator,
+        "micro_denominator": matched_denominator,
         "claim_text_faithfulness_proxy": faithfulness,
+        "claim_text_faithfulness_coupled_diagnostic": {
+            "score": coupled_faithfulness,
+            "micro_denominator": denominator,
+        },
         "qualifier_preservation_proxy": qualifier,
         "reported_actor_positive": {
             "true_positive": reported_actor_tp,
@@ -864,6 +886,9 @@ def score_candidate(
             "micro_denominator": consensus_text_alignment["micro_denominator"],
             "reference": "best_frozen_consensus_decomposition_by_lexical_alignment",
             "semantic_equivalence_claimed": False,
+            "coupled_diagnostic": consensus_text_alignment[
+                "claim_text_faithfulness_coupled_diagnostic"
+            ],
         },
         "field_reference_available": field_reference_available,
         "required_field_exactness": field_metrics,
@@ -994,11 +1019,19 @@ def _aggregate_field(
             "recall": None,
             "f1": None,
             "score": None,
+            "coupled_diagnostic": {
+                "micro_denominator": None,
+                "score": None,
+            },
         }
     correct = sum(metric["correct_pairs"] for metric in metrics)
     predicted = sum(metric["predicted_atom_count"] for metric in metrics)
     gold = sum(metric["gold_atom_count"] for metric in metrics)
     denominator = sum(metric["micro_denominator"] for metric in metrics)
+    coupled_denominator = sum(
+        metric["coupled_diagnostic"]["micro_denominator"]
+        for metric in metrics
+    )
     precision = _safe_ratio(correct, predicted)
     recall = _safe_ratio(correct, gold)
     f1 = (
@@ -1021,6 +1054,14 @@ def _aggregate_field(
         "recall": recall,
         "f1": f1,
         "score": None if denominator == 0 else round(correct / denominator, 6),
+        "coupled_diagnostic": {
+            "micro_denominator": coupled_denominator,
+            "score": (
+                None
+                if coupled_denominator == 0
+                else round(correct / coupled_denominator, 6)
+            ),
+        },
     }
 
 
@@ -1141,6 +1182,24 @@ def score_campaign(
         score["claim_text_faithfulness_proxy"]["micro_denominator"]
         for score in strict_scores
     )
+    coupled_text_numerator = sum(
+        (
+            score["claim_text_faithfulness_proxy"]["coupled_diagnostic"][
+                "score"
+            ]
+            or 0.0
+        )
+        * score["claim_text_faithfulness_proxy"]["coupled_diagnostic"][
+            "micro_denominator"
+        ]
+        for score in strict_scores
+    )
+    coupled_text_denominator = sum(
+        score["claim_text_faithfulness_proxy"]["coupled_diagnostic"][
+            "micro_denominator"
+        ]
+        for score in strict_scores
+    )
     qualifier_numerator = sum(
         (score["qualifier_preservation_proxy"]["score"] or 0.0)
         * score["qualifier_preservation_proxy"]["micro_denominator"]
@@ -1173,7 +1232,7 @@ def score_campaign(
             "junk_gold_count": len(gold_junk),
             "atomic_count_acceptability": proportion(("atomic_count", "acceptable_count")),
             "claim_text_faithfulness_proxy": (
-                1.0
+                None
                 if text_denominator == 0
                 else round(text_numerator / text_denominator, 6)
             ),
@@ -1181,6 +1240,37 @@ def score_campaign(
             "required_field_exactness": required_fields,
             "speaker_exactness": required_fields["raw_speaker"]["score"],
             "reported_actor_exactness": required_fields["reported_actor"]["score"],
+            "coupled_diagnostics": {
+                "claim_text_faithfulness_proxy": (
+                    None
+                    if coupled_text_denominator == 0
+                    else round(
+                        coupled_text_numerator / coupled_text_denominator,
+                        6,
+                    )
+                ),
+                "claim_text_micro_denominator": coupled_text_denominator,
+                "speaker_exactness": required_fields["raw_speaker"][
+                    "coupled_diagnostic"
+                ]["score"],
+                "reported_actor_exactness": required_fields[
+                    "reported_actor"
+                ]["coupled_diagnostic"]["score"],
+            },
+            "claim_text_faithfulness_proxy_coupled_diagnostic": (
+                None
+                if coupled_text_denominator == 0
+                else round(
+                    coupled_text_numerator / coupled_text_denominator,
+                    6,
+                )
+            ),
+            "speaker_exactness_coupled_diagnostic": required_fields[
+                "raw_speaker"
+            ]["coupled_diagnostic"]["score"],
+            "reported_actor_exactness_coupled_diagnostic": required_fields[
+                "reported_actor"
+            ]["coupled_diagnostic"]["score"],
             "reported_actor_positive_precision": _safe_ratio(
                 actor_tp, actor_predicted
             ),
