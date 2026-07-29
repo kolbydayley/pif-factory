@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import concurrent.futures
+import copy
+import json
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -9,7 +11,8 @@ from . import db
 from .paths import root, runs_dir
 from .scale_ops import submit_reviewer_audit
 from .util import now_iso
-from .worker import run_jobs, submit_label_output
+from .labels import repair_label_output_for_submission, validate_label_output
+from .worker import run_jobs, segment_for_job, submit_label_output
 
 
 def execute_claimed_label_runs(
@@ -21,6 +24,8 @@ def execute_claimed_label_runs(
     timeout_seconds: int = 900,
     audit: bool = True,
     concurrency: int = 1,
+    capture_usage: bool = False,
+    capture_validation: bool = False,
 ) -> dict[str, Any]:
     concurrency = max(1, int(concurrency or 1))
     bounded_limit = max(0, int(limit))
@@ -89,8 +94,7 @@ def execute_claimed_label_runs(
             "started_at": now_iso(),
         }
         with log_path.open("w", encoding="utf-8") as log_file:
-            completed = subprocess.run(
-                [
+            command = [
                     "codex",
                     "exec",
                     "--ephemeral",
@@ -102,8 +106,12 @@ def execute_claimed_label_runs(
                     "danger-full-access",
                     "--output-last-message",
                     str(last_message_path),
-                    prompt,
-                ],
+                ]
+            if capture_usage:
+                command.append("--json")
+            command.append(prompt)
+            completed = subprocess.run(
+                command,
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -116,6 +124,10 @@ def execute_claimed_label_runs(
             item["status"] = "codex_exec_failed"
         else:
             item["status"] = "codex_exec_completed"
+        if capture_usage:
+            from .efficient_backtest import _codex_usage_from_jsonl
+
+            item["usage"] = _codex_usage_from_jsonl(log_path)
         return item
 
     # SQLite connections stay on the caller thread.  Worker threads only run
@@ -144,6 +156,46 @@ def execute_claimed_label_runs(
             continue
         output_path = Path(row["output_path"]).expanduser().resolve()
         try:
+            if capture_validation:
+                target_row = conn.execute(
+                    "SELECT target_id FROM jobs WHERE id = ?",
+                    (job_id,),
+                ).fetchone()
+                segment_context = segment_for_job(
+                    conn,
+                    {"target_id": target_row["target_id"]},
+                )
+                raw_output = json.loads(output_path.read_text(encoding="utf-8"))
+                try:
+                    validate_label_output(
+                        "ai_discourse_v3_1",
+                        raw_output,
+                        segment_text=segment_context["segment_text"],
+                    )
+                    item["first_attempt_validation"] = {
+                        "passed": True,
+                        "error_kind": None,
+                    }
+                except Exception as validation_exc:
+                    item["first_attempt_validation"] = {
+                        "passed": False,
+                        "error_kind": type(validation_exc).__name__,
+                        "error": str(validation_exc)[:500],
+                    }
+                repaired = copy.deepcopy(raw_output)
+                before_events = len(repaired.get("discourse_events") or [])
+                repair_count = repair_label_output_for_submission(
+                    "ai_discourse_v3_1",
+                    repaired,
+                    segment_text=segment_context["segment_text"],
+                )
+                after_events = len(repaired.get("discourse_events") or [])
+                item["deterministic_repair"] = {
+                    "repair_count": repair_count,
+                    "events_dropped_unresolved_evidence": max(
+                        0, before_events - after_events
+                    ),
+                }
             submission = submit_label_output(
                 conn,
                 job_id=job_id,

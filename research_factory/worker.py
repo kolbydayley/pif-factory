@@ -54,6 +54,7 @@ def run_jobs(
     claim_prompts: bool = True,
     job_types: tuple[str, ...] | None = None,
     max_label_prompts: int | None = 25,
+    target_ids: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     stats: dict[str, Any] = {
         "processed": 0,
@@ -74,6 +75,7 @@ def run_jobs(
             worker_id=worker_id,
             job_types=job_types,
             exclude_job_ids=deferred_job_ids,
+            target_ids=target_ids,
         )
         if not job:
             break
@@ -204,6 +206,7 @@ def claim_next_job(
     lease_minutes: int = 45,
     job_types: tuple[str, ...] | None = None,
     exclude_job_ids: set[int] | None = None,
+    target_ids: tuple[str, ...] | None = None,
 ):
     now = now_iso()
     leased_until = (dt.datetime.fromisoformat(now) + dt.timedelta(minutes=lease_minutes)).isoformat()
@@ -219,6 +222,12 @@ def claim_next_job(
         placeholders = ", ".join("?" for _ in excluded)
         excluded_filter = f" AND id NOT IN ({placeholders})"
         params.extend(excluded)
+    target_filter = ""
+    if target_ids:
+        targets = tuple(str(target_id) for target_id in target_ids)
+        placeholders = ", ".join("?" for _ in targets)
+        target_filter = f" AND target_id IN ({placeholders})"
+        params.extend(targets)
     claimed = conn.execute(
         f"""
         UPDATE jobs
@@ -234,6 +243,7 @@ def claim_next_job(
             AND (status = 'pending' OR (status = 'claimed' AND leased_until < ?))
             {job_type_filter}
             {excluded_filter}
+            {target_filter}
           ORDER BY priority ASC, id ASC
           LIMIT 1
         )
