@@ -229,7 +229,7 @@ database's subject ID.
 
 ## Hold-resolution recheck
 
-Under `admit_hold_unless_intrinsic_v1`, the held relational candidate
+Under `admit_hold_unless_intrinsic_v1`, the relational candidate
 `dev_fcec890304c9c2b40332af53` is admitted at composition and sent through the
 same certification path. The stored downstream run still has zero atomic
 claims for it, so it cannot join a canonical group and adds no row to the claim
@@ -240,6 +240,11 @@ group with a corroborating peer and derives `merged_duplicate_retained`.
 Current result: two relational disposition escapes, one materialized canonical
 merge, one admitted zero-atomic relational item, zero unmerged corpus entries,
 and **zero contamination**.
+
+The exclusion is keyed only to corpus substance: zero contributed atomic
+claims. It does not inspect held-ness. A held relational candidate with one or
+more atomic claims remains an escape and fails certification unless it is
+actually merged into an identifying group with a corroborating non-junk peer.
 
 ## Verification
 

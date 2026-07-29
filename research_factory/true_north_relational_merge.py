@@ -772,20 +772,19 @@ def load_relational_merge_inputs(
     escapes: list[dict[str, Any]] = []
     intrinsic_escapes: list[str] = []
     relational_non_escapes: list[str] = []
-    held_relational_candidates: list[str] = []
+    zero_atomic_claim_candidates: list[str] = []
     for candidate_id, reason in sorted(reject_reasons.items()):
         category = category_by_candidate.get(candidate_id)
         if declared_escapes is None:
             escaped = category in VALUE_LEDGER_CATEGORIES
         else:
             escaped = candidate_id in declared_escapes
-        held_without_claim = (
-            category == "held_needs_review"
-            and not atomic_ids_by_candidate.get(candidate_id)
+        contributes_atomic_claims = bool(
+            atomic_ids_by_candidate.get(candidate_id)
         )
         if is_relational_junk_reason(reason):
-            if escaped and held_without_claim:
-                held_relational_candidates.append(candidate_id)
+            if escaped and not contributes_atomic_claims:
+                zero_atomic_claim_candidates.append(candidate_id)
             elif escaped:
                 escapes.append(
                     {
@@ -824,11 +823,10 @@ def load_relational_merge_inputs(
                 candidate_id
                 for candidate_id, category in category_by_candidate.items()
                 if category == "held_needs_review"
-                and not atomic_ids_by_candidate.get(candidate_id)
             )
         ),
-        "held_relational_candidates": tuple(
-            held_relational_candidates
+        "zero_atomic_claim_candidate_ids": tuple(
+            zero_atomic_claim_candidates
         ),
         "relational_gold_rejects_not_escaped": tuple(relational_non_escapes),
         "intrinsic_junk_escapes": tuple(intrinsic_escapes),

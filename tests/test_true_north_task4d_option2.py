@@ -210,6 +210,9 @@ def test_measurement_contract_hash_is_stable_and_auditable():
         "bare_mention",
         "fragment",
     ]
+    assert "zero atomic claims" in first["blocking_certification"][
+        "outside_contamination_predicate"
+    ]
     assert first["evidence_trail"]["offline_parameter_sweep"][
         "parameterizations"
     ] == 36

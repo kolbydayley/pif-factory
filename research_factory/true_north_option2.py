@@ -30,10 +30,10 @@ from .true_north import (
 from .true_north_relational_merge import verify_run
 
 
-CONTRACT_VERSION = "pif_true_north_phase_c_option2_v4"
-SUPERSEDED_CONTRACT_VERSION = "pif_true_north_phase_c_option2_v3"
+CONTRACT_VERSION = "pif_true_north_phase_c_option2_v5"
+SUPERSEDED_CONTRACT_VERSION = "pif_true_north_phase_c_option2_v4"
 SUPERSEDED_CONTRACT_SHA256 = (
-    "b13ea51370bc963ca83c07530f1207dc92b55d8e8f55a2b392c0a44082299783"
+    "258bcb8d29cac32f1c24ef5e0bc17f5778dd14267fc0a54ebcac45d1bb7d298b"
 )
 DEFAULT_PHASE_C_RUN_ID = "phase-c-junk-verify-20260728-v1"
 DEFAULT_CANONICAL_RUN_ID = "tnrun_62691fcee1b451600460cf53"
@@ -103,6 +103,10 @@ def measurement_contract() -> dict[str, Any]:
                 "non-junk peer"
             ),
             "required_contamination_count": 0,
+            "outside_contamination_predicate": (
+                "candidate contributes zero atomic claims to the corpus; "
+                "disposition label is irrelevant"
+            ),
         },
         "held_item_accounting": {
             "principle": (
@@ -460,7 +464,11 @@ def evaluate_checkpoint(
     hold_rate = held_candidate_count / hold_rate_denominator
     admitted_zero_atomic_ids = sorted(
         set(hold_resolution["admitted_candidate_ids"])
-        & set(merge_inputs.diagnostics["held_candidate_ids"])
+        & set(
+            merge_inputs.diagnostics[
+                "zero_atomic_claim_candidate_ids"
+            ]
+        )
     )
     checkpoint = {
         "schema_version": CONTRACT_VERSION,
@@ -573,9 +581,9 @@ def evaluate_checkpoint(
             "contamination_candidate_ids": contamination_ids,
             "contamination_count": contamination_count,
             "contamination_zero": contamination_count == 0,
-            "held_relational_candidate_ids": list(
+            "zero_atomic_claim_candidate_ids": list(
                 merge_inputs.diagnostics[
-                    "held_relational_candidates"
+                    "zero_atomic_claim_candidate_ids"
                 ]
             ),
             "merge_report": merge_report.to_dict(),
@@ -597,7 +605,7 @@ def evaluate_checkpoint(
     output_path = (
         suite_root
         / "certification"
-        / "phase-c-option2-development-v4-hold-resolution.json"
+        / "phase-c-option2-development-v5-zero-atomic-safety.json"
     )
     _write_json(output_path, checkpoint, immutable=True)
     return {**checkpoint, "output_path": str(output_path)}

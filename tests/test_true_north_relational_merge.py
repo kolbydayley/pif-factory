@@ -549,7 +549,7 @@ class LoaderTest(unittest.TestCase):
         )
         self.assertEqual(
             [escape["candidate_id"] for escape in inputs.escapes],
-            ["cand_rel_not_escaped"],
+            [],
         )
         self.assertEqual(inputs.diagnostics["escape_source"], "declared_candidate_ids")
         self.assertEqual(
@@ -559,15 +559,19 @@ class LoaderTest(unittest.TestCase):
         self.assertEqual(
             inputs.diagnostics["intrinsic_junk_escapes"], ("cand_intrinsic",)
         )
+        self.assertEqual(
+            inputs.diagnostics["zero_atomic_claim_candidate_ids"],
+            ("cand_rel_not_escaped",),
+        )
 
-    def test_declared_held_candidate_without_atomics_is_not_contamination(
+    def test_declared_zero_atomic_candidate_is_not_contamination_regardless_of_label(
         self,
     ) -> None:
         conn = sqlite3.connect(self.run_root / "shadow.sqlite")
         conn.execute(
             """
             UPDATE true_north_stage_ledger
-            SET category = 'held_needs_review',
+            SET category = 'retained_supported_singleton',
                 atomic_claim_ids_json = '[]'
             WHERE candidate_id = 'cand_rel_unmerged'
             """
@@ -583,9 +587,45 @@ class LoaderTest(unittest.TestCase):
 
         self.assertEqual(inputs.escapes, ())
         self.assertEqual(
-            inputs.diagnostics["held_relational_candidates"],
+            inputs.diagnostics["zero_atomic_claim_candidate_ids"],
             ("cand_rel_unmerged",),
         )
+
+    def test_declared_held_candidate_with_atomics_is_contamination(
+        self,
+    ) -> None:
+        conn = sqlite3.connect(self.run_root / "shadow.sqlite")
+        conn.execute(
+            """
+            UPDATE true_north_stage_ledger
+            SET category = 'held_needs_review'
+            WHERE candidate_id = 'cand_rel_unmerged'
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        report, inputs = trm.verify_run(
+            run_id=self.run_id,
+            output_root=self.root,
+            escape_candidate_ids=["cand_rel_unmerged"],
+        )
+
+        self.assertEqual(
+            inputs.diagnostics["held_candidate_ids"],
+            ("cand_rel_unmerged",),
+        )
+        self.assertEqual(
+            inputs.diagnostics["zero_atomic_claim_candidate_ids"],
+            (),
+        )
+        self.assertEqual(
+            [entry.candidate_id for entry in report.escapes],
+            ["cand_rel_unmerged"],
+        )
+        self.assertEqual(report.relational_escapes, 1)
+        self.assertEqual(report.unmerged, ("cand_rel_unmerged",))
+        self.assertFalse(report.contamination_zero)
 
     def test_loader_refuses_the_sealed_holdout_partition(self) -> None:
         with self.assertRaises(trm.RelationalMergeError):

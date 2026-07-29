@@ -290,3 +290,40 @@ The current option-2 measurement contract is
 
 No paid call was made, no sealed holdout was opened, and neither the production
 database nor production release state was mutated.
+
+## Zero-atomic contamination predicate correction
+
+The v4 outcome was correct, but its exclusion predicate combined two facts:
+the candidate was `held_needs_review` and it produced zero atomic claims. That
+was unnecessarily disposition-dependent. The v5 safety contract now excludes
+a relational candidate from contamination if and only if it contributes zero
+atomic claims to the corpus; its disposition label is irrelevant.
+
+The diagnostic field is now `zero_atomic_claim_candidate_ids`.
+`dev_fcec890304c9c2b40332af53` remains the only development item in that field.
+A regression fixture proves that a held relational candidate carrying atomic
+claims enters the merge report, produces nonzero contamination, and fails the
+gate.
+
+Every accepted development metric is unchanged from v4:
+
+- intrinsic escapes: 0;
+- relational disposition escapes: 2;
+- contamination: 0;
+- materialized merges: 1;
+- resolved/terminal false rejects: 7 / 24;
+- resolved/terminal recall: 0.970711 / 0.899582;
+- held candidates: 18;
+- hold rate: 18/243;
+- held gold-value candidates: 17.
+
+Current audit hashes:
+
+- Manifest SHA-256:
+  `bbe6d23ea712ed096bd6e7ae60475f23373fcf8fb288f728992cbbd57ed287b6`
+- Contract SHA-256:
+  `4755a5356509a063a248e0cd91c20969c71ecf10adad09bcaf81742f1db97d34`
+- Checkpoint SHA-256:
+  `9661b99cdae79af23c6a74bf2ad6b79d3a6c5f2d3fb001a1098c5a977927451f`
+
+No model call or sealed-holdout access occurred during the correction.
