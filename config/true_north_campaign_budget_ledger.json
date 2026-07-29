@@ -1293,6 +1293,64 @@
         "cumulative_calls_after": 309,
         "known_cumulative_tokens_after": 3583991
       }
+    },
+    {
+      "experiment_id": "phase-e-one-episode-production-shadow-executed-20260729-v1",
+      "sequence": 16,
+      "architecture": "c2_phase_d_certified_best_of_lanes",
+      "episode_count": 1,
+      "max_calls": 90,
+      "max_tokens": 1800000,
+      "status": "stopped_pre_dispatch_baseline_measurement_ineligible",
+      "production_database_access": "sqlite_uri_mode_ro_plus_query_only",
+      "writes": "isolated_shadow_store_only",
+      "canonical_mutation": false,
+      "release_publication": false,
+      "label_publication": false,
+      "queue_mutation": false,
+      "snapshot_label": "July 20 local snapshot; not live production state",
+      "cumulative_before": {
+        "calls": 309,
+        "known_tokens": 3583991
+      },
+      "provenance": {
+        "source_kind": "review_thread_directive_in_active_codex_thread",
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Execute the median-sized Syntax episode under a 90-call and 1.8M-token ceiling only with fail-closed isolation, then report true lane-level cost and downstream drift against the historical production Codex outputs."
+      },
+      "preflights": {
+        "isolation_passed": true,
+        "isolation_sha256": "01e34c0569c2923d88238674ee0bfe558004dacd3e1ffd374f3f5f82598115c5",
+        "budget_passed": true,
+        "budget_sha256": "9cb8bba91cb8b3ca85903bf79bb15fa4e96e7c0d585cc62718bfd6e6fe795dac",
+        "baseline_measurement_passed": false,
+        "baseline_measurement_sha256": "34f85820fd3fa6d22009b8c38ab86428aa22235f6527e728461dc22040e7e39a"
+      },
+      "actual": {
+        "calls": 0,
+        "tokens": 0,
+        "episode_id": "ep_7edbaadb04dc6b1ec57bfb70",
+        "hybrid_glm_call_floor": 42,
+        "hybrid_sol_codex_call_floor": 21,
+        "historical_all_codex_calls": 17,
+        "hybrid_codex_call_ratio_over_historical": 1.235294,
+        "historical_token_receipts": 0,
+        "historical_output_artifacts": 17,
+        "production_claim_count": 184,
+        "production_atomic_claim_count": 0,
+        "eligible_to_dispatch": false,
+        "stop_reasons": [
+          "historical_all_codex_token_receipts_incomplete",
+          "historical_downstream_atomic_reference_absent"
+        ],
+        "production_mutated": false,
+        "queue_mutated": false,
+        "release_or_label_published": false,
+        "agreement_metrics": null,
+        "lane_cost_per_retained_valid_atomic": null,
+        "cumulative_calls_after": 309,
+        "known_cumulative_tokens_after": 3583991
+      }
     }
   ]
 }

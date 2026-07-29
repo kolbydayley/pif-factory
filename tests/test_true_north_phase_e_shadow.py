@@ -281,3 +281,71 @@ def test_one_episode_budget_preflight_counts_complete_certified_lanes(
     }
     assert result["minimum_provider_calls"] == 63
     assert result["eligible_to_dispatch"] is False
+
+
+def test_baseline_measurement_preflight_rejects_missing_usage_and_atomics(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "production.sqlite"
+    output = tmp_path / "output.json"
+    output.write_text('{"items": []}', encoding="utf-8")
+    connection = sqlite3.connect(database)
+    connection.executescript(
+        """
+        CREATE TABLE segments (
+            id TEXT PRIMARY KEY,
+            episode_id TEXT NOT NULL
+        );
+        CREATE TABLE label_runs (
+            id TEXT PRIMARY KEY,
+            segment_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            output_path TEXT
+        );
+        CREATE TABLE episode_context_runs (
+            id TEXT PRIMARY KEY,
+            episode_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            output_path TEXT
+        );
+        CREATE TABLE claims (
+            id TEXT PRIMARY KEY,
+            segment_id TEXT NOT NULL
+        );
+        CREATE TABLE atomic_claims (
+            id TEXT PRIMARY KEY,
+            episode_id TEXT
+        );
+        """
+    )
+    connection.execute("INSERT INTO segments VALUES ('seg', 'episode')")
+    connection.execute(
+        "INSERT INTO label_runs VALUES ('label', 'seg', 'completed', ?)",
+        (str(output),),
+    )
+    connection.execute(
+        """
+        INSERT INTO episode_context_runs
+        VALUES ('context', 'episode', 'completed', ?)
+        """,
+        (str(output),),
+    )
+    connection.execute("INSERT INTO claims VALUES ('claim', 'seg')")
+    connection.commit()
+    connection.close()
+
+    with phase_e.open_read_only_database(database) as read_only:
+        result = phase_e.production_baseline_measurement_preflight(
+            read_only,
+            episode_id="episode",
+        )
+
+    assert result["historical_total_calls"] == 2
+    assert result["token_usage_receipts"] == 0
+    assert result["production_claim_count"] == 1
+    assert result["production_atomic_claim_count"] == 0
+    assert result["eligible_to_dispatch"] is False
+    assert result["stop_reasons"] == [
+        "historical_all_codex_token_receipts_incomplete",
+        "historical_downstream_atomic_reference_absent",
+    ]

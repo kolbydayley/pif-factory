@@ -1,0 +1,93 @@
+{
+  "baseline_measurement": {
+    "eligible_to_dispatch": false,
+    "episode_id": "ep_7edbaadb04dc6b1ec57bfb70",
+    "experiment_id": "phase-e-one-episode-production-shadow-executed-20260729-v1",
+    "historical_context_calls": 1,
+    "historical_label_calls": 16,
+    "historical_model": "gpt-5.5",
+    "historical_total_calls": 17,
+    "preflight_sha256": "34f85820fd3fa6d22009b8c38ab86428aa22235f6527e728461dc22040e7e39a",
+    "production_atomic_claim_count": 0,
+    "production_claim_count": 184,
+    "provider_calls_made": 0,
+    "provider_tokens": 0,
+    "readable_output_artifacts": 17,
+    "schema_version": "pif_true_north_phase_e_baseline_measurement_preflight_v1",
+    "stage_comparability": {
+      "atomic_decomposition": false,
+      "candidate_extraction": true,
+      "canonicalization": false
+    },
+    "stop_reasons": [
+      "historical_all_codex_token_receipts_incomplete",
+      "historical_downstream_atomic_reference_absent"
+    ],
+    "token_usage_receipts": 0
+  },
+  "budget": {
+    "candidate_count": 261,
+    "candidate_segment_count": 14,
+    "compound_candidate_count": 104,
+    "compound_segment_count": 14,
+    "eligible_to_dispatch": true,
+    "episode_id": "ep_7edbaadb04dc6b1ec57bfb70",
+    "exact_contract_optimistic_call_floor": {
+      "compound_sol_c2_adjudication": 14,
+      "compound_sol_pass_b_envelopes": 7,
+      "disposition_glm_pass_a": 14,
+      "disposition_glm_pass_b": 14,
+      "task5_glm_decomposition": 14
+    },
+    "excluded_from_floor": [
+      "disposition_operational_tiebreaker",
+      "provider_retry",
+      "validation_retry"
+    ],
+    "experiment_id": "phase-e-one-episode-production-shadow-20260729-v1",
+    "max_calls": 90,
+    "max_tokens": 1800000,
+    "minimum_provider_calls": 63,
+    "preflight_sha256": "9cb8bba91cb8b3ca85903bf79bb15fa4e96e7c0d585cc62718bfd6e6fe795dac",
+    "provider_calls_made": 0,
+    "provider_tokens": 0,
+    "schema_version": "pif_true_north_phase_e_episode_budget_preflight_v1",
+    "stop_reason": null,
+    "stored_segment_count": 16
+  },
+  "isolation": {
+    "budget": {
+      "max_calls": 90,
+      "max_tokens": 1800000
+    },
+    "eligible_to_dispatch": true,
+    "experiment_id": "phase-e-one-episode-production-shadow-executed-20260729-v1",
+    "preflight_sha256": "01e34c0569c2923d88238674ee0bfe558004dacd3e1ffd374f3f5f82598115c5",
+    "production_database": {
+      "dataless": false,
+      "flags": 64,
+      "inode": 115122724,
+      "mtime_ns": 1784559916107748508,
+      "path": "/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory/data/factory.sqlite",
+      "size_bytes": 4052508672
+    },
+    "production_writes_allowed": false,
+    "provider_calls_made": 0,
+    "provider_tokens": 0,
+    "queue_mutation_allowed": false,
+    "release_or_label_publication_allowed": false,
+    "requested_access": "sqlite_uri_mode_ro_plus_query_only",
+    "schema_version": "pif_true_north_phase_e_shadow_v1",
+    "shadow_root": "/Users/kolbydayley/Library/Application Support/Podcast Intelligence Factory/phase-e-shadow/phase-e-one-episode-executed-20260729-v1",
+    "stop_reasons": [],
+    "executable_checks": {
+      "production_identity_stable": true,
+      "query_only": 1,
+      "schema_version_observed": 245,
+      "shadow_device_relation": "same_device_distinct_path",
+      "shadow_write_probe_passed": true,
+      "sqlite_uri_mode": "ro",
+      "write_probe_rejected": true
+    }
+  }
+}

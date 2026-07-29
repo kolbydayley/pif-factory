@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import math
 import os
 import sqlite3
@@ -551,6 +552,145 @@ def certified_hybrid_episode_budget_preflight(
             if call_floor <= int(max_calls)
             else "certified_single_episode_call_floor_exceeds_ceiling"
         ),
+        "provider_calls_made": 0,
+        "provider_tokens": 0,
+    }
+    result["preflight_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(result)
+    )
+    return result
+
+
+def _contains_token_usage(value: Any) -> bool:
+    if isinstance(value, dict):
+        keys = {str(key).casefold() for key in value}
+        if (
+            "usage" in keys
+            or "token_usage" in keys
+            or "total_tokens" in keys
+            or (
+                "input_tokens" in keys
+                and "output_tokens" in keys
+            )
+        ):
+            return True
+        return any(_contains_token_usage(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_token_usage(item) for item in value)
+    return False
+
+
+def production_baseline_measurement_preflight(
+    connection: sqlite3.Connection,
+    *,
+    episode_id: str,
+) -> dict[str, Any]:
+    """Prove that the historical baseline can support required comparisons."""
+    if int(connection.execute("PRAGMA query_only").fetchone()[0]) != 1:
+        raise PhaseEShadowError(
+            "baseline measurement preflight requires query_only"
+        )
+    present = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT name FROM sqlite_schema WHERE type='table'"
+        )
+    }
+    required = {
+        "segments",
+        "label_runs",
+        "episode_context_runs",
+        "claims",
+        "atomic_claims",
+    }
+    if not required.issubset(present):
+        raise PhaseEShadowError(
+            "production schema lacks baseline measurement dependencies"
+        )
+    label_rows = connection.execute(
+        """
+        SELECT lr.output_path
+        FROM label_runs AS lr
+        JOIN segments AS s ON s.id = lr.segment_id
+        WHERE s.episode_id = ? AND lr.status = 'completed'
+        """,
+        (episode_id,),
+    ).fetchall()
+    context_rows = connection.execute(
+        """
+        SELECT output_path
+        FROM episode_context_runs
+        WHERE episode_id = ? AND status = 'completed'
+        """,
+        (episode_id,),
+    ).fetchall()
+    output_paths = [
+        Path(str(row[0])).expanduser().resolve()
+        for row in [*label_rows, *context_rows]
+        if row[0]
+    ]
+    readable_outputs = 0
+    token_receipts = 0
+    for path in output_paths:
+        if not path.is_file():
+            continue
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        readable_outputs += 1
+        if _contains_token_usage(document):
+            token_receipts += 1
+    claim_count = int(
+        connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM claims AS c
+            JOIN segments AS s ON s.id = c.segment_id
+            WHERE s.episode_id = ?
+            """,
+            (episode_id,),
+        ).fetchone()[0]
+    )
+    atomic_count = int(
+        connection.execute(
+            "SELECT COUNT(*) FROM atomic_claims WHERE episode_id = ?",
+            (episode_id,),
+        ).fetchone()[0]
+    )
+    stop_reasons: list[str] = []
+    baseline_call_count = len(label_rows) + len(context_rows)
+    if token_receipts != baseline_call_count:
+        stop_reasons.append(
+            "historical_all_codex_token_receipts_incomplete"
+        )
+    if atomic_count == 0:
+        stop_reasons.append(
+            "historical_downstream_atomic_reference_absent"
+        )
+    result = {
+        "schema_version": (
+            "pif_true_north_phase_e_baseline_measurement_preflight_v1"
+        ),
+        "experiment_id": (
+            "phase-e-one-episode-production-shadow-executed-20260729-v1"
+        ),
+        "episode_id": episode_id,
+        "historical_model": "gpt-5.5",
+        "historical_label_calls": len(label_rows),
+        "historical_context_calls": len(context_rows),
+        "historical_total_calls": baseline_call_count,
+        "readable_output_artifacts": readable_outputs,
+        "token_usage_receipts": token_receipts,
+        "production_claim_count": claim_count,
+        "production_atomic_claim_count": atomic_count,
+        "stage_comparability": {
+            "candidate_extraction": claim_count > 0,
+            "atomic_decomposition": atomic_count > 0,
+            "canonicalization": atomic_count > 0,
+        },
+        "eligible_to_dispatch": not stop_reasons,
+        "stop_reasons": stop_reasons,
         "provider_calls_made": 0,
         "provider_tokens": 0,
     }
