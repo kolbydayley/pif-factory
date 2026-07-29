@@ -8,7 +8,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from . import true_north
 from .true_north_actor_span_rule import apply_actor_span_rule
-from .true_north_final_contract import CONTRACT_VERSION
+from .true_north_ruling4_contract import CONTRACT_VERSION
 from .true_north_semantic_scoring import (
     SCHEMA_VERSION as SCORER_VERSION,
     score_campaign,

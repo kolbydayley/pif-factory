@@ -160,6 +160,35 @@
         "stop_conditions_honored": true,
         "headless_lane_collision_stops_work": true
       }
+    },
+    {
+      "decision_id": "owner-delegated-ruling-4-20260729-v1",
+      "owner": "Kolby Dayley",
+      "recorded_at": "2026-07-29",
+      "source_kind": "review_thread_directive_in_active_codex_thread",
+      "delegation": {
+        "delegated_by": "Kolby Dayley",
+        "delegated_to": "true_north_review_loop",
+        "explicit": true
+      },
+      "provenance": {
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Ruling 4 re-referenced candidate-state macro F1 to min(0.90, 0.830664 - 0.04) = 0.790664 and authorized the already-declared Phase C A/B/C cheap-consensus experiment."
+      },
+      "authorizes": {
+        "measurement_contract_version": "pif_true_north_measurement_contract_v8",
+        "candidate_state_macro_f1_gate": 0.790664,
+        "candidate_state_gate_rule": "min(original_target, measured_gold_vs_gold_ceiling_minus_0.04)",
+        "candidate_state_original_0_90_aspiration": "mandatory_diagnostic",
+        "candidate_state_raw_agreement": "mandatory_diagnostic",
+        "phase_c_one_run_only": true
+      },
+      "unchanged_controls": {
+        "acceptable_atomic_count_rate_gate": 0.9,
+        "sealed_holdouts_forbidden": true,
+        "per_experiment_ceiling_required_before_first_call": true,
+        "no_self_iteration_on_failure": true
+      }
     }
   ],
   "post_certification_phase_results": [
@@ -175,21 +204,42 @@
     {
       "phase": "B",
       "name": "candidate_state_macro_f1_calibration",
-      "status": "completed_pending_review_loop_ruling",
+      "status": "completed_ruling_4_adopted",
       "provider_calls": 0,
       "known_tokens": 0,
       "candidate_count": 1140,
       "measured_ceiling": 0.830664,
       "current_gate": 0.9,
       "recommended_threshold": 0.790664,
-      "gate_changed": false,
-      "review_recommendation": "ruling_4_re_reference_to_recommended_threshold",
+      "gate_changed": true,
+      "adopted_threshold": 0.790664,
+      "review_ruling": "owner-delegated-ruling-4-20260729-v1",
       "private_artifact": "diagnostics/candidate-state-macro-f1-calibration-v1.json",
       "private_artifact_sha256": "ebe556e2ff59f34755e82b09e14f6ab435ba0c6ea02a55c1660fd13e415f926f",
       "source_aggregate_sha256": "e132f68f94452a7072abf38821261b6bf573f2c89e2715e1405a5a173a87705f",
       "result_document": "docs/TRUE_NORTH_CANDIDATE_STATE_CALIBRATION_20260729.md",
       "sealed_holdout_opened": false,
       "production_mutated": false
+    },
+    {
+      "phase": "C",
+      "name": "ab_c_cheap_consensus_decomposition",
+      "status": "completed_terminal_quality_failure",
+      "provider_calls": 23,
+      "known_tokens": 246443,
+      "run_id": "task5-ab-c-cheap-consensus-20260729-v1",
+      "flagged_candidate_count": 106,
+      "flagged_acceptable_atomic_count_rate": 0.6571428571428571,
+      "composed_acceptable_atomic_count_rate": 0.8017241379310345,
+      "matched_faithfulness": 0.735388,
+      "matched_hallucination_rate": 0.125,
+      "candidate_state_macro_f1": 0.863223,
+      "intrinsic_junk_escapes": 0,
+      "relational_contamination": 0,
+      "result_sha256": "f8a113b1788f1dbbffceb9309800e1cac7e5fc58556674da0913837b0b5b8ac2",
+      "sealed_holdout_opened": false,
+      "production_mutated": false,
+      "stop_condition": "one_run_failed_acceptance_no_self_iteration"
     }
   ],
   "cumulative_before_new_authorization": {
@@ -360,6 +410,65 @@
         "known_cumulative_tokens_after": 2782670,
         "acceptance_eligible": false,
         "decomposition_lane_stopped": true
+      }
+    },
+    {
+      "experiment_id": "phase-c-ab-c-cheap-consensus-20260729-v1",
+      "sequence": 6,
+      "models": {
+        "pass_a": "zai-coding-plan/glm-5.2_frozen_task5",
+        "pass_b": "gpt-5.6-sol_reuse_then_missing_coverage_only",
+        "pass_c": "zai-coding-plan/glm-5.2"
+      },
+      "max_calls": 40,
+      "max_tokens": 900000,
+      "max_wall_seconds": 14400,
+      "reserved_sol_tokens_per_envelope": 35000,
+      "status": "completed_terminal_quality_failure",
+      "one_run_only": true,
+      "input_contract": "flagged_compound_candidates_from_task5-input-split-default-20260729-v1",
+      "adjudication_contract": "choose_or_merge_only_from_union_of_frozen_glm_and_sol_proposal_structures",
+      "unflagged_control": "reuse_frozen_task5_outputs",
+      "cumulative_before": {
+        "calls": 264,
+        "known_tokens": 2782670
+      },
+      "provenance": {
+        "source_kind": "review_thread_directive_in_active_codex_thread",
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Run one bounded A/B/C cheap-consensus decomposition experiment after recording Ruling 4; no self-iteration on failure."
+      },
+      "acceptance": {
+        "acceptable_atomic_count_rate": ">=0.90",
+        "matched_faithfulness": ">=0.744435",
+        "matched_hallucination_rate": "<=0.093684",
+        "candidate_state_macro_f1": ">=0.790664",
+        "intrinsic_junk_escapes": 0,
+        "relational_contamination": 0
+      },
+      "actual": {
+        "run_id": "task5-ab-c-cheap-consensus-20260729-v1",
+        "status": "terminal_quality_failure",
+        "calls": 23,
+        "tokens": 246443,
+        "sol_reused_candidates": 96,
+        "sol_completed_candidates": 10,
+        "sol_completion_calls": 4,
+        "glm_adjudication_calls": 19,
+        "acceptable_atomic_count_rate": 0.8017241379310345,
+        "flagged_acceptable_atomic_count_rate": 0.6571428571428571,
+        "matched_faithfulness": 0.735388,
+        "matched_hallucination_rate": 0.125,
+        "candidate_state_macro_f1": 0.863223,
+        "intrinsic_junk_escapes": 0,
+        "relational_contamination": 0,
+        "result_sha256": "f8a113b1788f1dbbffceb9309800e1cac7e5fc58556674da0913837b0b5b8ac2",
+        "cumulative_calls_after": 287,
+        "known_cumulative_tokens_after": 3029113,
+        "within_call_ceiling": true,
+        "within_token_ceiling": true,
+        "acceptance_passed": false,
+        "self_iteration_permitted": false
       }
     }
   ]

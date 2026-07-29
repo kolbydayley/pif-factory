@@ -184,9 +184,9 @@ TASK5_DEFAULT_BUDGET = {
     "max_tokens": 800_000,
     "max_wall_seconds": 2 * 60 * 60,
 }
-APPROVED_GATE_POLICY_VERSION = "pif_true_north_gate_policy_v4"
+APPROVED_GATE_POLICY_VERSION = "pif_true_north_gate_policy_v5"
 APPROVED_GATE_POLICY = {
-    "consensus_candidate_state_macro_f1": (">=", 0.90),
+    "consensus_candidate_state_macro_f1": (">=", 0.790664),
     "retained_value_recall": (">=", 0.90),
     "consensus_junk_escape_rate": ("<=", 0.02),
     "acceptable_atomic_count_rate": (">=", 0.90),
@@ -1452,12 +1452,16 @@ def verify_suite(
             suite_root
             / "diagnostics"
             / (
-                "gate-policy-v4.json"
-                if APPROVED_GATE_POLICY_VERSION.endswith("_v4")
+                "gate-policy-v5.json"
+                if APPROVED_GATE_POLICY_VERSION.endswith("_v5")
                 else (
-                    "gate-policy-v3.json"
-                    if APPROVED_GATE_POLICY_VERSION.endswith("_v3")
-                    else "gate-policy-v2.json"
+                    "gate-policy-v4.json"
+                    if APPROVED_GATE_POLICY_VERSION.endswith("_v4")
+                    else (
+                        "gate-policy-v3.json"
+                        if APPROVED_GATE_POLICY_VERSION.endswith("_v3")
+                        else "gate-policy-v2.json"
+                    )
                 )
             )
         )
