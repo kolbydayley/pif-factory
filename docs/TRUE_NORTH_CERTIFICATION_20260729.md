@@ -49,6 +49,13 @@ definitive zero-call composition applies that frozen rule to C2's actor-span
 output. It reaches 0.810345 atomicity, 0.782101 actor exactness, and 0.040323
 hallucination, so the coherent development stack passes 7/9 gates.
 
+Ruling 6 is terminal for the quality program. It records the matched-pair
+diagnostic showing faithfulness at 0.751302 when atomic count is acceptable
+and 0.652774 when it is not. Even a pairwise oracle choosing the better of
+emitted and candidate-verbatim wording reaches only 0.736442. Faithfulness is
+therefore the same decomposition-alignment limitation as atomicity, receives
+no rewriting lane, and is not re-referenced. The program closes at **7/9**.
+
 ## Final nine-gate table
 
 The table is component-based because Ruling 3 certifies a hybrid architecture.
@@ -92,7 +99,7 @@ gate.
 
 ## Disclosed limitations
 
-### Atomic decomposition
+### Decomposition alignment: atomicity and faithfulness
 
 Atomicity is **0.810345 against 0.90**, an 8.97-point shortfall. The single-pass
 GLM Task-5 result was 0.780172. Count-first framing did not change it. Spark
@@ -114,11 +121,18 @@ full-fold atomicity remained below 0.90; faithfulness and hallucination also
 failed. This is the terminal semantic evidence. The decomposition lane is
 permanently closed.
 
-### Faithfulness
+Six independent designs—count-first prompting, split-default input inversion,
+Spark substitution, Sol substitution, GLM-adjudicated consensus, and
+Sol-adjudicated consensus—converged between 0.780 and 0.811 atomicity against
+the fair 0.90 gate. This convergence across three model families closes the
+implementation lane.
 
 Matched-pair faithfulness is **0.732059 against 0.744435**, 1.24 points low.
-Candidate-state macro F1 now passes its Ruling-4 ceiling-referenced gate; its
-original 0.90 aspiration remains visible.
+On acceptable-count pairs it is 0.751302 and passes; on unacceptable-count
+pairs it is 0.652774. The 9.85-point alignment penalty, plus the failed
+0.736442 wording oracle, establishes one root cause rather than a separate
+wording defect. Ruling 6 forbids a rewriting lane and retains the existing
+ceiling-referenced gate.
 
 ### Hallucination
 
@@ -194,9 +208,13 @@ The practical split remains approximately 58.59% cheap/non-compound handling
 and at most 41.41% compound routing, plus zero-call speaker and actor rules.
 The completed Sol adjudication recipe did not clear atomicity or faithfulness,
 so no passing compound recipe has been established. Actual production cost is
-not yet certified. The Phase-E production shadow trial was stopped before
-dispatch because the production database was an unreadable APFS dataless
-placeholder, so neither stage drift nor amortized cost could be measured.
+not yet certified. After hydration, Phase E passed its executable read-only
+isolation preflight and selected three episodes from the July 20 snapshot.
+The exact certified packet topology then failed its whole-run budget
+preflight: 48 segments require at least 144 provider calls for the two
+disposition passes plus frozen GLM decomposition, before any compound Sol
+work, against the authorized 60-call ceiling. No provider calls were made and
+neither stage drift nor amortized cost was measured.
 
 ## Campaign ledger summary
 
@@ -240,7 +258,8 @@ option-2 hold/merge correction. Their receipt reports overlap the grouped
 | C2 provider-compatible smoke | 1 | 0 | Flat schema rejected before inference; no batch dispatched |
 | C2 schema-free final | 19 | 554,878 | Complete semantic failure; 0.810345 atomicity; lane permanently closed |
 | Phase-D actor suppression | 0 | 0 | Actor and hallucination pass jointly |
-| Phase-E production shadow | 0 | 0 | Isolation preflight blocked on unreadable dataless production database |
+| Phase-E production shadow (initial) | 0 | 0 | Isolation preflight blocked on unreadable dataless production database |
+| Phase-E production shadow (hydrated final) | 0 | 0 | Isolation passed; exact-contract 144-call floor exceeded 60-call ceiling |
 | Phase-E production discovery | 0 | 0 | Local SQLite identified as corpus authority; Railway is observer/broker only |
 | **Post-160 total** | **149** | **2,406,177** | Includes the final terminal decomposition result and accepted Phase D |
 
@@ -267,6 +286,10 @@ option-2 hold/merge correction. Their receipt reports overlap the grouped
 10. The final review directive removed provider-side schema transport,
     permanently closed decomposition after the resulting semantic failure,
     and authorized the zero-call actor frontier and production-truth discovery.
+11. Ruling 6 identified atomicity and faithfulness as one
+    decomposition-alignment limitation, prohibited a wording lane, retained
+    both gates, closed the quality program at 7/9, and authorized the hydrated
+    Phase-E attempt under the existing ceiling.
 
 ## Post-certification experiment result
 
@@ -293,19 +316,33 @@ faithfulness-headroom finding plus Phase-E readiness in
 
 ### Production shadow trial
 
-Phase E stopped before provider dispatch because `data/factory.sqlite` was an
-unreadable APFS dataless placeholder. No episode could be safely selected or
-matched to a production Codex baseline, so agreement, drift, and amortized
-cost remain unmeasured. Production state was not opened or mutated; no queue,
-canonical, release, or label action occurred. See
-`docs/TRUE_NORTH_PHASE_E_SHADOW_RESULTS_20260729.md`.
+After the file was hydrated at Kolby's request, the executable preflight
+verified `mode=ro`, `query_only=ON`, rejected writes, a distinct shadow root,
+schema version 245, and unchanged production identity. Three eligible episodes
+were selected: 48 segments, 714 discourse-event candidates, and 511 existing
+GPT-5.5 claims. The snapshot contains no production atomic claims and its
+label receipts do not record token usage.
 
-Configuration-only discovery then established that this local SQLite file,
-not Railway Postgres, is the legacy podcast corpus and queue authority.
-Railway hosts sanitized observer state and MCP broker metadata only. Current
-episode count remains unknown without a separately authorized read; the latest
-historical consistent snapshot records 464 episodes on 2026-07-11. See
-`docs/TRUE_NORTH_PHASE_E_PRODUCTION_DISCOVERY_20260729.md`.
+Dispatch then stopped at the whole-run budget preflight. The certified
+segment-scoped contract has a 144-call fixed floor before compound Sol work,
+more than double the 60-call ceiling. Cross-segment batching would be a new
+input contract, so it was not substituted silently. Agreement, drift, and
+amortized cost remain unmeasured; provider spend and all production mutation
+remain zero. See `docs/TRUE_NORTH_PHASE_E_SHADOW_RESULTS_20260729.md`.
+
+### Future work
+
+The decomposition problem is open research, not an unimplemented prompt or
+model swap. Gold quality came from a two-pass-plus-adjudication process.
+Reproducing that process in production would require paying for the process,
+not merely choosing a different single model. Phase E was intended to measure
+that economics, but the exact contract cannot fit the authorized 60-call
+envelope for three full episodes.
+
+Any later production-cost experiment must make one explicit choice: authorize
+the measured exact-contract call requirement, or separately benchmark and
+certify a cross-segment batching contract. The latter is architecture work,
+not a transport optimization.
 
 ### Actor value residual
 
@@ -336,8 +373,13 @@ remains closed.
   `f9b99c77045e0ad5daa183badc49426a17fdc9510bc7d414298479fc4c877ed8`
 - Final hybrid diagnostic SHA-256:
   `11ce7d70d3c090d7b717e66cf4e33e668067115a81b567efa6e4b89165d2ea6f`
+- Phase-E executable isolation preflight SHA-256:
+  `b6687e42c6e13566b2b9b859fea1f35806ee5cb3b0393794e814487363eecd67`
+- Phase-E exact-contract budget preflight SHA-256:
+  `2a56742b7f8e15e87b2f42cbbdecd2420f0a7b79afe8de9121141521b62538b0`
 - Provider calls for Ruling 4 contract migration: `0`
 - Provider calls for Phase C: `23`
+- Provider calls for Ruling 6 and Phase E final attempt: `0`
 - Provider calls for final schema-free C2: `19`
 - Phase-D frontier result SHA-256:
   `0b804f327282baee0ff2be08a9282c4c8f5ba58705ae51ddeeb278433a53e201`

@@ -1,0 +1,30 @@
+{
+  "compound_sol_adjudication_calls": "not_needed_to_prove_ineligibility",
+  "compound_sol_decomposition_calls": "not_needed_to_prove_ineligibility",
+  "eligible_to_dispatch": false,
+  "episode_ids": [
+    "ep_fa287b2451abaadf89f0bad4",
+    "ep_6a5787a9372e75669b90385d",
+    "ep_7edbaadb04dc6b1ec57bfb70"
+  ],
+  "exact_contract_fixed_stage_calls": {
+    "disposition_glm_pass_a": 48,
+    "disposition_glm_pass_b": 48,
+    "task5_glm_decomposition": 48
+  },
+  "experiment_id": "phase-e-three-episode-production-shadow-20260729-v1",
+  "max_calls": 60,
+  "minimum_provider_calls_before_compound_sol_lanes": 144,
+  "preflight_sha256": "2a56742b7f8e15e87b2f42cbbdecd2420f0a7b79afe8de9121141521b62538b0",
+  "provider_calls_made": 0,
+  "provider_tokens": 0,
+  "schema_version": "pif_true_north_phase_e_budget_preflight_v1",
+  "segment_count": 48,
+  "segment_counts": {
+    "ep_6a5787a9372e75669b90385d": 13,
+    "ep_7edbaadb04dc6b1ec57bfb70": 16,
+    "ep_fa287b2451abaadf89f0bad4": 19
+  },
+  "semantic_contract_change_required_to_fit": "cross_segment_batching",
+  "stop_reason": "certified_exact_contract_exceeds_declared_call_ceiling"
+}

@@ -339,6 +339,44 @@
         "sealed_holdouts_forbidden": true,
         "phase_e_budget_recorded_not_opened": true
       }
+    },
+    {
+      "decision_id": "review-loop-ruling-6-terminal-quality-and-phase-e-authorization-20260729-v1",
+      "owner": "true_north_review_loop",
+      "recorded_at": "2026-07-29",
+      "source_kind": "review_thread_directive_in_active_codex_thread",
+      "delegation": {
+        "delegated_by": "Kolby Dayley",
+        "delegated_to": "true_north_review_loop",
+        "explicit": true
+      },
+      "provenance": {
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Ruling 6 closes faithfulness as the same decomposition-alignment limitation, forbids a rewriting lane, declares the quality program complete at 7/9, and authorizes the hydrated July-20-snapshot Phase-E trial."
+      },
+      "ruling": {
+        "faithfulness_separate_lane_forbidden": true,
+        "faithfulness_gate_referenced_again": false,
+        "atomicity_and_faithfulness_single_root_cause": "decomposition_alignment",
+        "decomposition_lane_closed_permanently": true,
+        "quality_program_terminal_gate_count": "7/9"
+      },
+      "authorizes": {
+        "phase_e": {
+          "production_access": "strict_read_only",
+          "shadow_writes_only": true,
+          "episode_count": 3,
+          "max_calls": 60,
+          "max_tokens": 1500000,
+          "snapshot_label": "July 20 local snapshot; latest recorded corpus snapshot 464 episodes as of 2026-07-11"
+        }
+      },
+      "terminal_rule": {
+        "sealed_holdouts_forbidden": true,
+        "canonical_mutation_forbidden": true,
+        "queue_mutation_forbidden": true,
+        "release_or_label_publication_forbidden": true
+      }
     }
   ],
   "post_certification_phase_results": [
@@ -1138,6 +1176,62 @@
         "episode_selection_ready": true,
         "drift_and_cost_plan_ready": true,
         "measurement_plan_sha256": "29d206d67b1db8bee5ff2b9430864a6aacdab8f866c85acca2655951a82d4e24",
+        "cumulative_calls_after": 309,
+        "known_cumulative_tokens_after": 3583991
+      }
+    },
+    {
+      "experiment_id": "phase-e-three-episode-production-shadow-final-20260729-v1",
+      "sequence": 14,
+      "architecture": "c2_phase_d_certified_best_of_lanes",
+      "episode_count": 3,
+      "max_calls": 60,
+      "max_tokens": 1500000,
+      "status": "stopped_pre_dispatch_exact_contract_budget_ineligible",
+      "production_database_access": "sqlite_uri_mode_ro_plus_query_only",
+      "writes": "isolated_shadow_store_only",
+      "canonical_mutation": false,
+      "release_publication": false,
+      "label_publication": false,
+      "queue_mutation": false,
+      "snapshot_label": "July 20 local snapshot; latest recorded corpus snapshot 464 episodes as of 2026-07-11",
+      "cumulative_before": {
+        "calls": 309,
+        "known_tokens": 3583991
+      },
+      "provenance": {
+        "source_kind": "review_thread_directive_in_active_codex_thread",
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Open the prepared Phase-E ceiling only after the executable read-only preflight passes, then measure three recent episodes."
+      },
+      "actual": {
+        "calls": 0,
+        "tokens": 0,
+        "episodes_selected": 3,
+        "episodes_measured": 0,
+        "production_database_accessed": true,
+        "production_access_mode": "sqlite_uri_mode_ro_plus_query_only",
+        "production_database_dataless": false,
+        "production_database_size_bytes": 4052508672,
+        "production_schema_version": 245,
+        "isolation_preflight_passed": true,
+        "isolation_preflight_sha256": "b6687e42c6e13566b2b9b859fea1f35806ee5cb3b0393794e814487363eecd67",
+        "selected_segment_count": 48,
+        "selected_candidate_count": 714,
+        "existing_baseline_claim_count": 511,
+        "existing_baseline_atomic_claim_count": 0,
+        "exact_contract_minimum_calls_before_compound_sol_lanes": 144,
+        "eligible_to_dispatch": false,
+        "stop_reason": "certified_exact_contract_exceeds_declared_call_ceiling",
+        "semantic_contract_change_required_to_fit": "cross_segment_batching",
+        "budget_preflight_sha256": "2a56742b7f8e15e87b2f42cbbdecd2420f0a7b79afe8de9121141521b62538b0",
+        "production_mutated": false,
+        "queue_mutated": false,
+        "release_or_label_published": false,
+        "agreement_metrics": null,
+        "hybrid_cost_per_retained_valid_atomic": null,
+        "all_codex_token_baseline": null,
+        "all_codex_token_baseline_reason": "production_label_receipts_do_not_record_usage",
         "cumulative_calls_after": 309,
         "known_cumulative_tokens_after": 3583991
       }

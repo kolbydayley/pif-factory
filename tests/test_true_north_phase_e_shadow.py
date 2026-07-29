@@ -192,3 +192,39 @@ def test_measurement_plan_has_closed_budget() -> None:
         "status": "recorded_not_opened",
     }
     assert plan["isolation"]["queue_mutation"] is False
+
+
+def test_certified_hybrid_budget_preflight_fails_before_dispatch(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "production.sqlite"
+    connection = sqlite3.connect(database)
+    connection.execute(
+        "CREATE TABLE segments (id TEXT PRIMARY KEY, episode_id TEXT NOT NULL)"
+    )
+    for episode_index, count in enumerate((19, 13, 16), start=1):
+        connection.executemany(
+            "INSERT INTO segments (id, episode_id) VALUES (?, ?)",
+            [
+                (f"seg_{episode_index}_{index}", f"ep_{episode_index}")
+                for index in range(count)
+            ],
+        )
+    connection.commit()
+    connection.close()
+
+    with phase_e.open_read_only_database(database) as read_only:
+        result = phase_e.certified_hybrid_budget_preflight(
+            read_only,
+            episode_ids=["ep_1", "ep_2", "ep_3"],
+        )
+
+    assert result["segment_count"] == 48
+    assert result["minimum_provider_calls_before_compound_sol_lanes"] == 144
+    assert result["eligible_to_dispatch"] is False
+    assert result["provider_calls_made"] == 0
+    with pytest.raises(
+        phase_e.PhaseEShadowError,
+        match="certified_exact_contract_exceeds_declared_call_ceiling",
+    ):
+        phase_e.require_hybrid_budget_eligibility(result)

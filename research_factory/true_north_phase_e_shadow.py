@@ -356,3 +356,87 @@ def measurement_plan() -> dict[str, Any]:
             "status": "recorded_not_opened",
         },
     }
+
+
+def certified_hybrid_budget_preflight(
+    connection: sqlite3.Connection,
+    *,
+    episode_ids: list[str],
+    max_calls: int = MAX_CALLS,
+) -> dict[str, Any]:
+    """Fail closed when the exact certified packet topology cannot fit.
+
+    The certified disposition ensemble consists of two independent GLM
+    segment packets. The frozen Task-5 decomposition contributes one further
+    GLM segment packet before the compound-only Sol and adjudication lanes.
+    Combining segments would change the evaluated input contract, so this
+    computes an exact-contract lower bound.
+    """
+    if int(connection.execute("PRAGMA query_only").fetchone()[0]) != 1:
+        raise PhaseEShadowError("budget preflight requires query_only")
+    if not episode_ids:
+        raise PhaseEShadowError("budget preflight requires episodes")
+    placeholders = ",".join("?" for _ in episode_ids)
+    rows = connection.execute(
+        f"""
+        SELECT episode_id, COUNT(*) AS segment_count
+        FROM segments
+        WHERE episode_id IN ({placeholders})
+        GROUP BY episode_id
+        """,
+        tuple(episode_ids),
+    ).fetchall()
+    counts = {str(row[0]): int(row[1]) for row in rows}
+    if set(counts) != set(episode_ids):
+        missing = sorted(set(episode_ids) - set(counts))
+        raise PhaseEShadowError(
+            "selected episode has no segment scope: " + ", ".join(missing)
+        )
+    segment_count = sum(counts.values())
+    fixed_stages = {
+        "disposition_glm_pass_a": segment_count,
+        "disposition_glm_pass_b": segment_count,
+        "task5_glm_decomposition": segment_count,
+    }
+    minimum_calls = sum(fixed_stages.values())
+    result = {
+        "schema_version": "pif_true_north_phase_e_budget_preflight_v1",
+        "experiment_id": EXPERIMENT_ID,
+        "episode_ids": list(episode_ids),
+        "segment_counts": counts,
+        "segment_count": segment_count,
+        "exact_contract_fixed_stage_calls": fixed_stages,
+        "minimum_provider_calls_before_compound_sol_lanes": minimum_calls,
+        "compound_sol_decomposition_calls": (
+            "not_needed_to_prove_ineligibility"
+        ),
+        "compound_sol_adjudication_calls": (
+            "not_needed_to_prove_ineligibility"
+        ),
+        "max_calls": int(max_calls),
+        "eligible_to_dispatch": minimum_calls <= int(max_calls),
+        "stop_reason": (
+            None
+            if minimum_calls <= int(max_calls)
+            else "certified_exact_contract_exceeds_declared_call_ceiling"
+        ),
+        "semantic_contract_change_required_to_fit": (
+            "cross_segment_batching"
+            if minimum_calls > int(max_calls)
+            else None
+        ),
+        "provider_calls_made": 0,
+        "provider_tokens": 0,
+    }
+    result["preflight_sha256"] = true_north.sha256_text(
+        true_north.dumps_json(result)
+    )
+    return result
+
+
+def require_hybrid_budget_eligibility(preflight: dict[str, Any]) -> None:
+    if not preflight.get("eligible_to_dispatch"):
+        raise PhaseEShadowError(
+            "Phase E stopped before provider dispatch: "
+            + str(preflight.get("stop_reason"))
+        )
