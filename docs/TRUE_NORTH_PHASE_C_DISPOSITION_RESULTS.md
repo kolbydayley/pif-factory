@@ -6,9 +6,9 @@ Suite: `ai-safety-v1`
 
 Partition: Search development fold only
 
-Status: **FAILED — stop before Task 5**
+Status: **PASSED under resolved-hold policy — Task 5 authorized but not started**
 
-## Frozen acceptance rule
+## Historical pre-option-2 acceptance rule
 
 - Junk escapes: `0/9`
 - False rejects: at most `10`
@@ -230,3 +230,63 @@ checkpoint is frozen at SHA-256
 `92b450191e34d3b54d23aaeba11e90931202563e2d7a1664412d43c09bcec4c9`.
 No sealed holdout was opened, no model call was made, and production remained
 unchanged.
+
+## Hold-resolution policy and final development result
+
+The terminal-hold accounting above remains correct as a control. Both metrics
+measure what is actually present in the claim corpus: a held gold-value
+candidate is a recall miss because it did not reach the corpus, while a held
+gold-junk candidate cannot contaminate because it did not reach the corpus.
+Holds only cost score and never earn it, and the gold-value recall denominator
+remains unchanged.
+
+The stage nevertheless holds 18 of the frozen 243-candidate retained pool, and
+17 of those 18 are gold-value. On this development fold, terminal hold is
+therefore measurably worse than retain. The zero-call
+`admit_hold_unless_intrinsic_v1` composition policy admits every held candidate
+as retained unless `bracket_link_chrome_only_v1` fires. Admitted candidates
+continue through the same downstream safety path, including relational-merge
+certification.
+
+### Final coupled result
+
+| Measure | Resolved-hold result | Terminal-hold control | Required |
+|---|---:|---:|---:|
+| Intrinsic junk escapes | 0 | 0 | 0 |
+| Relational junk escapes | 2 | 1 | reported |
+| Relational contamination | 0 | 0 | 0 |
+| Materialized relational merges | 1 | 1 | 1 |
+| False rejects | 7 | 24 | ≤10 |
+| Retained-value recall | 0.970711 | 0.899582 | ≥0.95 |
+| Held candidates | 18 | 18 | reported |
+| Hold rate | 0.074074 (18/243) | 0.074074 (18/243) | reported |
+| Held gold-value candidates | 17 | 17 | reported |
+
+`dev_fcec890304c9c2b40332af53`, the one held gold-junk candidate, is admitted
+by the composition policy because it is relational rather than intrinsic. The
+existing downstream run still produces zero atomic claims for it, so it adds
+nothing to the corpus and does not contaminate. The other relational escape,
+`dev_ab9794e907ab6d420d4a9bea`, materializes as one verified canonical merge.
+
+The resolved-hold reading clears the disposition gates while the terminal-hold
+reading remains disclosed as the conservative control. Task 5 is now
+authorized, but was not started in this checkpoint.
+
+This policy is fitted to a development base rate of 17 gold-value holds out of
+18. That is a transfer risk, not a universal truth. If the sealed episodes
+later show a materially different hold composition, the policy must be
+revisited rather than defended. No further tuning was performed beyond this
+single rule.
+
+The current option-2 measurement contract is
+`pif_true_north_phase_c_option2_v4`:
+
+- Manifest SHA-256:
+  `1cf6083b5044a9517bb07a819a6509cc2c97a755c6ba36f74f98636ba2ed05ec`
+- Contract SHA-256:
+  `258bcb8d29cac32f1c24ef5e0bc17f5778dd14267fc0a54ebcac45d1bb7d298b`
+- Checkpoint SHA-256:
+  `33b0045ef3e152dcd8eccbf6bccd52f989aeb77188dd16fde464d4223e414c6f`
+
+No paid call was made, no sealed holdout was opened, and neither the production
+database nor production release state was mutated.

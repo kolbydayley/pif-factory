@@ -227,6 +227,20 @@ The loader now raises instead of manufacturing placeholder groups when
 different run ID, omits a referenced subject key, or disagrees with the
 database's subject ID.
 
+## Hold-resolution recheck
+
+Under `admit_hold_unless_intrinsic_v1`, the held relational candidate
+`dev_fcec890304c9c2b40332af53` is admitted at composition and sent through the
+same certification path. The stored downstream run still has zero atomic
+claims for it, so it cannot join a canonical group and adds no row to the claim
+corpus. It is therefore measured as zero contamination rather than assumed
+safe. The remaining relational escape resolves to one identifying canonical
+group with a corroborating peer and derives `merged_duplicate_retained`.
+
+Current result: two relational disposition escapes, one materialized canonical
+merge, one admitted zero-atomic relational item, zero unmerged corpus entries,
+and **zero contamination**.
+
 ## Verification
 
 ```bash

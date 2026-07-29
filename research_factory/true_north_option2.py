@@ -16,6 +16,8 @@ from .true_north import (
     DEFAULT_PRIVATE_ROOT,
     SUITE_ID,
     TrueNorthError,
+    _gold_value_state,
+    _phase_c_is_bracket_link_chrome_only,
     _read_json,
     _score_phase_c_dispositions,
     _source_unchanged,
@@ -28,10 +30,10 @@ from .true_north import (
 from .true_north_relational_merge import verify_run
 
 
-CONTRACT_VERSION = "pif_true_north_phase_c_option2_v2"
-SUPERSEDED_CONTRACT_VERSION = "pif_true_north_phase_c_option2_v1"
+CONTRACT_VERSION = "pif_true_north_phase_c_option2_v4"
+SUPERSEDED_CONTRACT_VERSION = "pif_true_north_phase_c_option2_v3"
 SUPERSEDED_CONTRACT_SHA256 = (
-    "dedab8c1cb837229da2d2b38730ee37e76e4eaa7e1b9bb6a4ba4681116ef754f"
+    "b13ea51370bc963ca83c07530f1207dc92b55d8e8f55a2b392c0a44082299783"
 )
 DEFAULT_PHASE_C_RUN_ID = "phase-c-junk-verify-20260728-v1"
 DEFAULT_CANONICAL_RUN_ID = "tnrun_62691fcee1b451600460cf53"
@@ -103,6 +105,13 @@ def measurement_contract() -> dict[str, Any]:
             "required_contamination_count": 0,
         },
         "held_item_accounting": {
+            "principle": (
+                "Both metrics measure what is actually present in the claim "
+                "corpus. A held gold-value candidate is a recall miss because "
+                "it did not reach the corpus; a held gold-junk candidate cannot "
+                "contaminate because it did not reach the corpus. Holds only "
+                "cost score and never earn it."
+            ),
             "rule": (
                 "A held_needs_review candidate with zero atomic claims "
                 "did not enter the claim corpus."
@@ -113,6 +122,36 @@ def measurement_contract() -> dict[str, Any]:
             "value_effect": (
                 "exclude from the retained-value recall numerator while "
                 "keeping the gold-value denominator unchanged"
+            ),
+        },
+        "deterministic_hold_resolution": {
+            "version": "admit_hold_unless_intrinsic_v1",
+            "when": "candidate is held_needs_review at composition",
+            "composition_disposition": (
+                "retain unless bracket_link_chrome_only_v1 fires"
+            ),
+            "downstream_path": (
+                "identical to any retained candidate, including relational "
+                "merge contamination certification"
+            ),
+            "model_calls": 0,
+            "development_evidence": {
+                "held_candidate_count": 18,
+                "frozen_retained_candidate_pool": 243,
+                "hold_rate": 18 / 243,
+                "held_gold_value_count": 17,
+                "held_gold_junk_count": 1,
+                "gold_value_rate": 17 / 18,
+                "conclusion": (
+                    "holding is measurably worse than retaining on the "
+                    "development fold"
+                ),
+            },
+            "transfer_risk": (
+                "Transfer risk: this single rule is fitted to the development "
+                "hold base rate of 17/18 gold-value. If sealed episodes show "
+                "a materially different hold composition, revisit the policy "
+                "rather than defending it."
             ),
         },
         "deterministic_intrinsic_rule": {
@@ -164,6 +203,61 @@ def measurement_contract() -> dict[str, Any]:
     }
     body["contract_sha256"] = sha256_text(dumps_json(body))
     return body
+
+
+def apply_phase_c_hold_resolution(
+    predictions: Mapping[str, Mapping[str, Any]],
+    candidate_by_id: Mapping[str, Mapping[str, Any]],
+    *,
+    held_candidate_ids: tuple[str, ...] | list[str],
+) -> dict[str, Any]:
+    """Admit held candidates unless the intrinsic chrome rule rejects them."""
+
+    held = set(held_candidate_ids)
+    missing_predictions = held - set(predictions)
+    if missing_predictions:
+        raise TrueNorthError(
+            "hold resolution lacks disposition predictions: "
+            + ", ".join(sorted(missing_predictions))
+        )
+    missing_candidates = held - set(candidate_by_id)
+    if missing_candidates:
+        raise TrueNorthError(
+            "hold resolution lacks candidate inputs: "
+            + ", ".join(sorted(missing_candidates))
+        )
+    resolved = {
+        candidate_id: dict(prediction)
+        for candidate_id, prediction in predictions.items()
+    }
+    admitted: list[str] = []
+    blocked_intrinsic: list[str] = []
+    changed: list[str] = []
+    for candidate_id in sorted(held):
+        if _phase_c_is_bracket_link_chrome_only(
+            candidate_by_id[candidate_id]
+        ):
+            blocked_intrinsic.append(candidate_id)
+            continue
+        admitted.append(candidate_id)
+        if _gold_value_state(
+            str(resolved[candidate_id]["disposition"])
+        ) != "value":
+            changed.append(candidate_id)
+        resolved[candidate_id] = {
+            **resolved[candidate_id],
+            "disposition": "retain",
+            "hold_resolution_rule": "admit_hold_unless_intrinsic_v1",
+        }
+    return {
+        "predictions": resolved,
+        "held_candidate_ids": sorted(held),
+        "admitted_candidate_ids": admitted,
+        "blocked_intrinsic_candidate_ids": blocked_intrinsic,
+        "changed_candidate_ids": changed,
+        "rule_version": "admit_hold_unless_intrinsic_v1",
+        "model_calls_made": 0,
+    }
 
 
 def apply_manifest_contract(
@@ -271,7 +365,7 @@ def evaluate_checkpoint(
     output_root: str | Path | None = None,
     suite: str = SUITE_ID,
 ) -> dict[str, Any]:
-    """Report the intrinsic gate and contamination number together."""
+    """Report resolved and terminal hold readings with contamination."""
 
     suite_root = _suite_root(output_root, suite)
     manifest = _read_json(suite_root / "manifest.json")
@@ -287,8 +381,7 @@ def evaluate_checkpoint(
         phase_root / "outputs" / "combined.private.json"
     )
     raw_predictions = {
-        str(row["candidate_id"]): row
-        for row in combined["items"]
+        str(row["candidate_id"]): row for row in combined["items"]
     }
     candidate_by_id: dict[str, dict[str, Any]] = {}
     for bundle_record in manifest["bundles"]:
@@ -302,15 +395,39 @@ def evaluate_checkpoint(
     )
     predictions = intrinsic_rules["predictions"]
     gold_root = suite_root / "gold" / "development" / "final"
+    consensus = _read_json(gold_root / "consensus.private.json")
+    gold = _read_json(gold_root / "gold.private.json")
     baseline_disposition = _score_phase_c_dispositions(
-        _read_json(gold_root / "consensus.private.json"),
-        raw_predictions,
-        _read_json(gold_root / "gold.private.json"),
+        consensus, raw_predictions, gold
     )
-    initial_disposition = _score_phase_c_dispositions(
-        _read_json(gold_root / "consensus.private.json"),
+    pre_hold_disposition = _score_phase_c_dispositions(
+        consensus, predictions, gold
+    )
+    _, initial_merge_inputs = verify_run(
+        run_id=canonical_run_id,
+        output_root=output_root,
+        suite=suite,
+        partition="development",
+        escape_candidate_ids=(
+            pre_hold_disposition["all_junk_escape_candidate_ids"]
+        ),
+    )
+    held_candidate_ids = tuple(
+        initial_merge_inputs.diagnostics["held_candidate_ids"]
+    )
+    terminal_hold_disposition = _score_phase_c_dispositions(
+        consensus,
         predictions,
-        _read_json(gold_root / "gold.private.json"),
+        gold,
+        held_candidate_ids=held_candidate_ids,
+    )
+    hold_resolution = apply_phase_c_hold_resolution(
+        predictions,
+        candidate_by_id,
+        held_candidate_ids=list(held_candidate_ids),
+    )
+    resolved_hold_disposition = _score_phase_c_dispositions(
+        consensus, hold_resolution["predictions"], gold
     )
     merge_report, merge_inputs = verify_run(
         run_id=canonical_run_id,
@@ -318,16 +435,10 @@ def evaluate_checkpoint(
         suite=suite,
         partition="development",
         escape_candidate_ids=(
-            initial_disposition["all_junk_escape_candidate_ids"]
+            resolved_hold_disposition[
+                "all_junk_escape_candidate_ids"
+            ]
         ),
-    )
-    disposition = _score_phase_c_dispositions(
-        _read_json(gold_root / "consensus.private.json"),
-        predictions,
-        _read_json(gold_root / "gold.private.json"),
-        held_candidate_ids=merge_inputs.diagnostics[
-            "held_candidate_ids"
-        ],
     )
     derived_ledger_assignments = {
         entry.candidate_id: "merged_duplicate_retained"
@@ -336,6 +447,21 @@ def evaluate_checkpoint(
     }
     contamination_ids = sorted(merge_report.unmerged)
     contamination_count = len(contamination_ids)
+    held_candidate_count = len(held_candidate_ids)
+    hold_rate_denominator = int(
+        contract["deterministic_hold_resolution"][
+            "development_evidence"
+        ]["frozen_retained_candidate_pool"]
+    )
+    if hold_rate_denominator < held_candidate_count:
+        raise TrueNorthError(
+            "hold-rate denominator is smaller than the held population"
+        )
+    hold_rate = held_candidate_count / hold_rate_denominator
+    admitted_zero_atomic_ids = sorted(
+        set(hold_resolution["admitted_candidate_ids"])
+        & set(merge_inputs.diagnostics["held_candidate_ids"])
+    )
     checkpoint = {
         "schema_version": CONTRACT_VERSION,
         "suite_id": suite,
@@ -346,31 +472,74 @@ def evaluate_checkpoint(
         "phase_c_run_id": phase_c_run_id,
         "canonical_run_id": canonical_run_id,
         "disposition_gate": {
-            "passed": disposition["passed"],
-            "intrinsic_junk_escape_count": disposition[
+            "passed": resolved_hold_disposition["passed"],
+            "intrinsic_junk_escape_count": resolved_hold_disposition[
                 "intrinsic_junk_escape_count"
             ],
-            "intrinsic_junk_escape_candidate_ids": disposition[
-                "intrinsic_junk_escape_candidate_ids"
-            ],
-            "relational_junk_escape_count": disposition[
-                "relational_junk_escape_count"
-            ],
-            "false_reject_count": disposition[
+            "intrinsic_junk_escape_candidate_ids": (
+                resolved_hold_disposition[
+                    "intrinsic_junk_escape_candidate_ids"
+                ]
+            ),
+            "relational_junk_escape_count": (
+                resolved_hold_disposition[
+                    "relational_junk_escape_count"
+                ]
+            ),
+            "false_reject_count": resolved_hold_disposition[
                 "false_reject_count"
             ],
-            "retained_value_recall": disposition[
+            "retained_value_recall": resolved_hold_disposition[
                 "retained_value_recall"
             ],
-            "held_candidate_count": disposition[
-                "held_candidate_count"
-            ],
-            "held_gold_value_count": disposition[
+            "held_candidate_count": held_candidate_count,
+            "hold_rate": hold_rate,
+            "hold_rate_denominator": hold_rate_denominator,
+            "hold_rate_denominator_source": (
+                "frozen_phase_c_retained_candidate_pool"
+            ),
+            "held_gold_value_count": terminal_hold_disposition[
                 "held_gold_value_count"
             ],
-            "held_gold_junk_count": disposition[
+            "held_gold_junk_count": terminal_hold_disposition[
                 "held_gold_junk_count"
             ],
+            "terminal_hold_reading": {
+                "false_reject_count": terminal_hold_disposition[
+                    "false_reject_count"
+                ],
+                "retained_value_recall": terminal_hold_disposition[
+                    "retained_value_recall"
+                ],
+                "passed": terminal_hold_disposition["passed"],
+            },
+            "resolved_hold_reading": {
+                "false_reject_count": resolved_hold_disposition[
+                    "false_reject_count"
+                ],
+                "retained_value_recall": resolved_hold_disposition[
+                    "retained_value_recall"
+                ],
+                "passed": resolved_hold_disposition["passed"],
+            },
+            "hold_resolution_rule_version": hold_resolution[
+                "rule_version"
+            ],
+            "hold_resolution_admitted_candidate_ids": (
+                hold_resolution["admitted_candidate_ids"]
+            ),
+            "hold_resolution_blocked_intrinsic_candidate_ids": (
+                hold_resolution["blocked_intrinsic_candidate_ids"]
+            ),
+            "hold_resolution_changed_candidate_ids": (
+                hold_resolution["changed_candidate_ids"]
+            ),
+            "hold_resolution_model_calls": hold_resolution[
+                "model_calls_made"
+            ],
+            "admitted_holds_with_zero_atomic_claims": (
+                admitted_zero_atomic_ids
+            ),
             "deterministic_rule_version": intrinsic_rules[
                 "rule_version"
             ],
@@ -381,22 +550,8 @@ def evaluate_checkpoint(
                 "model_calls_made"
             ],
             "deterministic_rule_false_reject_delta": (
-                initial_disposition["false_reject_count"]
+                pre_hold_disposition["false_reject_count"]
                 - baseline_disposition["false_reject_count"]
-            ),
-            "pre_held_false_reject_count": (
-                initial_disposition["false_reject_count"]
-            ),
-            "pre_held_retained_value_recall": (
-                initial_disposition["retained_value_recall"]
-            ),
-            "held_false_reject_delta": (
-                disposition["false_reject_count"]
-                - initial_disposition["false_reject_count"]
-            ),
-            "held_retained_value_recall_delta": (
-                disposition["retained_value_recall"]
-                - initial_disposition["retained_value_recall"]
             ),
         },
         "relational_merge_certification": {
@@ -413,12 +568,8 @@ def evaluate_checkpoint(
                     "merged_duplicate_retained_ledger_rows"
                 ]
             ),
-            "derived_ledger_assignments": (
-                derived_ledger_assignments
-            ),
-            "unmerged_candidate_ids": list(
-                merge_report.unmerged
-            ),
+            "derived_ledger_assignments": derived_ledger_assignments,
+            "unmerged_candidate_ids": list(merge_report.unmerged),
             "contamination_candidate_ids": contamination_ids,
             "contamination_count": contamination_count,
             "contamination_zero": contamination_count == 0,
@@ -430,10 +581,12 @@ def evaluate_checkpoint(
             "merge_report": merge_report.to_dict(),
         },
         "passed": (
-            disposition["passed"] and contamination_count == 0
+            resolved_hold_disposition["passed"]
+            and contamination_count == 0
         ),
         "task_5_authorized": (
-            disposition["passed"] and contamination_count == 0
+            resolved_hold_disposition["passed"]
+            and contamination_count == 0
         ),
         "holdout_opened": False,
         "production_mutation": False,
@@ -444,7 +597,7 @@ def evaluate_checkpoint(
     output_path = (
         suite_root
         / "certification"
-        / "phase-c-option2-development-v2-accounting.json"
+        / "phase-c-option2-development-v4-hold-resolution.json"
     )
     _write_json(output_path, checkpoint, immutable=True)
     return {**checkpoint, "output_path": str(output_path)}

@@ -138,6 +138,62 @@ def test_bracket_link_chrome_rule_is_narrow_and_model_free():
     assert result["predictions"]["assertion"]["disposition"] == "retain"
 
 
+def test_hold_resolution_admits_holds_except_intrinsic_chrome():
+    predictions = {
+        "value": {"candidate_id": "value", "disposition": "hold"},
+        "junk": {"candidate_id": "junk", "disposition": "reject"},
+        "chrome": {"candidate_id": "chrome", "disposition": "hold"},
+    }
+    candidates = {
+        "value": {
+            "candidate_id": "value",
+            "claim_text": "The speaker says deployment needs safeguards.",
+            "evidence_text": "Deployment needs stronger safeguards.",
+        },
+        "junk": {
+            "candidate_id": "junk",
+            "claim_text": "The speaker repeats the earlier definition.",
+            "evidence_text": "This repeats the earlier definition.",
+        },
+        "chrome": {
+            "candidate_id": "chrome",
+            "claim_text": "The speaker references a current request.",
+            "evidence_text": "The agency has a [request] out right now",
+        },
+    }
+
+    result = option2.apply_phase_c_hold_resolution(
+        predictions,
+        candidates,
+        held_candidate_ids=["value", "junk", "chrome"],
+    )
+
+    assert result["admitted_candidate_ids"] == ["junk", "value"]
+    assert result["blocked_intrinsic_candidate_ids"] == ["chrome"]
+    assert result["changed_candidate_ids"] == ["junk", "value"]
+    assert result["model_calls_made"] == 0
+    assert result["predictions"]["value"]["disposition"] == "retain"
+    assert result["predictions"]["junk"]["disposition"] == "retain"
+    assert result["predictions"]["chrome"]["disposition"] == "hold"
+
+
+def test_hold_resolution_requires_complete_inputs():
+    predictions = {
+        "value": {"candidate_id": "value", "disposition": "hold"},
+    }
+
+    try:
+        option2.apply_phase_c_hold_resolution(
+            predictions,
+            {},
+            held_candidate_ids=["value"],
+        )
+    except true_north.TrueNorthError as error:
+        assert "candidate inputs" in str(error)
+    else:
+        raise AssertionError("missing candidate input must fail closed")
+
+
 def test_measurement_contract_hash_is_stable_and_auditable():
     first = option2.measurement_contract()
     second = option2.measurement_contract()
@@ -160,6 +216,16 @@ def test_measurement_contract_hash_is_stable_and_auditable():
     assert first["held_item_accounting"]["value_effect"].startswith(
         "exclude from the retained-value recall numerator"
     )
+    assert "Holds only cost score and never earn it" in first[
+        "held_item_accounting"
+    ]["principle"]
+    resolution = first["deterministic_hold_resolution"]
+    assert resolution["development_evidence"][
+        "held_gold_value_count"
+    ] == 17
+    assert resolution["development_evidence"]["hold_rate"] == 18 / 243
+    assert resolution["development_evidence"]["gold_value_rate"] == 17 / 18
+    assert "transfer" in resolution["transfer_risk"].casefold()
 
 
 def test_manifest_contract_is_versioned_and_idempotent(

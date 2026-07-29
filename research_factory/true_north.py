@@ -9123,7 +9123,7 @@ def _score_phase_c_dispositions(
         ),
         "all_junk_escape_candidate_ids": all_junk_escapes,
         "measurement_contract": {
-            "version": "pif_true_north_phase_c_option2_v2",
+            "version": "pif_true_north_phase_c_option2_v4",
             "old_gate": {
                 "scope": "all_gold_junk",
                 "acceptance": old_acceptance,
@@ -12113,7 +12113,7 @@ def score_run(
         partition == "development"
         and isinstance(measurement_contract, Mapping)
         and measurement_contract.get("version")
-        == "pif_true_north_phase_c_option2_v2"
+        == "pif_true_north_phase_c_option2_v4"
     ):
         try:
             relational_certification = (
