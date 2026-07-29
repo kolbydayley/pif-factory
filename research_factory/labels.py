@@ -126,6 +126,59 @@ def repair_label_output_for_submission(label_pack: str, value: dict[str, Any], *
         repairs += 1
     if label_pack == "ai_discourse_v3_1":
         repairs += _drop_v31_items_with_unresolved_evidence(value, segment_text=segment_text)
+        repairs += _clear_v31_ungrounded_metrics(value)
+    return repairs
+
+
+def _clear_v31_ungrounded_metrics(value: dict[str, Any]) -> int:
+    """Suppress metric fields that cannot be proved by the event evidence."""
+
+    repairs = 0
+    for event in value.get("discourse_events") or []:
+        if not isinstance(event, dict):
+            continue
+        metric = event.get("metric")
+        if not isinstance(metric, dict):
+            continue
+        evidence = str(event.get("evidence") or "")
+        raw_text = str(metric.get("raw_text") or "")
+        parts = [
+            str(metric.get(field) or "")
+            for field in ("value", "unit", "comparator")
+            if metric.get(field) not in (None, "")
+        ]
+        direction = str(metric.get("direction") or "not_applicable")
+        has_metric = bool(raw_text or parts or direction != "not_applicable")
+        if not has_metric:
+            continue
+        grounded = bool(raw_text and raw_text in evidence) and all(
+            part in raw_text or part in evidence for part in parts
+        )
+        if grounded:
+            continue
+        event["metric"] = {
+            "value": None,
+            "unit": None,
+            "comparator": None,
+            "direction": "not_applicable",
+            "raw_text": None,
+        }
+        flags = list(event.get("quality_flags") or [])
+        if "validator_rejected_metric" not in flags:
+            flags.append("validator_rejected_metric")
+        event["quality_flags"] = flags
+        repairs += 1
+    if repairs:
+        value["needs_review"] = True
+        reason = (
+            f"Deterministic exact-evidence repair suppressed {repairs} "
+            "ungrounded metric object(s)."
+        )
+        current = str(value.get("review_reason") or "").strip()
+        if reason not in current:
+            value["review_reason"] = (
+                f"{current} {reason}".strip()[:240] if current else reason
+            )
     return repairs
 
 

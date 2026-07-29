@@ -183,6 +183,13 @@ def execute_claimed_label_runs(
         except Exception as exc:
             item["status"] = "submission_failed"
             item["error"] = str(exc)
+            item["failure_finalization"] = _finalize_submission_failure(
+                conn,
+                job_id=job_id,
+                label_run_id=row["label_run_id"],
+                lease_owner=lease_owner,
+                error=str(exc),
+            )
         results.append(item)
     return {
         "ok": all(item.get("status") in {"submitted", "stale_handoff_skipped"} for item in results),
@@ -195,6 +202,78 @@ def execute_claimed_label_runs(
         "skipped": sum(1 for item in results if item.get("status") == "stale_handoff_skipped"),
         "failed": sum(1 for item in results if item.get("status") not in {"submitted", "stale_handoff_skipped"}),
         "results": results,
+    }
+
+
+def _finalize_submission_failure(
+    conn,
+    *,
+    job_id: int,
+    label_run_id: str,
+    lease_owner: str,
+    error: str,
+) -> dict[str, Any]:
+    """Rollback partial submission state and release or fail the exact handoff."""
+
+    conn.rollback()
+    current = conn.execute(
+        """
+        SELECT jobs.status AS job_status,
+               jobs.attempts,
+               jobs.max_attempts,
+               jobs.lease_owner,
+               label_runs.status AS run_status
+        FROM jobs
+        JOIN label_runs ON label_runs.job_id = jobs.id
+        WHERE jobs.id = ?
+          AND label_runs.id = ?
+        """,
+        (job_id, label_run_id),
+    ).fetchone()
+    if (
+        current is None
+        or current["job_status"] != "claimed"
+        or current["run_status"] != "claimed"
+        or current["lease_owner"] != lease_owner
+    ):
+        return {
+            "finalized": False,
+            "reason": "handoff_state_changed",
+        }
+    ts = now_iso()
+    conn.execute(
+        """
+        UPDATE label_runs
+        SET status = 'failed',
+            error = ?,
+            completed_at = ?,
+            updated_at = ?
+        WHERE id = ?
+          AND job_id = ?
+          AND status = 'claimed'
+        """,
+        (error, ts, ts, label_run_id, job_id),
+    )
+    terminal = int(current["attempts"]) >= int(current["max_attempts"])
+    conn.execute(
+        """
+        UPDATE jobs
+        SET status = ?,
+            error = ?,
+            lease_owner = NULL,
+            leased_until = NULL,
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'claimed'
+          AND lease_owner = ?
+        """,
+        ("failed" if terminal else "pending", error, ts, job_id, lease_owner),
+    )
+    conn.commit()
+    return {
+        "finalized": True,
+        "job_status": "failed" if terminal else "pending",
+        "label_run_status": "failed",
     }
 
 

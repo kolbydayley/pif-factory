@@ -245,6 +245,49 @@ def test_concurrent_claimed_execution_matches_serial_with_fake_codex(tmp_path: P
     assert all(set(connection.execute_thread_ids) == {main_thread} for connection in connections)
 
 
+def test_claimed_execution_finalizes_submission_failure(tmp_path: Path) -> None:
+    rows = _fake_claimed_rows(tmp_path)[:1]
+    connection = _FakeClaimedConnection(rows)
+    with patch(
+        "research_factory.headless_codex.runs_dir", return_value=tmp_path
+    ), patch(
+        "research_factory.headless_codex.root", return_value=tmp_path
+    ), patch(
+        "research_factory.headless_codex.subprocess.run",
+        return_value=SimpleNamespace(returncode=0),
+    ), patch(
+        "research_factory.headless_codex.submit_label_output",
+        side_effect=ValueError("invalid exact-evidence metric"),
+    ), patch(
+        "research_factory.headless_codex._finalize_submission_failure",
+        return_value={
+            "finalized": True,
+            "job_status": "pending",
+            "label_run_status": "failed",
+        },
+    ) as finalize:
+        result = execute_claimed_label_runs(
+            connection,
+            lease_owner="daily-owner",
+            limit=1,
+            model="gpt-5.5",
+            timeout_seconds=30,
+            audit=False,
+            concurrency=1,
+        )
+
+    assert result["failed"] == 1
+    assert result["results"][0]["status"] == "submission_failed"
+    assert result["results"][0]["failure_finalization"]["finalized"] is True
+    finalize.assert_called_once_with(
+        connection,
+        job_id=1,
+        label_run_id="run-1",
+        lease_owner="daily-owner",
+        error="invalid exact-evidence metric",
+    )
+
+
 def test_daily_cli_requires_explicit_extraction_flag() -> None:
     parser = build_parser()
     default = parser.parse_args(["run", "daily"])
