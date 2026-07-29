@@ -816,6 +816,7 @@ def score_cheap_consensus(
     *,
     suite_root: str | Path,
     run_id: str = RUN_ID,
+    experiment_id: str = EXPERIMENT_ID,
 ) -> dict[str, Any]:
     root = Path(suite_root).expanduser().resolve()
     run_root = root / "multipass" / "runs" / run_id
@@ -960,7 +961,7 @@ def score_cheap_consensus(
     }
     document = {
         "schema_version": SCHEMA_VERSION,
-        "experiment_id": EXPERIMENT_ID,
+        "experiment_id": experiment_id,
         "run_id": run_id,
         "complete": True,
         "acceptance_eligible": True,

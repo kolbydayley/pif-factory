@@ -36,6 +36,15 @@ The subsequent Phase C A/B/C cheap-consensus run is reported separately in
 6/9 gates but failed its atomicity, faithfulness, and hallucination acceptance
 criteria, so it does not clear benchmark progression.
 
+The single authorized C2 revision attempted to put `gpt-5.6-sol` in the
+adjudicator seat using the exact Phase C packets. Codex's response-format API
+rejected the frozen schema and one bounded compatibility adapter before model
+execution. C2 therefore has no semantic metrics. The full gold-class recipe
+did not transfer operationally through the current structured-output harness;
+this is not represented as a Sol quality result. Per the terminal ruling, the
+decomposition experiment lane is permanently closed. See
+`docs/TRUE_NORTH_C2_SOL_ADJUDICATOR_RESULTS_20260729.md`.
+
 ## Final nine-gate table
 
 The table is component-based because Ruling 3 certifies a hybrid architecture.
@@ -92,6 +101,14 @@ The measured finding is that gold-level decomposition belongs to the
 independent A/B plus adjudication process. No available measured single-pass
 model reproduces it. The gate remains honest for that process and is not
 recalibrated around extractor weakness.
+
+Phase C's GLM adjudicator produced 0.801724 full-fold atomicity and failed.
+C2 then attempted the gold-author-class adjudicator, but the Codex
+structured-output API rejected `oneOf` and the single bounded flattened-schema
+adapter rejected `uniqueItems`, both before model execution. Consequently the
+gold-class adjudicator's semantic quality remains unmeasured. The recipe failed
+to transfer operationally under the authorized frozen harness, and the
+decomposition lane is permanently closed rather than adapted again.
 
 ### Faithfulness
 
@@ -178,7 +195,7 @@ the Codex-class compound recipe remains untested.
 
 Authoritative cumulative campaign spend:
 
-- **287 calls**
+- **289 calls**
 - **3,029,113 known tokens**
 - token total excludes the 45-call actor-gold-repair stage because its
   historical ledger did not capture tokens
@@ -212,7 +229,8 @@ option-2 hold/merge correction. Their receipt reports overlap the grouped
 | Spark split-default | 14 | 309,122 | Partial; budget breach; no measured advantage |
 | Sol split-default | 14 | 455,902 | Partial; below GLM control; decomposition lane stopped |
 | A/B/C cheap consensus | 23 | 246,443 | Complete; 0.801724 atomicity; failed acceptance |
-| **Post-160 total** | **127** | **1,851,299** | All negative or ineligible |
+| C2 Sol adjudicator | 2 | 0 | Structured-output schema rejected before inference; lane closed |
+| **Post-160 total** | **129** | **1,851,299** | All negative, ineligible, or operationally blocked |
 
 ### Ruling provenance chain
 
@@ -239,7 +257,10 @@ option-2 hold/merge correction. Their receipt reports overlap the grouped
 The bounded compound-only design was executed once under Ruling 4. It reached
 0.801724 full-fold atomicity and 0.657143 on the flagged subset, with
 faithfulness and hallucination also below gate. The design is frozen as a
-terminal quality failure; no self-iteration occurred.
+terminal quality failure; no self-iteration occurred. The one authorized C2
+revision could not invoke the Sol adjudicator because the frozen structured
+output schema and one bounded compatibility form were rejected before
+inference. The lane is permanently closed.
 
 ### Actor value residual
 

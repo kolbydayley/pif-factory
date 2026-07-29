@@ -189,6 +189,40 @@
         "per_experiment_ceiling_required_before_first_call": true,
         "no_self_iteration_on_failure": true
       }
+    },
+    {
+      "decision_id": "review-loop-authorized-revision-c2-20260729-v1",
+      "owner": "true_north_review_loop",
+      "recorded_at": "2026-07-29",
+      "source_kind": "review_thread_directive_in_active_codex_thread",
+      "delegation": {
+        "delegated_by": "Kolby Dayley",
+        "delegated_to": "true_north_review_loop",
+        "explicit": true
+      },
+      "provenance": {
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "The review loop accepted Phase C's stop and authorized exactly one bounded C2 revision replacing only the GLM adjudicator with gpt-5.6-sol."
+      },
+      "authorizes": {
+        "revision": "C2",
+        "one_run_only": true,
+        "pass_a": "reuse_frozen_glm_task5",
+        "pass_b": "reuse_completed_phase_c_sol",
+        "pass_c2": "gpt-5.6-sol_ephemeral",
+        "max_calls": 24,
+        "max_tokens": 700000
+      },
+      "terminal_rule": {
+        "decomposition_lane_closes_after_c2": true,
+        "outcome_independent": true,
+        "no_further_revision": true
+      },
+      "unchanged_controls": {
+        "measurement_contract_version": "pif_true_north_measurement_contract_v8",
+        "sealed_holdouts_forbidden": true,
+        "production_mutation_forbidden": true
+      }
     }
   ],
   "post_certification_phase_results": [
@@ -240,6 +274,23 @@
       "sealed_holdout_opened": false,
       "production_mutated": false,
       "stop_condition": "one_run_failed_acceptance_no_self_iteration"
+    },
+    {
+      "phase": "C2",
+      "name": "sol_adjudicator_single_revision",
+      "status": "terminal_operational_failure_lane_closed",
+      "provider_calls": 2,
+      "known_tokens": 0,
+      "run_id": "task5-c2-sol-adjudicator-20260729-v1",
+      "flagged_candidate_count": 106,
+      "validated_provider_envelopes": 0,
+      "expected_provider_envelopes": 19,
+      "semantic_metrics_available": false,
+      "terminal_reason": "codex_response_schema_incompatibility_before_model_execution_after_one_bounded_adapter_retry",
+      "result_sha256": "86f991d45b12919d286f03e9897fab46534a0fa8338020b84ff16fccceee440c",
+      "sealed_holdout_opened": false,
+      "production_mutated": false,
+      "decomposition_lane_closed_permanently": true
     }
   ],
   "cumulative_before_new_authorization": {
@@ -469,6 +520,66 @@
         "within_token_ceiling": true,
         "acceptance_passed": false,
         "self_iteration_permitted": false
+      }
+    },
+    {
+      "experiment_id": "phase-c2-sol-adjudicator-20260729-v1",
+      "sequence": 7,
+      "models": {
+        "pass_a": "zai-coding-plan/glm-5.2_frozen_task5",
+        "pass_b": "gpt-5.6-sol_completed_phase_c",
+        "pass_c2": "gpt-5.6-sol"
+      },
+      "provider_lane": "codex_subscription_ephemeral",
+      "max_calls": 24,
+      "max_tokens": 700000,
+      "max_wall_seconds": 14400,
+      "reserved_tokens_per_envelope": 35000,
+      "status": "terminal_operational_failure_lane_closed",
+      "one_run_only": true,
+      "source_adjudication_packets": "task5-ab-c-cheap-consensus-20260729-v1",
+      "adjudication_contract": "exact_phase_c_union_selection_contract_no_third_structures",
+      "unflagged_control": "reuse_frozen_task5_outputs",
+      "cumulative_before": {
+        "calls": 287,
+        "known_tokens": 3029113
+      },
+      "provenance": {
+        "source_kind": "review_thread_directive_in_active_codex_thread",
+        "directive_received_at": "2026-07-29",
+        "directive_summary": "Run the single authorized C2 revision with gpt-5.6-sol in the adjudicator seat; close decomposition permanently afterward regardless of outcome."
+      },
+      "acceptance": {
+        "acceptable_atomic_count_rate": ">=0.90",
+        "matched_faithfulness": ">=0.744435",
+        "matched_hallucination_rate": "<=0.093684",
+        "candidate_state_macro_f1": ">=0.790664",
+        "intrinsic_junk_escapes": 0,
+        "relational_contamination": 0
+      },
+      "actual": {
+        "run_id": "task5-c2-sol-adjudicator-20260729-v1",
+        "complete": false,
+        "acceptance_eligible": false,
+        "calls": 2,
+        "tokens": 0,
+        "validated_provider_envelopes": 0,
+        "expected_provider_envelopes": 19,
+        "flagged_candidate_count": 106,
+        "flagged_subset_accuracy": null,
+        "adjudicator_statistics": null,
+        "semantic_metrics": null,
+        "terminal_reason": "provider_response_schema_incompatibility_before_model_execution_after_one_bounded_adapter_retry",
+        "schema_rejections": [
+          "oneOf_not_permitted",
+          "uniqueItems_not_permitted"
+        ],
+        "cumulative_calls_after": 289,
+        "known_cumulative_tokens_after": 3029113,
+        "within_call_ceiling": true,
+        "within_token_ceiling": true,
+        "result_sha256": "86f991d45b12919d286f03e9897fab46534a0fa8338020b84ff16fccceee440c",
+        "decomposition_lane_closed_permanently": true
       }
     }
   ]
