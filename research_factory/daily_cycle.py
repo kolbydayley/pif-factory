@@ -651,6 +651,15 @@ def run_daily_cycle(
             created_at=_now(),
         )
         _write_immutable_json(artifact_dir / "scale-gate.json", scale_gate)
+        # Daily subscription-budget receipt (durability plan Phase 1). Best
+        # effort: the ledger rows are the durable record; a receipt-write
+        # failure must not fail the cycle.
+        try:
+            from .subscription_budget import write_daily_budget_receipt
+
+            write_daily_budget_receipt(conn, day=effective_date)
+        except Exception:
+            pass
     except Exception as exc:
         conn.rollback()
         final_status = "failed"

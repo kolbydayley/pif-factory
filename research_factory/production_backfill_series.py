@@ -401,6 +401,22 @@ def retry_recoverable_contexts(
                     item["retry_action"] = "resolved_from_existing_completed_context"
                     already_completed_ids.append(int(row["id"]))
                 else:
+                    # Bounded recovery credit (durability plan Phase 1): a
+                    # failed job may be granted at most ONE attempts reset in
+                    # its lifetime. The unbounded `attempts = 0` reset let the
+                    # August wave re-dispatch the same failures indefinitely.
+                    already_reset = conn.execute(
+                        """
+                        SELECT 1 FROM jobs
+                        WHERE id = ?
+                          AND json_extract(payload, '$.recovery_credit_spent') = 1
+                        """,
+                        (row["id"],),
+                    ).fetchone()
+                    if already_reset:
+                        item["retry_action"] = "recovery_credit_exhausted"
+                        selected.append(item)
+                        continue
                     conn.execute(
                         """
                         UPDATE jobs
@@ -409,7 +425,11 @@ def retry_recoverable_contexts(
                             completed_at = NULL,
                             updated_at = ?,
                             lease_owner = NULL,
-                            leased_until = NULL
+                            leased_until = NULL,
+                            payload = json_set(
+                                COALESCE(payload, '{}'),
+                                '$.recovery_credit_spent', 1
+                            )
                         WHERE id = ? AND status = 'failed'
                         """,
                         (ts, row["id"]),

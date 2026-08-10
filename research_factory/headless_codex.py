@@ -208,7 +208,11 @@ def _attempt_consumed(
     terminalize a queue.
     """
 
-    if status in {"codex_usage_limit", "provider_quota_exhausted"}:
+    if status in {
+        "codex_usage_limit",
+        "provider_quota_exhausted",
+        "budget_cap_hit",
+    }:
         return False
     return bool(provider_call_started) and not bool(timed_out)
 
@@ -224,11 +228,22 @@ def execute_claimed_label_runs(
     concurrency: int = 1,
     capture_usage: bool = False,
     capture_validation: bool = False,
+    budget_lane: str = "labels",
 ) -> dict[str, Any]:
     concurrency = max(1, int(concurrency or 1))
     bounded_limit = max(0, int(limit))
     log_dir = runs_dir() / "headless_logs"
     log_dir.mkdir(parents=True, exist_ok=True)
+    # Daily subscription-token budget: checked before any dispatch (Kolby
+    # ruling 2026-08-10 — hard 5M/day, KILL at 120%). Fail closed.
+    from .subscription_budget import (
+        budget_gate,
+        record_usage,
+        usage_tokens_from_item,
+    )
+
+    budget_day = now_iso()[:10]
+    budget = budget_gate(conn, day=budget_day)
     rows = conn.execute(
         """
         SELECT jobs.id AS job_id, jobs.lease_owner, jobs.attempts,
@@ -277,6 +292,23 @@ def execute_claimed_label_runs(
 
     def _execute_one(row: dict[str, Any]) -> dict[str, Any]:
         job_id = int(row["job_id"])
+        if not budget["allowed"]:
+            # Over the daily subscription cap (or KILL engaged): no call
+            # starts, no attempt is spent, the job returns to pending.
+            return {
+                "job_id": str(job_id),
+                "label_run_id": row["label_run_id"],
+                "prompt_artifact": "local_prompt_file",
+                "output_artifact": "local_output_file",
+                "status": "budget_cap_hit",
+                "provider_call_started": False,
+                "timed_out": False,
+                "returncode": None,
+                "budget_refusal_reason": budget["reason"],
+                "_provider_completed_monotonic": time.monotonic(),
+                "completed_at": now_iso(),
+                "provider_pressure_signals": [],
+            }
         if quota_exhausted.is_set():
             # Another worker just proved the subscription is exhausted; do not
             # burn the rest of the wave against it. No call starts, no durable
@@ -327,9 +359,11 @@ def execute_claimed_label_runs(
                     "danger-full-access",
                     "--output-last-message",
                     str(last_message_path),
+                    # Always JSON: the subscription budget ledger meters from
+                    # the stream's usage events, so a text-mode call would be
+                    # invisible to the daily cap.
+                    "--json",
                 ]
-            if capture_usage:
-                command.append("--json")
             command.append("-")
             try:
                 completed = subprocess.run(
@@ -375,10 +409,11 @@ def execute_claimed_label_runs(
             item["usage_limit_retry_at"] = retry_at
             quota_retry_at[0] = quota_retry_at[0] or retry_at
             quota_exhausted.set()
-        if capture_usage:
-            from .efficient_backtest import _codex_usage_from_jsonl
+        # Usage is always captured — the budget ledger meters every call.
+        from .efficient_backtest import _codex_usage_from_jsonl
 
-            item["usage"] = _codex_usage_from_jsonl(log_path)
+        item["usage"] = _codex_usage_from_jsonl(log_path)
+        if capture_usage:
             item["usage_profile"] = _usage_profile_from_jsonl(log_path)
         return item
 
@@ -580,6 +615,23 @@ def execute_claimed_label_runs(
             for future in concurrent.futures.as_completed(futures):
                 results.append(_postprocess_one(futures[future], future.result()))
     results.sort(key=lambda item: int(item["job_id"]))
+    # Record actuals in the daily subscription ledger: every started call is
+    # metered, whether it succeeded, failed, or hit the provider's limit.
+    metered_tokens = sum(usage_tokens_from_item(item) for item in results)
+    metered_calls = sum(
+        1 for item in results if item.get("provider_call_started")
+    )
+    if metered_calls or metered_tokens:
+        record_usage(
+            conn,
+            day=budget_day,
+            provider_lane="codex_subscription",
+            lane=budget_lane,
+            run_id=lease_owner,
+            tokens=metered_tokens,
+            provider_calls=metered_calls,
+        )
+        conn.commit()
     timing_fields = (
         "serial_queue_wait_seconds",
         "validation_seconds",
@@ -605,6 +657,15 @@ def execute_claimed_label_runs(
             1
             for item in results
             if item.get("status") == "provider_quota_exhausted"
+        ),
+        "budget": {
+            **budget,
+            "lane": budget_lane,
+            "metered_tokens": metered_tokens,
+            "metered_calls": metered_calls,
+        },
+        "budget_cap_hit": sum(
+            1 for item in results if item.get("status") == "budget_cap_hit"
         ),
         "timing_profile": {
             "serial_section_wall_seconds": sum(
@@ -787,6 +848,9 @@ def execute_pending_reviewer_audits(
                     "danger-full-access",
                     "--output-last-message",
                     str(last_message_path),
+                    # Always JSON so the subscription budget ledger can meter
+                    # reviewer audits like every other lane.
+                    "--json",
                     "-",
                 ],
                 input=prompt,
@@ -836,6 +900,32 @@ def execute_pending_reviewer_audits(
         for future in concurrent.futures.as_completed(futures):
             results.append(future.result())
     results.sort(key=lambda item: item.get("started_at", ""))
+    # Meter reviewer audits into the daily subscription ledger like every
+    # other lane (Kolby ruling 2026-08-10).
+    from .efficient_backtest import _codex_usage_from_jsonl
+    from .subscription_budget import record_usage
+
+    audit_tokens = 0
+    audit_calls = 0
+    for row in claimed_rows:
+        audit_log = log_dir / f"{row['id']}.reviewer.log"
+        if not audit_log.exists():
+            continue
+        audit_calls += 1
+        usage = _codex_usage_from_jsonl(audit_log)
+        if usage:
+            audit_tokens += int(usage.get("total_tokens") or 0)
+    if audit_calls or audit_tokens:
+        record_usage(
+            conn,
+            day=now_iso()[:10],
+            provider_lane="codex_subscription",
+            lane="reviewer_audits",
+            run_id=patch_tag or "reviewer_audits",
+            tokens=audit_tokens,
+            provider_calls=audit_calls,
+        )
+        conn.commit()
     return {
         "ok": all(item.get("status") in {"submitted", "stale_audit_skipped"} for item in results),
         "model": model,

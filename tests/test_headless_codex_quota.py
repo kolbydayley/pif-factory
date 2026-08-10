@@ -68,6 +68,39 @@ def test_attempt_consumption_rule() -> None:
     )
 
 
+def test_budget_cap_hit_never_consumes_attempts() -> None:
+    assert not hc._attempt_consumed(
+        provider_call_started=False,
+        timed_out=False,
+        status="budget_cap_hit",
+    )
+
+
+def test_every_codex_exec_command_carries_json_for_metering() -> None:
+    """The ledger meters from --json usage events; a text-mode call would be
+    invisible to the budget. The executor must always request JSON."""
+    import ast
+    from pathlib import Path as _P
+
+    source = (
+        _P(hc.__file__).read_text(encoding="utf-8")
+    )
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.List):
+            continue
+        values = [
+            item.value
+            for item in node.elts
+            if isinstance(item, ast.Constant) and isinstance(item.value, str)
+        ]
+        if "exec" in values and "--ephemeral" in values:
+            assert "--json" in values, (
+                "codex exec command must include --json unconditionally so "
+                "the subscription budget ledger can meter it"
+            )
+
+
 def test_usage_limit_reclassifies_failed_status(tmp_path: Path) -> None:
     log = tmp_path / "run.log"
     log.write_text(USAGE_LIMIT_LINE + "\n", encoding="utf-8")

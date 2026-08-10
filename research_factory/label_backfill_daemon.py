@@ -42,11 +42,17 @@ def _default_state() -> dict[str, Any]:
             "job_type": "label_segment",
             "model": "gpt-5.5",
             "provider_lane": "codex_subscription",
-            "concurrency": 10,
-            "claim_wave_size": 80,
+            "concurrency": 3,
+            "claim_wave_size": 25,
             "runtime_ceiling_seconds": 3600,
-            "max_daily_campaigns": None,
-            "max_daily_campaigns_reason": "No calendar cap: the finite queue, subscription-only lane, per-campaign ledger, daily-cycle priority yielding, and fail-closed gates bound exposure more directly.",
+            "max_daily_campaigns": 1,
+            "max_daily_campaigns_reason": (
+                "Kolby ruling 2026-08-10: the uncapped daemon drove the "
+                "~1.03B-token August wave. One campaign per calendar day, "
+                "wave 25 at concurrency 3, behind the 5M/day subscription "
+                "budget gate. The daemon stays disabled until the GLM bulk "
+                "lane exists (durability plan Phase 2)."
+            ),
         },
     }
 
@@ -312,24 +318,48 @@ class LabelBackfillDaemon:
             _save_state(self.status_path, state)
             return state
 
+        configuration = dict(state.get("configuration") or {})
+        max_daily = configuration.get("max_daily_campaigns")
+        if max_daily is not None:
+            today = now_iso()[:10]
+            launched_today = sum(
+                1
+                for entry in (state.get("campaign_history") or [])
+                if str(entry.get("completed_at") or "").startswith(today)
+            )
+            if launched_today >= int(max_daily):
+                state["status"] = "daily_campaign_cap_reached"
+                state["current_campaign"] = None
+                state["daily_campaign_cap"] = {
+                    "day": today,
+                    "launched": launched_today,
+                    "max_daily_campaigns": int(max_daily),
+                }
+                _save_state(self.status_path, state)
+                return state
+        wave_size = int(configuration.get("claim_wave_size") or 25)
+        concurrency = int(configuration.get("concurrency") or 3)
+        runtime_ceiling = int(
+            configuration.get("runtime_ceiling_seconds") or 3600
+        )
         state["status"] = "running"
         state["current_campaign"] = {
             "started_at": now_iso(),
             "pid": os.getpid(),
             "bounds": {
                 "campaign_limit": 1,
-                "claim_wave_size": 80,
-                "concurrency": 10,
-                "runtime_ceiling_seconds": 3600,
-                "model": "gpt-5.5",
+                "claim_wave_size": wave_size,
+                "concurrency": concurrency,
+                "runtime_ceiling_seconds": runtime_ceiling,
+                "model": str(configuration.get("model") or "gpt-5.5"),
             },
         }
         _save_state(self.status_path, state)
         result = self.runner(
             campaign_limit=1,
-            wave_size=80,
-            concurrency=10,
-            max_runtime_seconds=3600,
+            wave_size=wave_size,
+            concurrency=concurrency,
+            max_runtime_seconds=runtime_ceiling,
         )
         state = _load_state(self.status_path)
         if not result.get("campaigns"):

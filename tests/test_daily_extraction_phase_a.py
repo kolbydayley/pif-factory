@@ -884,7 +884,16 @@ class _FakeClaimedConnection:
                     "lease_owner": "daily-owner",
                 }
             )
+        # Subscription budget ledger (Phase 1): schema, gate read, and the
+        # end-of-wave usage insert all run through the same connection.
+        if "pif_subscription_budget_ledger" in sql:
+            if sql.lstrip().upper().startswith("SELECT"):
+                return _Cursor(row={"total": 0})
+            return _Cursor()
         raise AssertionError(sql)
+
+    def commit(self):
+        return None
 
 
 def _fake_claimed_rows(tmp_path: Path):
@@ -1080,6 +1089,12 @@ def test_reviewer_audit_uses_single_shot_stdin(tmp_path: Path) -> None:
                 )
             if "UPDATE reviewer_audits" in sql:
                 return SimpleNamespace(rowcount=1)
+            # Subscription budget ledger (Phase 1): reviewer audits meter
+            # their usage into the same daily ledger as every other lane.
+            if "pif_subscription_budget_ledger" in sql:
+                if sql.lstrip().upper().startswith("SELECT"):
+                    return _Cursor(row={"total": 0})
+                return _Cursor()
             raise AssertionError(sql)
 
         def commit(self):
@@ -1091,6 +1106,12 @@ def test_reviewer_audit_uses_single_shot_stdin(tmp_path: Path) -> None:
                 return _Cursor(row={"status": "claimed"})
             if "UPDATE reviewer_audits" in sql:
                 return SimpleNamespace(rowcount=1)
+            # Subscription budget ledger (Phase 1): reviewer audits meter
+            # their usage into the same daily ledger as every other lane.
+            if "pif_subscription_budget_ledger" in sql:
+                if sql.lstrip().upper().startswith("SELECT"):
+                    return _Cursor(row={"total": 0})
+                return _Cursor()
             raise AssertionError(sql)
 
         def commit(self):
