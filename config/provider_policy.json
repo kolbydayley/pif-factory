@@ -27,13 +27,15 @@
       "provider": "codex",
       "model": "gpt-5.5",
       "candidate_provider": "glm_opencode",
-      "candidate_model": "opencode-go/glm-5.2"
+      "candidate_model": "opencode-go/glm-5.2",
+      "agreement_threshold": 0.9
     },
     "episode_context": {
       "provider": "codex",
       "model": "gpt-5.5",
       "candidate_provider": "glm_opencode",
-      "candidate_model": "opencode-go/glm-5.2"
+      "candidate_model": "opencode-go/glm-5.2",
+      "agreement_threshold": 0.95
     },
     "audit_label": {
       "provider": "codex",
