@@ -54,6 +54,32 @@ the backlog: **~400 labels**, a reviewable number.
 Under this ruling the actionable backlog drops from 8,341 to ~500, and the
 25/day drain stage clears it in ~3 weeks.
 
+## APPLIED — 2026-08-10 (ruling approved by Kolby)
+
+Executed as `research_factory/review_drain.py`,
+`method = bulk_deterministic_20260810_kolby_ruling`, append-only rows in
+`label_review_resolutions` (labels rows untouched; fully reversible by
+deleting rows for that method).
+
+| Outcome | n |
+|---|---:|
+| `advisory_acknowledged` | 5,885 |
+| `superseded_bootstrap` | 417 |
+| Kept — real defect families | 402 |
+| Kept — no reason recorded | 80 |
+| Kept — unclassified free text | **1,557** |
+| **Actionable backlog** | **8,341 → 2,039** |
+
+**Correction to the estimate above:** the "~9% other" bucket was 1,557 labels
+of which **1,553 are distinct free-prose texts** (sponsor-copy/page-chrome
+disclosures, one-off audit suggestions, per-segment observations). They cannot
+be bulk-pattern-matched safely and were deliberately kept per the ruling's
+"never silently clear unrecognized text." The actionable backlog is therefore
+**2,039, not ~500** — at 25/day the sampled drain clears it in ~82 days, or
+faster if triage batches obvious advisory prose. Deterministic classification
+lives in `review_drain.classify_review_reason`; defect patterns are checked
+before advisory patterns so mixed reasons fail toward keeping review.
+
 ## Verification queries
 
 All numbers reproducible read-only against `labels.output_json`:
