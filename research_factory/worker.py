@@ -42,6 +42,24 @@ CORPUS_JOB_MATERIALIZE_BUDGET_SECONDS = 120.0
 SF_DATALESS = 0x40000000
 
 
+def _assert_stage_model(stage: str, model: str) -> None:
+    """Enforce the routing policy where a hard pin used to live.
+
+    Same failure class as the old `model != "gpt-5.5"` raises - the wrong
+    model reaching a v3.1 stage still stops the job - but the truth lives in
+    config/provider_policy.json, so re-routing a stage is a reviewed policy
+    edit instead of a code change (durability plan Phase 2). ValueError is
+    preserved for existing callers' except clauses.
+    """
+
+    from .provider_policy import ProviderPolicyError, assert_stage_model
+
+    try:
+        assert_stage_model(stage, model)
+    except ProviderPolicyError as exc:
+        raise ValueError(str(exc)) from exc
+
+
 def preflight(model: str) -> dict[str, Any]:
     codex = shutil.which("codex")
     result = {"codex_path": codex, "model": model, "codex_cli_available": False, "error": None}
@@ -643,8 +661,7 @@ def slim_label_segment_context(context: dict[str, Any]) -> dict[str, Any]:
 def gate_v31_label_on_episode_context(conn, job, *, label_pack: str, model: str) -> dict[str, Any] | None:
     if label_pack != "ai_discourse_v3_1":
         return None
-    if model != "gpt-5.5":
-        raise ValueError("ai_discourse_v3_1 requires model gpt-5.5 so every podcast is read by the intended extractor")
+    _assert_stage_model("label_segment", model)
     context = completed_episode_context_for_segment(conn, job["target_id"], label_pack=label_pack, model=model)
     if context:
         return None
@@ -727,8 +744,8 @@ def bulk_enqueue_missing_episode_context_jobs(
 ) -> dict[str, Any]:
     """Materialize missing episode-context work through the canonical writer."""
 
-    if label_pack == "ai_discourse_v3_1" and model != "gpt-5.5":
-        raise ValueError("ai_discourse_v3_1 episode context requires gpt-5.5")
+    if label_pack == "ai_discourse_v3_1":
+        _assert_stage_model("episode_context", model)
 
     terminal_episode_ids = {
         str(row["episode_id"])
@@ -968,8 +985,7 @@ def completed_episode_context_for_episode(conn, episode_id: str, *, label_pack: 
 def create_episode_context_prompt(conn, job, *, label_pack: str, model: str, worker_id: str) -> dict[str, str]:
     if label_pack != "ai_discourse_v3_1":
         raise ValueError("episode_context jobs are currently only supported for ai_discourse_v3_1")
-    if model != "gpt-5.5":
-        raise ValueError("ai_discourse_v3_1 episode_context requires model gpt-5.5")
+    _assert_stage_model("episode_context", model)
     existing = completed_episode_context_for_episode(conn, job["target_id"], label_pack=label_pack, model=model)
     if existing:
         complete_job(conn, job["id"])
@@ -1294,8 +1310,8 @@ def _iter_strings(value: Any, path: str = "$"):
 
 
 def create_label_prompt(conn, job, *, label_pack: str, model: str, worker_id: str) -> dict[str, str]:
-    if label_pack == "ai_discourse_v3_1" and model != "gpt-5.5":
-        raise ValueError("ai_discourse_v3_1 requires model gpt-5.5 so every podcast is read by the intended extractor")
+    if label_pack == "ai_discourse_v3_1":
+        _assert_stage_model("label_segment", model)
     segment_context = segment_for_job(conn, job)
     if label_pack == "ai_discourse_v3_1":
         context_run = completed_episode_context_for_segment(conn, job["target_id"], label_pack=label_pack, model=model)

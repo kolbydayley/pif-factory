@@ -504,7 +504,12 @@ class SDKPipelineControllerTests(unittest.TestCase):
         self.assertEqual(args.daily_max_items, 25)
         self.assertEqual(args.daily_runtime_seconds, 3600)
         self.assertEqual(args.daily_concurrency, 10)
-        self.assertEqual(args.model, "gpt-5.5")
+        # Model default moved to config/provider_policy.json (Phase 2):
+        # the CLI arg is now an explicit override, None means "use policy".
+        self.assertIsNone(args.model)
+        from research_factory.provider_policy import stage_policy
+
+        self.assertEqual(stage_policy("label_segment").model, "gpt-5.5")
 
     def test_controller_daily_cycle_threads_flags_bounds_and_concurrency(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

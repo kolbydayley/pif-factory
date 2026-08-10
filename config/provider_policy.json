@@ -1,0 +1,47 @@
+{
+  "schema_version": "pif_provider_policy_v1",
+  "fail_closed": true,
+  "comment": [
+    "Stage -> (provider, model) routing for every model-dispatching stage.",
+    "Unknown stages and unknown providers raise: no silent fallback to Codex.",
+    "Kolby rulings 2026-08-10: Codex is judge/audit-only in the durable",
+    "system; GLM takes a bulk stage ONLY after the Phase-3 agreement gate",
+    "measures it (auto-freeze on breach). Flipping a stage is a one-line",
+    "policy edit here, reviewed and committed - never an env var.",
+    "candidate_provider documents the intended cheap lane for each stage;",
+    "it has no runtime effect until promoted into provider."
+  ],
+  "providers": {
+    "codex": {
+      "transport": "codex_exec_subscription",
+      "billing": "codex_subscription"
+    },
+    "glm_opencode": {
+      "transport": "opencode_local",
+      "billing": "opencode_glm",
+      "status": "experimental_e1_probe_only"
+    }
+  },
+  "stages": {
+    "label_segment": {
+      "provider": "codex",
+      "model": "gpt-5.5",
+      "candidate_provider": "glm_opencode",
+      "candidate_model": "opencode-go/glm-5.2"
+    },
+    "episode_context": {
+      "provider": "codex",
+      "model": "gpt-5.5",
+      "candidate_provider": "glm_opencode",
+      "candidate_model": "opencode-go/glm-5.2"
+    },
+    "audit_label": {
+      "provider": "codex",
+      "model": "gpt-5.5"
+    },
+    "reviewer_audit": {
+      "provider": "codex",
+      "model": "gpt-5.5"
+    }
+  }
+}

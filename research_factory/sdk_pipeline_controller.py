@@ -130,6 +130,12 @@ class TurnTransport(Protocol):
     ) -> TurnReconciliation: ...
 
 
+def _policy_model(stage: str) -> str:
+    from .provider_policy import stage_policy
+
+    return stage_policy(stage).model
+
+
 def iso_now(now: dt.datetime | None = None) -> str:
     value = now or dt.datetime.now().astimezone()
     if value.tzinfo is None:
@@ -240,7 +246,9 @@ def run_controller_daily_cycle(
         "execute_extraction": bool(args.execute_extraction),
         "execute_outcomes": bool(args.execute_outcomes),
         "source_list": str(args.daily_source_list.expanduser().resolve()),
-        "model": "gpt-5.5",
+        # Model comes from the reviewed routing policy, not a hardcode
+        # (durability plan Phase 2).
+        "model": _policy_model("label_segment"),
         "label_pack": "ai_discourse_v3_1",
     }
     intent_path = daily_intent_path(args.project_root, run_date)
@@ -321,7 +329,7 @@ def run_controller_daily_cycle(
                 execute_outcomes=bool(args.execute_outcomes),
                 lane="podcast",
                 label_pack="ai_discourse_v3_1",
-                model="gpt-5.5",
+                model=_policy_model("label_segment"),
             )
             receipt = result.get("receipt") or {}
             scale_receipt = (
@@ -1472,7 +1480,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--goals-db", type=Path, default=DEFAULT_GOALS_DB_PATH)
     parser.add_argument("--evaluation-root", type=Path, default=DEFAULT_EVALUATION_ROOT)
     parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
-    parser.add_argument("--model", default="gpt-5.5")
+    parser.add_argument("--model", default=None, help="Override the policy model (default: config/provider_policy.json)")
     parser.add_argument("--reasoning-effort", default="xhigh")
     parser.add_argument("--codex-bin", default=None)
     parser.add_argument("--allow-model-turns", action="store_true")
@@ -1555,7 +1563,7 @@ def controller_from_args(args: argparse.Namespace) -> SDKPipelineController:
     def transport_factory() -> TurnTransport:
         return OfficialCodexSDKTransport(
             project_root=project_root,
-            model=args.model,
+            model=args.model or _policy_model("label_segment"),
             reasoning_effort=args.reasoning_effort,
             codex_bin=args.codex_bin,
         )
