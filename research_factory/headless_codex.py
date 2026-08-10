@@ -217,6 +217,141 @@ def _attempt_consumed(
     return bool(provider_call_started) and not bool(timed_out)
 
 
+_GLM_HANDOFF_MESSAGE = (
+    "Follow the instructions in the attached file exactly. They are complete "
+    "and self-contained. Reply with ONLY the final JSON output the "
+    "instructions require - no prose, no code fences, no commentary."
+)
+
+
+def _resolve_opencode_binary() -> str:
+    binary = shutil.which("opencode") or "/opt/homebrew/bin/opencode"
+    return binary
+
+
+def _run_glm_opencode(
+    *,
+    prompt_path: Path,
+    output_path: Path,
+    log_path: Path,
+    model: str,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    """Execute one claimed run on the GLM opencode lane.
+
+    Honors the codex path's contract exactly: the rendered prompt file is the
+    instruction source, the validated answer is written to the recorded
+    output path, and the JSONL log carries a usage event the budget ledger
+    meters unchanged. Status strings are shared with the codex path so
+    post-processing needs no provider awareness.
+    """
+
+    from .glm_workhorse import (
+        _decode_answer,
+        _parse_opencode_stream,
+        opencode_config,
+    )
+
+    item: dict[str, Any] = {
+        "provider": "glm_opencode",
+        "dispatch_mode": "opencode_run_file_handoff",
+        "started_at": now_iso(),
+    }
+    env = os.environ.copy()
+    env["OPENCODE_CONFIG_CONTENT"] = json.dumps(
+        opencode_config(model), sort_keys=True
+    )
+    command = [
+        _resolve_opencode_binary(),
+        "run",
+        "--pure",
+        "--dir",
+        str(log_path.parent),
+        "--model",
+        model,
+        "--format",
+        "json",
+        _GLM_HANDOFF_MESSAGE,
+        "--file",
+        str(prompt_path),
+    ]
+    call_started = time.monotonic()
+    try:
+        completed = subprocess.run(
+            command,
+            env=env,
+            text=True,
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        item["returncode"] = None
+        item["timed_out"] = True
+        item["status"] = "codex_exec_timeout"
+        item["provider_call_started"] = True
+        log_path.write_text("", encoding="utf-8")
+        item["call_wall_seconds"] = time.monotonic() - call_started
+        return item
+    except OSError as exc:
+        item["returncode"] = None
+        item["timed_out"] = False
+        item["status"] = "codex_exec_launch_failed"
+        item["provider_call_started"] = False
+        item["error"] = f"{type(exc).__name__}: {str(exc)[:500]}"
+        item["call_wall_seconds"] = time.monotonic() - call_started
+        return item
+    item["returncode"] = completed.returncode
+    item["timed_out"] = False
+    item["provider_call_started"] = True
+    item["call_wall_seconds"] = time.monotonic() - call_started
+    answer, finish, _stream_events = _parse_opencode_stream(
+        completed.stdout or ""
+    )
+    # Persist the raw stream plus a synthetic usage event in the shape the
+    # existing meter (_codex_usage_from_jsonl) already reads.
+    log_lines = [(completed.stdout or "").rstrip("\n")]
+    tokens = (
+        finish.get("tokens")
+        if isinstance(finish, dict) and isinstance(finish.get("tokens"), dict)
+        else {}
+    )
+    cache = tokens.get("cache") if isinstance(tokens.get("cache"), dict) else {}
+    usage_event = {
+        "type": "turn.completed",
+        "provider": "glm_opencode",
+        "usage": {
+            "input_tokens": int(tokens.get("input") or 0),
+            "cached_input_tokens": int(cache.get("read") or 0),
+            "output_tokens": int(tokens.get("output") or 0),
+            "total_tokens": int(tokens.get("total") or 0),
+        },
+    }
+    log_lines.append(json.dumps(usage_event, sort_keys=True))
+    log_path.write_text(
+        "\n".join(line for line in log_lines if line) + "\n", encoding="utf-8"
+    )
+    if completed.returncode != 0:
+        item["status"] = "codex_exec_failed"
+        return item
+    try:
+        payload, fence_removed = _decode_answer(answer)
+    except Exception as exc:
+        item["status"] = "codex_exec_failed"
+        item["error"] = f"glm_answer_not_json: {str(exc)[:300]}"
+        return item
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    item["fence_removed"] = bool(fence_removed)
+    item["status"] = "codex_exec_completed"
+    return item
+
+
 def execute_claimed_label_runs(
     conn,
     *,
@@ -229,6 +364,7 @@ def execute_claimed_label_runs(
     capture_usage: bool = False,
     capture_validation: bool = False,
     budget_lane: str = "labels",
+    provider: str = "codex",
 ) -> dict[str, Any]:
     concurrency = max(1, int(concurrency or 1))
     bounded_limit = max(0, int(limit))
@@ -292,7 +428,7 @@ def execute_claimed_label_runs(
 
     def _execute_one(row: dict[str, Any]) -> dict[str, Any]:
         job_id = int(row["job_id"])
-        if not budget["allowed"]:
+        if provider == "codex" and not budget["allowed"]:
             # Over the daily subscription cap (or KILL engaged): no call
             # starts, no attempt is spent, the job returns to pending.
             return {
@@ -331,6 +467,36 @@ def execute_claimed_label_runs(
         output_path = resolve_recorded_path(row["output_path"])
         log_path = log_dir / f"{row['label_run_id']}.log"
         last_message_path = log_dir / f"{row['label_run_id']}.last.txt"
+        if provider == "glm_opencode":
+            glm_item = _run_glm_opencode(
+                prompt_path=prompt_path,
+                output_path=output_path,
+                log_path=log_path,
+                model=model,
+                timeout_seconds=timeout_seconds,
+            )
+            glm_item.update(
+                {
+                    "job_id": str(job_id),
+                    "label_run_id": row["label_run_id"],
+                    "job_attempt_number": int(row.get("attempts") or 0),
+                    "job_retry_count": max(
+                        0, int(row.get("attempts") or 0) - 1
+                    ),
+                    "prompt_artifact": "local_prompt_file",
+                    "output_artifact": "local_output_file",
+                    "log_path": str(log_path),
+                    "_provider_completed_monotonic": time.monotonic(),
+                    "completed_at": now_iso(),
+                    "provider_pressure_signals": _provider_pressure_signals(
+                        log_path
+                    ),
+                }
+            )
+            from .efficient_backtest import _codex_usage_from_jsonl
+
+            glm_item["usage"] = _codex_usage_from_jsonl(log_path)
+            return glm_item
         rendered_prompt = prompt_path.read_text(encoding="utf-8")
         prompt = _stdin_handoff_prompt(rendered_prompt, output_path)
         item: dict[str, Any] = {
@@ -625,7 +791,11 @@ def execute_claimed_label_runs(
         record_usage(
             conn,
             day=budget_day,
-            provider_lane="codex_subscription",
+            provider_lane=(
+                "codex_subscription"
+                if provider == "codex"
+                else "opencode_glm"
+            ),
             lane=budget_lane,
             run_id=lease_owner,
             tokens=metered_tokens,
@@ -645,6 +815,7 @@ def execute_claimed_label_runs(
         "ok": all(item.get("status") in {"submitted", "stale_handoff_skipped"} for item in results),
         "lease_owner": lease_owner,
         "model": model,
+        "provider": provider,
         "concurrency": concurrency,
         "selected": selected,
         "processed": len(results),
