@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -132,11 +133,19 @@ def _provider_pressure_signals(log_path: Path) -> list[str]:
             )
         )
         too_many_requests = "too many requests" in lowered
+        # The Aug 2026 outage signature: Codex subscription exhaustion. The
+        # provider phrases it as a usage limit, not a quota or 429, so none of
+        # the patterns above caught it and three full waves burned against it.
+        usage_limit = bool(
+            re.search(r"you.?ve hit your usage limit", lowered)
+        )
         provider_429 = bool(
             re.search(r"\b429\b", lowered)
             and (rate_limit or quota or capacity or too_many_requests)
         )
         matches = []
+        if usage_limit:
+            matches.append("usage limit")
         if provider_429:
             matches.append("429")
         if rate_limit or too_many_requests:
@@ -148,6 +157,60 @@ def _provider_pressure_signals(log_path: Path) -> list[str]:
         if matches:
             signals.append(",".join(matches))
     return sorted(set(signals))
+
+
+def _usage_limit_retry_at(log_path: Path) -> str | None:
+    """Extract the provider's "try again at ..." timestamp, verbatim text."""
+
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    match = re.search(
+        r"usage limit.*?try again at ([^.\n\"]+(?:\.[^.\n\"]+)*?)\.?(?:\n|$|\")",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
+def _quota_reclassification(
+    status: str,
+    pressure_signals: list[str],
+    log_path: Path,
+) -> tuple[str, str | None]:
+    """Reclassify a failed call as quota exhaustion when the log proves it.
+
+    Completed runs are never reclassified: an rc=0 transcript that merely
+    mentions limits still produced output.
+    """
+
+    if status != "codex_exec_failed":
+        return status, None
+    if not any("usage limit" in signal for signal in pressure_signals):
+        return status, None
+    return "codex_usage_limit", _usage_limit_retry_at(log_path)
+
+
+def _attempt_consumed(
+    *,
+    provider_call_started: bool,
+    timed_out: bool,
+    status: str,
+) -> bool:
+    """Whether a failure spends one of the job's durable attempts.
+
+    A timeout proves neither bad input nor an invalid model result, and a
+    quota-exhausted call proves nothing about the job at all — both return the
+    job to pending without spending an attempt, so an outage cannot
+    terminalize a queue.
+    """
+
+    if status in {"codex_usage_limit", "provider_quota_exhausted"}:
+        return False
+    return bool(provider_call_started) and not bool(timed_out)
 
 
 def execute_claimed_label_runs(
@@ -209,8 +272,29 @@ def execute_claimed_label_runs(
             continue
         executable_rows.append(row)
 
+    quota_exhausted = threading.Event()
+    quota_retry_at: list[str | None] = [None]
+
     def _execute_one(row: dict[str, Any]) -> dict[str, Any]:
         job_id = int(row["job_id"])
+        if quota_exhausted.is_set():
+            # Another worker just proved the subscription is exhausted; do not
+            # burn the rest of the wave against it. No call starts, no durable
+            # attempt is spent, and the job returns to pending untouched.
+            return {
+                "job_id": str(job_id),
+                "label_run_id": row["label_run_id"],
+                "prompt_artifact": "local_prompt_file",
+                "output_artifact": "local_output_file",
+                "status": "provider_quota_exhausted",
+                "provider_call_started": False,
+                "timed_out": False,
+                "returncode": None,
+                "usage_limit_retry_at": quota_retry_at[0],
+                "_provider_completed_monotonic": time.monotonic(),
+                "completed_at": now_iso(),
+                "provider_pressure_signals": ["usage limit"],
+            }
         prompt_path = resolve_recorded_path(row["prompt_path"])
         output_path = resolve_recorded_path(row["output_path"])
         log_path = log_dir / f"{row['label_run_id']}.log"
@@ -281,6 +365,16 @@ def execute_claimed_label_runs(
         item["_provider_completed_monotonic"] = time.monotonic()
         item["completed_at"] = now_iso()
         item["provider_pressure_signals"] = _provider_pressure_signals(log_path)
+        reclassified, retry_at = _quota_reclassification(
+            str(item.get("status") or ""),
+            item["provider_pressure_signals"],
+            log_path,
+        )
+        if reclassified == "codex_usage_limit":
+            item["status"] = reclassified
+            item["usage_limit_retry_at"] = retry_at
+            quota_retry_at[0] = quota_retry_at[0] or retry_at
+            quota_exhausted.set()
         if capture_usage:
             from .efficient_backtest import _codex_usage_from_jsonl
 
@@ -311,11 +405,12 @@ def execute_claimed_label_runs(
         postprocess_started = time.monotonic()
         if item["status"] != "codex_exec_completed":
             phase_started = time.monotonic()
-            # A timeout proves neither bad input nor an invalid model result.
-            # Return the exact job to pending without spending one of its
-            # durable attempts so a transient slow call cannot terminalize it.
-            consume_attempt = bool(item.get("provider_call_started", True)) and not bool(
-                item.get("timed_out")
+            consume_attempt = _attempt_consumed(
+                provider_call_started=bool(
+                    item.get("provider_call_started", True)
+                ),
+                timed_out=bool(item.get("timed_out")),
+                status=str(item.get("status") or ""),
             )
             item["failure_finalization"] = _finalize_submission_failure(
                 conn,
@@ -504,6 +599,13 @@ def execute_claimed_label_runs(
         "submitted": sum(1 for item in results if item.get("status") == "submitted"),
         "skipped": sum(1 for item in results if item.get("status") == "stale_handoff_skipped"),
         "failed": sum(1 for item in results if item.get("status") not in {"submitted", "stale_handoff_skipped"}),
+        "provider_quota_exhausted": quota_exhausted.is_set(),
+        "usage_limit_retry_at": quota_retry_at[0],
+        "quota_skipped": sum(
+            1
+            for item in results
+            if item.get("status") == "provider_quota_exhausted"
+        ),
         "timing_profile": {
             "serial_section_wall_seconds": sum(
                 float(item.get("postprocess_total_seconds") or 0.0)

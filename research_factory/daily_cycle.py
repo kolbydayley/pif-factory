@@ -1024,6 +1024,44 @@ def _default_stage_handlers(
             headless_result=headless_result,
         )
         recent_pending_after = _job_count_recent(conn, job_types, recent_since)
+        if bool(headless_result.get("provider_quota_exhausted")):
+            # Codex subscription exhausted mid-wave. The executor already
+            # stopped dispatching and returned the unstarted jobs to pending
+            # without spending attempts; record the day as provider-blocked
+            # rather than a pipeline failure (streak freezes, never resets).
+            return {
+                "status": "skipped",
+                "processed": int(worker_result.get("processed", 0) or 0),
+                "reason": "provider_quota_exhausted",
+                "provider_quota_exhausted": True,
+                "usage_limit_retry_at": headless_result.get(
+                    "usage_limit_retry_at"
+                ),
+                "quota_skipped_jobs": int(
+                    headless_result.get("quota_skipped", 0) or 0
+                ),
+                "backlog_total": backlog_total,
+                "backlog_total_after": _job_count(conn, job_types),
+                "pending": recent_pending_before,
+                "recent_pending": recent_pending_before,
+                "recent_pending_after": recent_pending_after,
+                "recent_window_since": recent_since,
+                "planned_items": planned,
+                "work_due": recent_pending_before > 0,
+                "required_work_enabled": True,
+                "healthy_no_work": False,
+                "work_satisfied": False,
+                "worker_result": worker_result,
+                "headless_result": headless_result,
+                "pipeline_run_attribution": pipeline_run_attribution,
+                "dispatch_boundary": (
+                    "managed_auth_app_server_local_sqlite_queue"
+                ),
+                "dispatch_contracts": [],
+                "headless_exception_dispatch_created": False,
+                "external_launch_attempted": True,
+                "self_resuming_chats": False,
+            }
         worker_failed = int(worker_result.get("failed", 0) or 0)
         headless_failed = int(headless_result.get("failed", 0) or 0)
         headless_attempted = int(headless_result.get("selected", 0) or 0)
@@ -1368,7 +1406,21 @@ def _assess_required_stage_truth(
         if status == "failed":
             blockers.append({"stage": stage_name, "reason": "stage_failed"})
         elif status == "skipped":
-            if no_work:
+            if bool(result.get("provider_quota_exhausted")):
+                # Subscription exhaustion: the day is blocked, but by the
+                # provider, not the pipeline. Named so the scale gate can
+                # freeze the streak instead of resetting it.
+                blockers.append(
+                    {
+                        "stage": stage_name,
+                        "reason": "provider_quota_exhausted",
+                        "work_due": work_due,
+                        "usage_limit_retry_at": result.get(
+                            "usage_limit_retry_at"
+                        ),
+                    }
+                )
+            elif no_work:
                 healthy_no_work.append(stage_name)
             else:
                 blockers.append(
@@ -1966,6 +2018,14 @@ def _record_scale_gate_state_receipt(
         "operations": operations,
     }
     genuinely_successful = all(bool(value.get("passed")) for value in gates.values())
+    quota_frozen = any(
+        bool(
+            (receipt.get("result") or {}).get("provider_quota_exhausted")
+            if isinstance(receipt.get("result"), Mapping)
+            else False
+        )
+        for receipt in stage_receipts
+    )
     streak = _consecutive_success_days(
         conn,
         release_id=release_id,
@@ -1989,6 +2049,7 @@ def _record_scale_gate_state_receipt(
         "cohort_item_count": item_count,
         "next_tier": next_tier,
         "genuinely_successful": genuinely_successful,
+        "quota_frozen": quota_frozen,
         "consecutive_success_days": streak,
         "required_consecutive_days": SCALE_GATE_REQUIRED_DAYS,
         "promotion_eligible": eligible,
@@ -2377,10 +2438,29 @@ def _consecutive_success_days(
         ).fetchall()
     }
     dates.add(run_date)
+    # Kolby's ruling (2026-08-10): a day lost to provider quota exhaustion is
+    # recorded, unsuccessful, and transparent — the streak walks over it
+    # without resetting. An unexplained gap or a real failure still resets.
+    frozen = {
+        str(row["run_date"])
+        for row in conn.execute(
+            """
+            SELECT DISTINCT run_date FROM pif_scale_gate_state_receipts
+            WHERE corpus_release_id = ? AND cohort_tier = ?
+              AND genuinely_successful = 0 AND run_date <= ?
+              AND json_extract(receipt_json, '$.quota_frozen') = 1
+            """,
+            (release_id, tier, run_date),
+        ).fetchall()
+    }
     cursor = dt.date.fromisoformat(run_date)
     streak = 0
-    while cursor.isoformat() in dates:
-        streak += 1
+    while True:
+        day = cursor.isoformat()
+        if day in dates:
+            streak += 1
+        elif day not in frozen:
+            break
         cursor -= dt.timedelta(days=1)
     return streak
 
