@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.kolby.pif.label-backfill-daemon</string>
+  <key>Disabled</key>
+  <false/>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/kolbydayley/.codex/venvs/pif-sdk-pipeline-controller/bin/python</string>
+    <string>-m</string>
+    <string>research_factory.label_backfill_daemon</string>
+    <string>serve</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/kolbydayley/pif-factory</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONUNBUFFERED</key>
+    <string>1</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/kolbydayley/.codex/logs/pif-label-backfill-daemon.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/kolbydayley/.codex/logs/pif-label-backfill-daemon.stderr.log</string>
+</dict>
+</plist>

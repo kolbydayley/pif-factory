@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.kolby.pif.controller-clean-context-probe</string>
+  <key>ProgramArguments</key><array>
+    <string>/Users/kolbydayley/.local/libexec/pif-controller-clean-context-probe</string>
+    <string>probe</string>
+  </array>
+  <key>WorkingDirectory</key><string>/</string>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>21600</integer>
+  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>5</integer></dict>
+  <key>StandardOutPath</key><string>/Users/kolbydayley/.codex/logs/pif-clean-context-probe.stdout.log</string>
+  <key>StandardErrorPath</key><string>/Users/kolbydayley/.codex/logs/pif-clean-context-probe.stderr.log</string>
+</dict></plist>
