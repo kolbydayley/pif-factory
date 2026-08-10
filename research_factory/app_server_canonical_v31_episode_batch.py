@@ -42,7 +42,7 @@ MATRIX_BINDING_VERSION = "pif_canonical_v31_six_arm_matrix_binding_v1"
 CANDIDATE_SYSTEM_ID = "pif_direct_full_canonical_ai_discourse_v3_1_v1"
 CANONICAL_LABEL_PACK = "ai_discourse_v3_1"
 CANONICAL_LABEL_SCHEMA_SHA256 = (
-    "a5a32b06398187ee77707ddef355fdc7784cfe13392805f6cb73e3e5357cd2ec"
+    "01784bafc6aa5869eeffc487548acf6cca06fa9816ffb26d6c423585657308eb"
 )
 CANONICAL_SCHEMA_STRATEGY = (
     "canonical_v31_copy_all_semantic_fields_replace_only_event_and_candidate_"

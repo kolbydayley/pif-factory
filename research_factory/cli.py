@@ -1195,6 +1195,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Explicitly execute the bounded subscription-auth extraction stage.",
     )
     run.add_argument(
+        "--extraction-concurrency",
+        type=int,
+        default=3,
+        help="Bounded concurrent Codex extraction workers for the daily cycle.",
+    )
+    run.add_argument(
         "--execute-outcomes",
         action="store_true",
         help="Explicitly record bounded due-outcome dispatch contracts.",
@@ -2457,6 +2463,7 @@ def main(argv: list[str] | None = None) -> int:
                         execute_ingestion=args.execute_ingestion,
                         execute_normalize=args.execute_normalize,
                         execute_extraction=args.execute_extraction,
+                        extraction_concurrency=args.extraction_concurrency,
                         execute_outcomes=args.execute_outcomes,
                         apply_reconcile=args.apply_reconcile,
                         record_exception_contracts=args.record_exception_contracts,

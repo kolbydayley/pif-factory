@@ -74,8 +74,8 @@ class QueueEnvelopeOrphanMigrationTests(unittest.TestCase):
         self.assertEqual(len(before), 1)
         self.assertEqual(before[0]["table"], "queue_envelopes")
 
-        self.assertEqual(db.apply_schema_migrations(self.conn), [1, 2, 3, 4])
-        self.assertEqual(db.schema_migration_version(self.conn), 4)
+        self.assertEqual(db.apply_schema_migrations(self.conn), [1, 2, 3, 4, 5])
+        self.assertEqual(db.schema_migration_version(self.conn), 5)
 
         remaining = self.conn.execute(
             "SELECT job_id, queue_name, run_tag FROM queue_envelopes ORDER BY job_id"

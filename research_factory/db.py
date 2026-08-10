@@ -3087,11 +3087,51 @@ ACCEPTED_PIPELINE_RUN_AUTHORITY_V4: tuple[str, ...] = (
 )
 
 
+LABEL_METRIC_QUARANTINE_V5: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS label_metric_quarantines (
+      id TEXT PRIMARY KEY,
+      label_id TEXT NOT NULL REFERENCES labels(id),
+      label_run_id TEXT NOT NULL REFERENCES label_runs(id),
+      segment_id TEXT NOT NULL REFERENCES segments(id),
+      event_index INTEGER NOT NULL CHECK(event_index >= 0),
+      claim_text TEXT NOT NULL,
+      original_metric_json TEXT NOT NULL,
+      evidence TEXT NOT NULL,
+      failed_rules_json TEXT NOT NULL,
+      quarantined_at TEXT NOT NULL,
+      UNIQUE(label_id, label_run_id, event_index)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_label_metric_quarantines_label
+    ON label_metric_quarantines(label_id, quarantined_at)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_label_metric_quarantines_segment
+    ON label_metric_quarantines(segment_id, quarantined_at)
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS label_metric_quarantines_no_update
+    BEFORE UPDATE ON label_metric_quarantines BEGIN
+      SELECT RAISE(ABORT, 'label metric quarantine is immutable');
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS label_metric_quarantines_no_delete
+    BEFORE DELETE ON label_metric_quarantines BEGIN
+      SELECT RAISE(ABORT, 'label metric quarantine is immutable');
+    END
+    """,
+)
+
+
 SCHEMA_MIGRATIONS: tuple[tuple[int, str, tuple[str, ...]], ...] = (
     (1, "versioned_intelligence_v1", INTELLIGENCE_SCHEMA_V1),
     (2, "archive_orphan_queue_envelopes_v2", QUEUE_ENVELOPE_ORPHAN_ARCHIVE_V2),
     (3, "semantic_scope_and_coverage_v3", SEMANTIC_SCOPE_AND_COVERAGE_V3),
     (4, "accepted_pipeline_run_authority_v4", ACCEPTED_PIPELINE_RUN_AUTHORITY_V4),
+    (5, "label_metric_quarantine_v5", LABEL_METRIC_QUARANTINE_V5),
 )
 
 VERSIONED_INTELLIGENCE_V1_SUPERSEDED_CHECKSUM = (

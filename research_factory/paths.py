@@ -5,10 +5,28 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+LEGACY_PROJECT_ROOTS = (
+    Path("/Users/kolbydayley/Documents/Codex/podcast-intelligence-factory"),
+)
 
 
 def root() -> Path:
     return Path(os.environ.get("RESEARCH_FACTORY_ROOT", PROJECT_ROOT)).resolve()
+
+
+def resolve_recorded_path(value: str | os.PathLike[str]) -> Path:
+    """Resolve immutable recorded paths after the approved project move."""
+
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        return (root() / path).resolve()
+    for legacy_root in LEGACY_PROJECT_ROOTS:
+        try:
+            relative = path.relative_to(legacy_root)
+        except ValueError:
+            continue
+        return (root() / relative).resolve()
+    return path.resolve()
 
 
 def data_dir() -> Path:
@@ -47,4 +65,3 @@ def exports_dir() -> Path:
 
 def label_pack_dir(label_pack: str) -> Path:
     return root() / "label_packs" / label_pack
-

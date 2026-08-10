@@ -5575,6 +5575,158 @@ def _write_context_usage_sidecar(path: Path, payload: dict[str, Any]) -> None:
     )
 
 
+def _context_output_validation_error(
+    output_path: Path,
+    *,
+    expected_episode_id: str,
+) -> tuple[bool, str | None]:
+    try:
+        output = json.loads(output_path.read_text(encoding="utf-8"))
+        from .worker import validate_episode_context_output
+
+        validate_episode_context_output(
+            output,
+            expected_episode_id=expected_episode_id,
+        )
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    return True, None
+
+
+def _sum_context_usage_profiles(
+    attempts: list[dict[str, Any]],
+) -> dict[str, int] | None:
+    profiles = [
+        attempt.get("usage_profile")
+        for attempt in attempts
+        if isinstance(attempt.get("usage_profile"), dict)
+    ]
+    if len(profiles) != len(attempts):
+        return None
+    fields = (
+        "usage_event_count",
+        "cumulative_billed_total_tokens",
+        "cumulative_input_tokens",
+        "cumulative_cached_input_tokens",
+        "cumulative_output_tokens",
+        "last_turn_unique_input_tokens",
+        "last_turn_unique_total_tokens",
+    )
+    return {
+        field: sum(int(profile.get(field) or 0) for profile in profiles)
+        for field in fields
+    }
+
+
+def _finalize_instrumented_context_failure(
+    conn,
+    *,
+    job_id: int,
+    context_run_id: str,
+    worker_id: str,
+    error: str,
+) -> None:
+    ts = now_iso()
+    conn.execute(
+        """
+        UPDATE episode_context_runs
+        SET status = 'failed',
+            error = ?,
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'claimed'
+        """,
+        (error, ts, context_run_id),
+    )
+    conn.execute(
+        """
+        UPDATE jobs
+        SET status = 'failed',
+            error = ?,
+            lease_owner = NULL,
+            leased_until = NULL,
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'claimed'
+          AND lease_owner = ?
+        """,
+        (error, ts, job_id, worker_id),
+    )
+    conn.commit()
+
+
+def release_instrumented_context_job_for_corrective_retry(
+    conn,
+    *,
+    job_id: int,
+) -> dict[str, Any]:
+    job = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    if not job or job["job_type"] != "episode_context":
+        raise ValueError("corrective release requires an episode_context job")
+    if job["status"] != "claimed":
+        raise ValueError("corrective release requires a claimed job")
+    context_run = conn.execute(
+        "SELECT * FROM episode_context_runs WHERE job_id = ?",
+        (job_id,),
+    ).fetchone()
+    if not context_run:
+        raise ValueError("corrective release requires an episode context run")
+    output_path = Path(context_run["output_path"]).expanduser().resolve()
+    valid, validation_error = _context_output_validation_error(
+        output_path,
+        expected_episode_id=str(job["target_id"]),
+    )
+    if valid or not validation_error:
+        raise ValueError("corrective release requires invalid model output")
+    sidecar_path = _context_usage_sidecar_path(context_run)
+    prior = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    if prior.get("state") != "failed":
+        raise ValueError("corrective release requires a failed usage sidecar")
+    prior["validation_error"] = validation_error
+    prior["corrective_retry_authorized"] = True
+    _write_context_usage_sidecar(sidecar_path, prior)
+    payload = json.loads(job["payload_json"] or "{}")
+    payload["corrective_retry_pending"] = True
+    payload["corrective_validation_error"] = validation_error
+    ts = now_iso()
+    conn.execute(
+        """
+        UPDATE episode_context_runs
+        SET status = 'failed',
+            error = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (validation_error, ts, context_run["id"]),
+    )
+    conn.execute(
+        """
+        UPDATE jobs
+        SET status = 'pending',
+            payload_json = ?,
+            error = ?,
+            lease_owner = NULL,
+            leased_until = NULL,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            json.dumps(payload, ensure_ascii=True, sort_keys=True),
+            f"corrective_retry_pending:{validation_error}",
+            ts,
+            job_id,
+        ),
+    )
+    conn.commit()
+    return {
+        "job_id": job_id,
+        "episode_context_run_id": str(context_run["id"]),
+        "job_status": "pending",
+        "validation_error": validation_error,
+        "sidecar_path": str(sidecar_path),
+    }
+
+
 def execute_instrumented_episode_context_job(
     conn,
     *,
@@ -5586,7 +5738,7 @@ def execute_instrumented_episode_context_job(
     evaluator = load_windowed_evaluator_spec(evaluator_spec_path)
     context_spec = evaluator["context_generation"]
     if int(context_spec["retry_count"]) != 0:
-        raise ValueError("instrumented context retry count must remain zero")
+        raise ValueError("frozen evaluator context retry count must remain zero")
     job = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
     if not job or job["job_type"] != "episode_context":
         raise ValueError("instrumented context requires an episode_context job")
@@ -5605,15 +5757,49 @@ def execute_instrumented_episode_context_job(
     if not prompt_path.exists():
         raise ValueError("episode context prompt artifact is missing")
     sidecar_path = _context_usage_sidecar_path(context_run)
+    payload = json.loads(job["payload_json"] or "{}")
+    prior_attempts: list[dict[str, Any]] = []
+    corrective_error = payload.get("corrective_validation_error")
+    corrective_retry_pending = bool(payload.get("corrective_retry_pending"))
     if sidecar_path.exists():
         prior = json.loads(sidecar_path.read_text(encoding="utf-8"))
-        if prior.get("state") in {"started", "interrupted"}:
+        if (
+            prior.get("state") == "failed"
+            and corrective_retry_pending
+            and corrective_error
+        ):
+            prior_attempts = list(prior.get("attempts") or [])
+            if not prior_attempts:
+                prior_attempts = [
+                    {
+                        "attempt": 1,
+                        "exit_code": prior.get("exit_code"),
+                        "timed_out": bool(prior.get("timed_out")),
+                        "elapsed_seconds": prior.get("elapsed_seconds"),
+                        "call_wall_seconds": prior.get("call_wall_seconds"),
+                        "json_ok": bool(prior.get("json_ok")),
+                        "validation_ok": False,
+                        "validation_error": str(corrective_error),
+                        "usage": prior.get("usage"),
+                        "usage_profile": prior.get("usage_profile"),
+                        "provider_pressure_signals": prior.get(
+                            "provider_pressure_signals", []
+                        ),
+                        "lease_expired_before_submission": bool(
+                            prior.get("lease_expired_before_submission")
+                        ),
+                    }
+                ]
+        elif prior.get("state") in {"started", "interrupted"}:
             raise ValueError(
                 f"instrumented context attempt requires recovery: {sidecar_path}"
             )
-        if prior.get("state") in {"completed", "recovered_completed"}:
+        elif prior.get("state") in {"completed", "recovered_completed"}:
             return {**prior, "sidecar_path": str(sidecar_path), "cached_report": True}
-        raise ValueError(f"instrumented context sidecar already exists: {sidecar_path}")
+        elif not prior_attempts:
+            raise ValueError(
+                f"instrumented context sidecar already exists: {sidecar_path}"
+            )
     log_path = sidecar_path.parent / f"{context_run['id']}.private.jsonl"
     started_at = now_iso()
     initial = {
@@ -5624,7 +5810,8 @@ def execute_instrumented_episode_context_job(
         "episode_id": context_run["episode_id"],
         "model": context_spec["model"],
         "reasoning_effort": context_spec["reasoning_effort"],
-        "retry_count": 0,
+        "corrective_retry_cap": 1,
+        "retry_count": len(prior_attempts),
         "prompt_path": str(prompt_path),
         "output_path": str(output_path),
         "log_path": str(log_path),
@@ -5634,63 +5821,200 @@ def execute_instrumented_episode_context_job(
     }
     _write_context_usage_sidecar(sidecar_path, initial)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text("", encoding="utf-8")
     scratch_dir = Path("/tmp/pif-efficiency-codex-smoke")
     scratch_dir.mkdir(parents=True, exist_ok=True)
-    command = [
-        "codex",
-        "exec",
-        "-m",
-        context_spec["model"],
-        "-c",
-        f'model_reasoning_effort="{context_spec["reasoning_effort"]}"',
-        "-C",
-        str(scratch_dir),
-        "--skip-git-repo-check",
-        "--ignore-rules",
-        "--ephemeral",
-        "--sandbox",
-        "read-only",
-        "--output-last-message",
-        str(output_path),
-        "--json",
-        "-",
-    ]
-    exit_code, timed_out, elapsed_seconds = _run_codex_smoke_command(
-        command,
-        prompt_path=prompt_path,
-        log_path=log_path,
-        timeout_seconds=timeout_seconds,
+    from .headless_codex import (
+        _provider_pressure_signals,
+        _usage_profile_from_jsonl,
     )
-    usage = _codex_usage_from_jsonl(log_path)
-    json_ok = _json_file_ok(output_path)
+
+    current_attempts: list[dict[str, Any]] = []
     submission = None
     submission_error = None
-    if exit_code == 0 and not timed_out and json_ok:
-        try:
-            from .worker import submit_episode_context_output
-
-            submission = submit_episode_context_output(
-                conn,
-                job_id=job_id,
-                output_json_path=output_path,
-                worker_id=worker_id,
-                allow_expired=True,
+    validation_error = str(corrective_error) if corrective_error else None
+    first_attempt_number = 2 if prior_attempts else 1
+    for attempt_number in range(first_attempt_number, 3):
+        attempt_prompt_path = prompt_path
+        if validation_error:
+            attempt_prompt_path = (
+                prompt_path.parent
+                / f"{context_run['id']}.corrective-{attempt_number}.md"
             )
-        except Exception as exc:
-            submission_error = type(exc).__name__
+            write_text_atomic(
+                attempt_prompt_path,
+                prompt_path.read_text(encoding="utf-8")
+                + "\n\n# Corrective Retry\n"
+                + "The previous output was rejected with this exact validation "
+                + f"error:\n{validation_error}\n"
+                + "Return a corrected JSON object satisfying the original output "
+                + "contract. Do not discuss the error.\n",
+            )
+        attempt_log_path = (
+            log_path
+            if attempt_number == 1
+            else sidecar_path.parent
+            / f"{context_run['id']}.attempt-{attempt_number}.private.jsonl"
+        )
+        output_path.write_text("", encoding="utf-8")
+        command = [
+            "codex",
+            "exec",
+            "-m",
+            context_spec["model"],
+            "-c",
+            f'model_reasoning_effort="{context_spec["reasoning_effort"]}"',
+            "-C",
+            str(scratch_dir),
+            "--skip-git-repo-check",
+            "--ignore-rules",
+            "--ephemeral",
+            "--sandbox",
+            "read-only",
+            "--output-last-message",
+            str(output_path),
+            "--json",
+            "-",
+        ]
+        exit_code, timed_out, elapsed_seconds = _run_codex_smoke_command(
+            command,
+            prompt_path=attempt_prompt_path,
+            log_path=attempt_log_path,
+            timeout_seconds=timeout_seconds,
+        )
+        usage = _codex_usage_from_jsonl(attempt_log_path)
+        usage_profile = _usage_profile_from_jsonl(attempt_log_path)
+        pressure = _provider_pressure_signals(attempt_log_path)
+        json_ok = _json_file_ok(output_path)
+        validation_ok = False
+        validation_error = None
+        if exit_code == 0 and not timed_out:
+            validation_ok, validation_error = _context_output_validation_error(
+                output_path,
+                expected_episode_id=str(context_run["episode_id"]),
+            )
+        current_job = conn.execute(
+            "SELECT leased_until FROM jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+        lease_expired = False
+        if current_job and current_job["leased_until"]:
+            leased_until = datetime.fromisoformat(
+                str(current_job["leased_until"]).replace("Z", "+00:00")
+            )
+            now = (
+                datetime.now(leased_until.tzinfo)
+                if leased_until.tzinfo
+                else datetime.now()
+            )
+            lease_expired = leased_until <= now
+        current_attempts.append(
+            {
+                "attempt": attempt_number,
+                "prompt_path": str(attempt_prompt_path),
+                "log_path": str(attempt_log_path),
+                "exit_code": exit_code,
+                "timed_out": timed_out,
+                "elapsed_seconds": elapsed_seconds,
+                "call_wall_seconds": elapsed_seconds,
+                "json_ok": json_ok,
+                "validation_ok": validation_ok,
+                "validation_error": validation_error,
+                "usage": usage,
+                "usage_profile": usage_profile,
+                "provider_pressure_signals": pressure,
+                "lease_expired_before_submission": lease_expired,
+            }
+        )
+        if validation_ok:
+            try:
+                from .worker import submit_episode_context_output
+
+                submission = submit_episode_context_output(
+                    conn,
+                    job_id=job_id,
+                    output_json_path=output_path,
+                    worker_id=worker_id,
+                    allow_expired=False,
+                )
+            except Exception as exc:
+                submission_error = type(exc).__name__
+                validation_error = f"{type(exc).__name__}: {exc}"
+            break
+        if (
+            validation_error is None
+            or attempt_number >= 2
+            or timed_out
+            or exit_code != 0
+        ):
+            break
+
+    all_attempts = [*prior_attempts, *current_attempts]
     completed = bool(submission is not None)
+    terminal_error = (
+        validation_error
+        or submission_error
+        or (
+            "codex_exec_timeout"
+            if any(attempt["timed_out"] for attempt in current_attempts)
+            else "codex_exec_failed"
+        )
+    )
+    if not completed:
+        _finalize_instrumented_context_failure(
+            conn,
+            job_id=job_id,
+            context_run_id=str(context_run["id"]),
+            worker_id=worker_id,
+            error=str(terminal_error),
+        )
+    usage = (
+        _sum_usage_dicts(current_attempts)
+        if all(isinstance(attempt.get("usage"), dict) for attempt in current_attempts)
+        else None
+    )
+    usage_profile = _sum_context_usage_profiles(current_attempts)
+    provider_pressure_signals = sorted(
+        {
+            signal
+            for attempt in current_attempts
+            for signal in attempt.get("provider_pressure_signals", [])
+        }
+    )
+    lease_expired_before_submission = any(
+        bool(attempt.get("lease_expired_before_submission"))
+        for attempt in current_attempts
+    )
     report = {
         **initial,
         "state": "completed" if completed else "failed",
         "finished_at": now_iso(),
-        "exit_code": exit_code,
-        "timed_out": timed_out,
-        "elapsed_seconds": elapsed_seconds,
-        "json_ok": json_ok,
+        "exit_code": current_attempts[-1]["exit_code"],
+        "timed_out": any(attempt["timed_out"] for attempt in current_attempts),
+        "elapsed_seconds": sum(
+            float(attempt["elapsed_seconds"]) for attempt in current_attempts
+        ),
+        "call_wall_seconds": sum(
+            float(attempt["call_wall_seconds"]) for attempt in current_attempts
+        ),
+        "json_ok": bool(current_attempts[-1]["json_ok"]),
+        "validation_error": validation_error,
+        "validation_error_kind": (
+            str(validation_error).split(":", 1)[0]
+            if validation_error
+            else None
+        ),
         "usage": usage,
+        "usage_profile": usage_profile,
         "usage_complete": usage is not None,
         "accounting_complete": usage is not None,
+        "job_attempt_number": int(job["attempts"] or 0),
+        "job_retry_count": max(int(job["attempts"] or 0) - 1, 0),
+        "provider_calls_this_invocation": len(current_attempts),
+        "provider_retry_count": max(0, len(all_attempts) - 1),
+        "retry_count": max(0, len(all_attempts) - 1),
+        "attempts": all_attempts,
+        "lease_expired_before_submission": lease_expired_before_submission,
+        "provider_pressure_signals": provider_pressure_signals,
         "submission": submission,
         "submission_error": submission_error,
         "status_ok": completed and usage is not None,

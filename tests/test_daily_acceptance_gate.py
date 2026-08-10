@@ -250,6 +250,386 @@ def _seed_current_release(conn: sqlite3.Connection, base: Path) -> Path:
 
 
 class DailyAcceptanceGateTests(unittest.TestCase):
+    @staticmethod
+    def _successful_validation_result() -> dict:
+        return {
+            "status": "completed",
+            "processed": 1,
+            "work_due": True,
+            "required_work_enabled": True,
+            "healthy_no_work": False,
+            "work_satisfied": True,
+            "lineage": {
+                "ok": True,
+                "claims_checked": 1_297,
+                "issue_count": 0,
+                "exact_offsets_checked_for_every_current_claim": True,
+                "segment_hash_checked_for_every_current_claim": True,
+            },
+            "privacy": {
+                "ok": True,
+                "contract": "railway-operational-v2",
+                "forbidden_keys": [],
+            },
+            "queue": {
+                "ok": True,
+                "pending_jobs": 0,
+                "claimed_jobs": 0,
+                "expired_or_missing_leases": 0,
+                "zombie_worker_runs": 0,
+                "orphan_queue_envelopes": 0,
+            },
+        }
+
+    @staticmethod
+    def _passing_stage_handler(clock=None, *, validation_result=None):
+        validation = (
+            validation_result
+            if validation_result is not None
+            else DailyAcceptanceGateTests._successful_validation_result()
+        )
+
+        def handler(context):
+            if context.stage_name == "bounded_baseline_extraction":
+                if clock is not None and clock.get("advance_at_extraction") is not None:
+                    clock["value"] = float(clock["advance_at_extraction"])
+                return {
+                    "status": "completed",
+                    "processed": 25,
+                    "work_due": True,
+                    "work_satisfied": True,
+                }
+            if context.stage_name == "evidence_schema_privacy_validation":
+                return validation
+            return {
+                "status": "completed",
+                "processed": 0,
+                "work_due": False,
+                "healthy_no_work": True,
+                "work_satisfied": True,
+            }
+
+        return handler
+
+    def _run_timed_cycle(self, *, clock: dict, validation_result=None) -> dict:
+        base = Path(clock["base"])
+        conn = db.connect(base / "factory.sqlite")
+        try:
+            db.init_db(conn)
+            _seed_current_release(conn, base)
+            handler = self._passing_stage_handler(
+                clock,
+                validation_result=validation_result,
+            )
+            with patch(
+                "research_factory.daily_cycle._quality_gate",
+                return_value={
+                    "passed": True,
+                    "counts": {},
+                    "minimums": {},
+                    "thresholds_met": {},
+                },
+            ), patch(
+                "research_factory.daily_cycle._cost_gate",
+                return_value={
+                    "passed": True,
+                    "paid_api_billing_detected": False,
+                },
+            ):
+                return run_daily_cycle(
+                    conn,
+                    run_date=str(clock["run_date"]),
+                    receipt_dir=base / "receipts",
+                    max_runtime_seconds=60,
+                    max_items=25,
+                    stage_handlers={
+                        name: handler for name in OPERATIONAL_STAGE_NAMES
+                    },
+                    _monotonic=lambda: float(clock["value"]),
+                )
+        finally:
+            conn.close()
+
+    def test_small_runtime_overrun_warns_but_validation_runs_and_cycle_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {
+                "base": tmp,
+                "run_date": "2026-08-02",
+                "value": 0.0,
+                "advance_at_extraction": 61.0,
+            }
+            result = self._run_timed_cycle(clock=clock)
+
+        self.assertTrue(result["ok"])
+        gates = result["receipt"]["scale_gate"]["gates"]
+        self.assertEqual(gates["runtime"]["evaluation_status"], "warning")
+        self.assertTrue(gates["runtime"]["passed"])
+        self.assertTrue(gates["lineage"]["evaluated"])
+        self.assertTrue(gates["lineage"]["passed"])
+        self.assertTrue(gates["privacy"]["evaluated"])
+        self.assertTrue(gates["privacy"]["passed"])
+        extraction = next(
+            item
+            for item in result["receipt"]["stage_receipts"]
+            if item["stage_name"] == "bounded_baseline_extraction"
+        )
+        self.assertEqual(extraction["status"], "completed")
+
+    def test_egregious_runtime_overrun_fails_but_validation_still_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {
+                "base": tmp,
+                "run_date": "2026-08-03",
+                "value": 0.0,
+                "advance_at_extraction": 121.0,
+            }
+            result = self._run_timed_cycle(clock=clock)
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["status"], "failed")
+        gates = result["receipt"]["scale_gate"]["gates"]
+        self.assertFalse(gates["runtime"]["passed"])
+        self.assertTrue(gates["runtime"]["egregious_bound_exceeded"])
+        self.assertTrue(gates["lineage"]["passed"])
+        self.assertTrue(gates["privacy"]["passed"])
+
+    def test_real_privacy_violation_fails_privacy_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = self._successful_validation_result()
+            validation["status"] = "failed"
+            validation["work_satisfied"] = False
+            validation["privacy"] = {
+                "ok": False,
+                "contract": "invalid-contract",
+                "forbidden_keys": ["raw_transcript"],
+            }
+            clock = {
+                "base": tmp,
+                "run_date": "2026-08-04",
+                "value": 0.0,
+                "advance_at_extraction": None,
+            }
+            result = self._run_timed_cycle(
+                clock=clock,
+                validation_result=validation,
+            )
+
+        privacy = result["receipt"]["scale_gate"]["gates"]["privacy"]
+        self.assertFalse(result["ok"])
+        self.assertTrue(privacy["evaluated"])
+        self.assertEqual(privacy["evaluation_status"], "failed")
+        self.assertFalse(privacy["passed"])
+        self.assertEqual(privacy["forbidden_keys"], ["raw_transcript"])
+
+    def test_not_evaluated_lineage_and_privacy_are_explicit_and_never_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            conn = db.connect(base / "factory.sqlite")
+            try:
+                db.init_db(conn)
+                _seed_current_release(conn, base)
+
+                def handler(context):
+                    if context.stage_name == "evidence_schema_privacy_validation":
+                        raise RuntimeError("validation unavailable")
+                    return {
+                        "status": "completed",
+                        "processed": 0,
+                        "work_due": False,
+                        "healthy_no_work": True,
+                        "work_satisfied": True,
+                    }
+
+                with patch(
+                    "research_factory.daily_cycle._quality_gate",
+                    return_value={"passed": True},
+                ), patch(
+                    "research_factory.daily_cycle._cost_gate",
+                    return_value={"passed": True},
+                ):
+                    result = run_daily_cycle(
+                        conn,
+                        run_date="2026-08-05",
+                        receipt_dir=base / "receipts",
+                        max_runtime_seconds=60,
+                        max_items=25,
+                        stage_handlers={
+                            name: handler for name in OPERATIONAL_STAGE_NAMES
+                        },
+                    )
+            finally:
+                conn.close()
+
+        gates = result["receipt"]["scale_gate"]["gates"]
+        for name in ("lineage", "privacy"):
+            self.assertFalse(gates[name]["evaluated"])
+            self.assertEqual(gates[name]["evaluation_status"], "not_evaluated")
+            self.assertIsNone(gates[name]["passed"])
+        self.assertFalse(result["receipt"]["scale_gate"]["genuinely_successful"])
+
+    def test_isolated_extraction_failure_runs_validation_and_can_pass_cycle(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            conn = db.connect(base / "factory.sqlite")
+            try:
+                db.init_db(conn)
+                _seed_current_release(conn, base)
+                called: list[str] = []
+
+                def handler(context):
+                    called.append(context.stage_name)
+                    if context.stage_name == "bounded_baseline_extraction":
+                        return {
+                            "status": "completed",
+                            "processed": 25,
+                            "work_due": True,
+                            "work_satisfied": True,
+                            "headless_attempted": 25,
+                            "headless_failure_rate": 0.04,
+                            "failure_rate_tolerance": 0.10,
+                            "failure_tolerance_passed": True,
+                        }
+                    if context.stage_name == "evidence_schema_privacy_validation":
+                        return self._successful_validation_result()
+                    return {
+                        "status": "completed",
+                        "processed": 0,
+                        "work_due": False,
+                        "healthy_no_work": True,
+                        "work_satisfied": True,
+                    }
+
+                with patch(
+                    "research_factory.daily_cycle._quality_gate",
+                    return_value={"passed": True, "counts": {}, "minimums": {}, "thresholds_met": {}},
+                ), patch(
+                    "research_factory.daily_cycle._cost_gate",
+                    return_value={"passed": True, "paid_api_billing_detected": False},
+                ):
+                    result = run_daily_cycle(
+                        conn,
+                        run_date="2026-08-02",
+                        receipt_dir=base / "receipts",
+                        max_runtime_seconds=60,
+                        max_items=25,
+                        stage_handlers={name: handler for name in OPERATIONAL_STAGE_NAMES},
+                    )
+
+                self.assertTrue(result["ok"])
+                self.assertTrue(result["receipt"]["scale_gate"]["genuinely_successful"])
+                self.assertIn("evidence_schema_privacy_validation", called)
+                self.assertTrue(result["receipt"]["scale_gate"]["gates"]["lineage"]["passed"])
+                self.assertTrue(result["receipt"]["scale_gate"]["gates"]["privacy"]["passed"])
+            finally:
+                conn.close()
+
+    def test_failed_extraction_still_runs_validation_but_cycle_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            conn = db.connect(base / "factory.sqlite")
+            try:
+                db.init_db(conn)
+                _seed_current_release(conn, base)
+                called: list[str] = []
+
+                def handler(context):
+                    called.append(context.stage_name)
+                    if context.stage_name == "bounded_baseline_extraction":
+                        return {
+                            "status": "failed",
+                            "processed": 25,
+                            "work_due": True,
+                            "work_satisfied": False,
+                            "headless_attempted": 25,
+                            "headless_failure_rate": 0.12,
+                            "failure_rate_tolerance": 0.10,
+                            "failure_tolerance_passed": False,
+                        }
+                    if context.stage_name == "evidence_schema_privacy_validation":
+                        return self._successful_validation_result()
+                    return {"status": "completed", "processed": 0}
+
+                with patch(
+                    "research_factory.daily_cycle._quality_gate",
+                    return_value={"passed": True, "counts": {}, "minimums": {}, "thresholds_met": {}},
+                ), patch(
+                    "research_factory.daily_cycle._cost_gate",
+                    return_value={"passed": True, "paid_api_billing_detected": False},
+                ):
+                    result = run_daily_cycle(
+                        conn,
+                        run_date="2026-08-03",
+                        receipt_dir=base / "receipts",
+                        max_runtime_seconds=60,
+                        max_items=25,
+                        stage_handlers={name: handler for name in OPERATIONAL_STAGE_NAMES},
+                    )
+
+                self.assertFalse(result["ok"])
+                self.assertEqual(result["status"], "failed")
+                self.assertIn("evidence_schema_privacy_validation", called)
+                gates = result["receipt"]["scale_gate"]["gates"]
+                self.assertFalse(gates["operations"]["passed"])
+                self.assertTrue(gates["lineage"]["passed"])
+                self.assertTrue(gates["privacy"]["passed"])
+            finally:
+                conn.close()
+
+    def test_real_lineage_violation_fails_lineage_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            conn = db.connect(base / "factory.sqlite")
+            try:
+                db.init_db(conn)
+                _seed_current_release(conn, base)
+
+                def handler(context):
+                    if context.stage_name == "evidence_schema_privacy_validation":
+                        result = self._successful_validation_result()
+                        result["status"] = "failed"
+                        result["work_satisfied"] = False
+                        result["lineage"] = {
+                            "ok": False,
+                            "claims_checked": 1_297,
+                            "issue_count": 1,
+                            "exact_offsets_checked_for_every_current_claim": False,
+                            "segment_hash_checked_for_every_current_claim": True,
+                        }
+                        return result
+                    return {
+                        "status": "completed",
+                        "processed": 0,
+                        "work_due": False,
+                        "healthy_no_work": True,
+                        "work_satisfied": True,
+                    }
+
+                with patch(
+                    "research_factory.daily_cycle._quality_gate",
+                    return_value={"passed": True, "counts": {}, "minimums": {}, "thresholds_met": {}},
+                ), patch(
+                    "research_factory.daily_cycle._cost_gate",
+                    return_value={"passed": True, "paid_api_billing_detected": False},
+                ):
+                    result = run_daily_cycle(
+                        conn,
+                        run_date="2026-08-04",
+                        receipt_dir=base / "receipts",
+                        max_runtime_seconds=60,
+                        max_items=25,
+                        stage_handlers={name: handler for name in OPERATIONAL_STAGE_NAMES},
+                    )
+
+                self.assertFalse(result["ok"])
+                lineage = result["receipt"]["scale_gate"]["gates"]["lineage"]
+                self.assertFalse(lineage["passed"])
+                self.assertEqual(lineage["issue_count"], 1)
+                self.assertEqual(lineage["claims_checked"], 1_297)
+            finally:
+                conn.close()
+
     def test_due_managed_extraction_cannot_be_reported_as_success(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)

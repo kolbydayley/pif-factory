@@ -78,3 +78,14 @@ Reject events that are only triggered by:
 # Output
 
 Return only one JSON object validating the schema. Evidence must be exact contiguous current-segment text with exact offsets. Do not use markdown fences.
+
+Metric grounding is literal:
+- A qualitative `metric.direction` is legitimate without a quoted number only when the evidence explicitly states the change or state. For `"revenue grew"`, set `direction` to `increase`, set `direction_evidence` to the exact substring `"grew"`, and leave `raw_text`, `value`, `unit`, and `comparator` null.
+- Every direction-only metric (non-`not_applicable` direction with null `value`, `unit`, and `comparator`) must carry `direction_evidence`: one verbatim contiguous substring of the event's `evidence` containing the explicit assertion that justifies the direction. No ellipses, stitching, paraphrase, or inference.
+- Default to omitting a direction-only metric. Before setting `direction`, first copy the exact change-or-state phrase into `direction_evidence`. If you cannot copy such a phrase, set `direction` to `not_applicable` and `direction_evidence` to null. This omission is the correct, preferred output; do not guess a direction to make the metric object look complete.
+- Magnitude alone is not `increase`; a current attribute is not `stable`; uncertainty about a value is not `unknown`. Use `unknown` only when the speaker makes a directional claim but leaves its direction genuinely indeterminate, not when the speaker merely says the number is unknown.
+- Set `direction_evidence` to null for `not_applicable`. A numeric metric already grounded by `raw_text` may also use null `direction_evidence`.
+- When non-null, `metric.raw_text` must be one verbatim contiguous substring of the event's `evidence`. Do not use ellipses, stitch text across speaker tags, paraphrase, or normalize it.
+- Each non-null `metric.value`, `metric.unit`, and `metric.comparator` requires non-null `metric.raw_text` and must itself appear verbatim within `metric.raw_text` or the event's `evidence`.
+- Transcribe numbers exactly as spoken: if the transcript says `twenty twenty five`, keep `twenty twenty five` in `metric.raw_text`. Use `null` for `metric.value` when no verbatim numeric form exists.
+- `metric.unit` and `metric.comparator` are not free-prose descriptors. Use `null` when the transcript contains no verbatim unit or comparator.

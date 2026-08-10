@@ -16,6 +16,9 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Callable, Iterator, Protocol
 
+from . import db as factory_db
+from .daily_cycle import ensure_daily_schema, run_daily_cycle
+from .orchestrator import pipeline_lock
 from .pipeline_babysitter import (
     DEFAULT_DB_PATH,
     DEFAULT_EVALUATION_ROOT,
@@ -27,6 +30,7 @@ from .pipeline_watchdog import (
     observe_with_deadline,
     recovery_message,
 )
+from .util import write_text_atomic
 
 
 SCHEMA_VERSION = "pif_sdk_pipeline_controller_v2"
@@ -47,6 +51,10 @@ DEFAULT_CHECKPOINT_PATH = DEFAULT_CONTROL_ROOT / "checkpoint.json"
 DEFAULT_LEDGER_PATH = DEFAULT_CONTROL_ROOT / "ledger.jsonl"
 DEFAULT_LOCK_PATH = DEFAULT_CONTROL_ROOT / "controller.lock"
 DEFAULT_ACTIVATION_PATH = DEFAULT_CONTROL_ROOT / "activation.json"
+DEFAULT_DAILY_MAX_ITEMS = 25
+DEFAULT_DAILY_RUNTIME_SECONDS = 3_600
+DEFAULT_DAILY_CONCURRENCY = 10
+DEFAULT_DAILY_SOURCE_LIST = DEFAULT_PROJECT_ROOT / "config" / "sources.yaml"
 
 
 class ControllerError(RuntimeError):
@@ -127,6 +135,239 @@ def iso_now(now: dt.datetime | None = None) -> str:
     if value.tzinfo is None:
         value = value.replace(tzinfo=dt.timezone.utc)
     return value.replace(microsecond=0).isoformat()
+
+
+def local_calendar_date(now: dt.datetime | None = None) -> str:
+    value = now or dt.datetime.now().astimezone()
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=dt.timezone.utc)
+    return value.astimezone().date().isoformat()
+
+
+def _successful_daily_receipt_for_date(
+    conn,
+    *,
+    run_date: str,
+) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT pif_daily_runs.id AS run_id,
+               pif_daily_runs.receipt_json AS daily_receipt_json,
+               pif_scale_gate_state_receipts.receipt_json AS scale_receipt_json
+        FROM pif_scale_gate_state_receipts
+        JOIN pif_daily_runs
+          ON pif_daily_runs.id = pif_scale_gate_state_receipts.daily_run_id
+        WHERE pif_scale_gate_state_receipts.run_date = ?
+          AND pif_scale_gate_state_receipts.genuinely_successful = 1
+        ORDER BY pif_scale_gate_state_receipts.created_at DESC,
+                 pif_scale_gate_state_receipts.id DESC
+        LIMIT 1
+        """,
+        (run_date,),
+    ).fetchone()
+    if not row:
+        return None
+    return {
+        "run_id": str(row["run_id"]),
+        "daily_receipt": json.loads(str(row["daily_receipt_json"])),
+        "scale_receipt": json.loads(str(row["scale_receipt_json"])),
+    }
+
+
+def _gate_table(scale_receipt: dict[str, Any]) -> dict[str, bool]:
+    gates = scale_receipt.get("gates")
+    if not isinstance(gates, dict):
+        return {}
+    return {
+        str(name): bool(value.get("passed"))
+        for name, value in sorted(gates.items())
+        if isinstance(value, dict)
+    }
+
+
+def daily_intent_path(project_root: Path, run_date: str) -> Path:
+    return (
+        project_root.expanduser().resolve()
+        / "work"
+        / "pif-ops"
+        / "controller-daily-intent"
+        / run_date
+        / "intent.json"
+    )
+
+
+def _record_daily_intent(
+    path: Path,
+    *,
+    run_date: str,
+    status: str,
+    configuration: dict[str, Any],
+    detail: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    requested_at = iso_now()
+    if path.exists():
+        try:
+            prior = json.loads(path.read_text(encoding="utf-8"))
+            requested_at = str(prior.get("requested_at") or requested_at)
+        except (OSError, json.JSONDecodeError):
+            pass
+    record = {
+        "schema_version": "pif_controller_daily_intent_v1",
+        "run_date": run_date,
+        "status": status,
+        "requested_at": requested_at,
+        "updated_at": iso_now(),
+        "configuration": configuration,
+        "detail": detail or {},
+    }
+    record["content_sha256"] = json_sha256(record)
+    write_text_atomic(path, json.dumps(record, indent=2, sort_keys=True) + "\n")
+    return {**record, "path": str(path)}
+
+
+def run_controller_daily_cycle(
+    args: argparse.Namespace,
+    *,
+    now: dt.datetime | None = None,
+) -> dict[str, Any]:
+    run_date = local_calendar_date(now)
+    configuration = {
+        "run_date": run_date,
+        "max_items": int(args.daily_max_items),
+        "max_runtime_seconds": int(args.daily_runtime_seconds),
+        "concurrency": int(args.daily_concurrency),
+        "execute_ingestion": bool(args.execute_ingestion),
+        "execute_extraction": bool(args.execute_extraction),
+        "execute_outcomes": bool(args.execute_outcomes),
+        "source_list": str(args.daily_source_list.expanduser().resolve()),
+        "model": "gpt-5.5",
+        "label_pack": "ai_discourse_v3_1",
+    }
+    intent_path = daily_intent_path(args.project_root, run_date)
+    _record_daily_intent(
+        intent_path,
+        run_date=run_date,
+        status="requested",
+        configuration=configuration,
+    )
+    with pipeline_lock(wait=False) as acquired:
+        if not acquired:
+            intent = _record_daily_intent(
+                intent_path,
+                run_date=run_date,
+                status="deferred_pipeline_lock_busy",
+                configuration=configuration,
+                detail={"reason": "backfill_or_other_pipeline_work_holds_lock"},
+            )
+            return {
+                "ok": True,
+                "status": "deferred_pipeline_lock_busy",
+                "deferred": True,
+                "no_op": True,
+                "genuinely_successful": False,
+                "controller_daily_cycle": True,
+                "configuration": configuration,
+                "daily_intent": intent,
+            }
+        _record_daily_intent(
+            intent_path,
+            run_date=run_date,
+            status="running",
+            configuration=configuration,
+        )
+        conn = factory_db.connect(args.db.expanduser().resolve())
+        try:
+            ensure_daily_schema(conn)
+            successful = _successful_daily_receipt_for_date(
+                conn,
+                run_date=run_date,
+            )
+            if successful:
+                scale_receipt = successful["scale_receipt"]
+                intent = _record_daily_intent(
+                    intent_path,
+                    run_date=run_date,
+                    status="completed_genuinely_successful",
+                    configuration=configuration,
+                    detail={"run_id": successful["run_id"], "no_op": True},
+                )
+                return {
+                    "ok": True,
+                    "status": "no_op_genuinely_successful_today",
+                    "no_op": True,
+                    "controller_daily_cycle": True,
+                    "configuration": configuration,
+                    "run_id": successful["run_id"],
+                    "genuinely_successful": True,
+                    "gate_table": _gate_table(scale_receipt),
+                    "receipt": successful["daily_receipt"],
+                    "scale_receipt": scale_receipt,
+                    "daily_intent": intent,
+                }
+            result = run_daily_cycle(
+                conn,
+                run_date=run_date,
+                # A failed same-date receipt must remain immutable but must not
+                # pin every later controller attempt to an idempotent replay of
+                # that failure. The successful-receipt guard above remains the
+                # per-date no-op authority.
+                idempotency_key=f"pif-controller-daily-{run_date}-{uuid.uuid4().hex}",
+                max_runtime_seconds=int(args.daily_runtime_seconds),
+                max_items=int(args.daily_max_items),
+                source_list=args.daily_source_list.expanduser().resolve(),
+                execute_ingestion=bool(args.execute_ingestion),
+                execute_extraction=bool(args.execute_extraction),
+                extraction_concurrency=int(args.daily_concurrency),
+                execute_outcomes=bool(args.execute_outcomes),
+                lane="podcast",
+                label_pack="ai_discourse_v3_1",
+                model="gpt-5.5",
+            )
+            receipt = result.get("receipt") or {}
+            scale_receipt = (
+                receipt.get("scale_gate")
+                if isinstance(receipt, dict)
+                else {}
+            ) or {}
+            genuinely_successful = bool(scale_receipt.get("genuinely_successful"))
+            intent = _record_daily_intent(
+                intent_path,
+                run_date=run_date,
+                status=(
+                    "completed_genuinely_successful"
+                    if genuinely_successful
+                    else "failed"
+                ),
+                configuration=configuration,
+                detail={
+                    "run_id": result.get("run_id") or receipt.get("run_id"),
+                    "cycle_status": result.get("status"),
+                    "genuinely_successful": genuinely_successful,
+                },
+            )
+            return {
+                **result,
+                "controller_daily_cycle": True,
+                "configuration": configuration,
+                "no_op": False,
+                "genuinely_successful": genuinely_successful,
+                "gate_table": _gate_table(scale_receipt),
+                "daily_intent": intent,
+            }
+        except Exception as exc:
+            _record_daily_intent(
+                intent_path,
+                run_date=run_date,
+                status="failed",
+                configuration=configuration,
+                detail={
+                    "error_class": type(exc).__name__,
+                    "message": str(exc)[:500],
+                },
+            )
+            raise
+        finally:
+            conn.close()
 
 
 def parse_iso(value: Any) -> dt.datetime | None:
@@ -1231,7 +1472,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--goals-db", type=Path, default=DEFAULT_GOALS_DB_PATH)
     parser.add_argument("--evaluation-root", type=Path, default=DEFAULT_EVALUATION_ROOT)
     parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
-    parser.add_argument("--model", default="gpt-5.4")
+    parser.add_argument("--model", default="gpt-5.5")
     parser.add_argument("--reasoning-effort", default="xhigh")
     parser.add_argument("--codex-bin", default=None)
     parser.add_argument("--allow-model-turns", action="store_true")
@@ -1248,10 +1489,50 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--interval-seconds", type=int, default=30)
     parser.add_argument("--minimum-turn-interval-seconds", type=int, default=60)
+    parser.add_argument(
+        "--daily-max-items",
+        type=int,
+        default=DEFAULT_DAILY_MAX_ITEMS,
+    )
+    parser.add_argument(
+        "--daily-runtime-seconds",
+        type=int,
+        default=DEFAULT_DAILY_RUNTIME_SECONDS,
+    )
+    parser.add_argument(
+        "--daily-concurrency",
+        type=int,
+        default=DEFAULT_DAILY_CONCURRENCY,
+    )
+    parser.add_argument(
+        "--daily-source-list",
+        type=Path,
+        default=DEFAULT_DAILY_SOURCE_LIST,
+    )
+    parser.add_argument(
+        "--execute-ingestion",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--execute-extraction",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--execute-outcomes",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("status")
     subparsers.add_parser("once")
-    subparsers.add_parser("serve")
+    serve = subparsers.add_parser("serve")
+    serve.add_argument(
+        "--once",
+        action="store_true",
+        help="Run one controller daily-cycle decision and exit.",
+    )
     return parser
 
 
@@ -1315,6 +1596,22 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0
+
+    if args.command == "serve":
+        try:
+            with exclusive_controller_lock(args.lock.expanduser()):
+                while True:
+                    result = run_controller_daily_cycle(args)
+                    print(json.dumps(result, indent=2, sort_keys=True), flush=True)
+                    if args.once:
+                        return 0 if result.get("ok") else 1
+                    time.sleep(max(1, args.interval_seconds))
+        except ControllerAlreadyRunning as exc:
+            print(
+                json.dumps({"status": "already_running", "error": str(exc)}),
+                file=sys.stderr,
+            )
+            return 75
 
     controller = controller_from_args(args)
     try:

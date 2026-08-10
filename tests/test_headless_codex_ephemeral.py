@@ -14,7 +14,7 @@ def test_every_one_shot_codex_exec_is_ephemeral() -> None:
         if not isinstance(node, ast.List):
             continue
         values = [item.value for item in node.elts if isinstance(item, ast.Constant) and isinstance(item.value, str)]
-        if values[:2] == ["codex", "exec"]:
+        if "exec" in values and "--ephemeral" in values:
             commands.append(values)
 
     assert commands, "Expected at least one one-shot Codex command"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,7 +16,10 @@ from research_factory.daily_cycle import (
     _record_daily_extraction_pipeline_run,
     ensure_daily_schema,
 )
-from research_factory.headless_codex import execute_claimed_label_runs
+from research_factory.headless_codex import (
+    execute_claimed_label_runs,
+    execute_pending_reviewer_audits,
+)
 from research_factory.worker import claim_next_job
 
 
@@ -337,6 +341,106 @@ def test_execute_extraction_enables_real_bounded_baseline_and_honest_counts(tmp_
         conn.close()
 
 
+def test_daily_extraction_tolerates_one_of_twenty_five_provider_failures(
+    tmp_path: Path,
+) -> None:
+    conn = db.connect(tmp_path / "factory.sqlite")
+    try:
+        db.init_db(conn)
+        ensure_daily_schema(conn)
+        handler, prior_context = _baseline_handler(
+            conn, tmp_path / "receipts", execute_extraction=True
+        )
+        context = DailyStageContext(
+            **{**prior_context.__dict__, "max_items": 25}
+        )
+        worker_result = {
+            "processed": 25,
+            "completed": 0,
+            "claimed_prompts": 25,
+            "failed": 0,
+            "details": [],
+        }
+        headless_result = {
+            "ok": False,
+            "selected": 25,
+            "processed": 25,
+            "submitted": 24,
+            "failed": 1,
+            "results": [],
+        }
+        with patch(
+            "research_factory.daily_cycle._job_count_recent", side_effect=[25, 1]
+        ), patch(
+            "research_factory.worker.run_jobs", return_value=worker_result
+        ), patch(
+            "research_factory.headless_codex.execute_claimed_label_runs",
+            return_value=headless_result,
+        ), patch(
+            "research_factory.daily_cycle._record_daily_extraction_pipeline_run",
+            return_value={"recorded": True, "status": "succeeded"},
+        ):
+            result = handler(context)
+
+        assert result["status"] == "completed"
+        assert result["work_satisfied"] is True
+        assert result["headless_failure_rate"] == 0.04
+        assert result["failure_rate_tolerance"] == 0.10
+        assert result["failure_tolerance_passed"] is True
+        assert result["reason"] == "bounded_extraction_within_failure_tolerance"
+    finally:
+        conn.close()
+
+
+def test_daily_extraction_fails_above_ten_percent_provider_failures(
+    tmp_path: Path,
+) -> None:
+    conn = db.connect(tmp_path / "factory.sqlite")
+    try:
+        db.init_db(conn)
+        ensure_daily_schema(conn)
+        handler, prior_context = _baseline_handler(
+            conn, tmp_path / "receipts", execute_extraction=True
+        )
+        context = DailyStageContext(
+            **{**prior_context.__dict__, "max_items": 25}
+        )
+        worker_result = {
+            "processed": 25,
+            "completed": 0,
+            "claimed_prompts": 25,
+            "failed": 0,
+            "details": [],
+        }
+        headless_result = {
+            "ok": False,
+            "selected": 25,
+            "processed": 25,
+            "submitted": 22,
+            "failed": 3,
+            "results": [],
+        }
+        with patch(
+            "research_factory.daily_cycle._job_count_recent", side_effect=[25, 3]
+        ), patch(
+            "research_factory.worker.run_jobs", return_value=worker_result
+        ), patch(
+            "research_factory.headless_codex.execute_claimed_label_runs",
+            return_value=headless_result,
+        ), patch(
+            "research_factory.daily_cycle._record_daily_extraction_pipeline_run",
+            return_value={"recorded": True, "status": "failed"},
+        ):
+            result = handler(context)
+
+        assert result["status"] == "failed"
+        assert result["work_satisfied"] is False
+        assert result["headless_failure_rate"] == 0.12
+        assert result["failure_tolerance_passed"] is False
+    finally:
+        conn.close()
+
+
 def test_execute_ingestion_enables_recent_bounded_work_and_honest_counts(
     tmp_path: Path,
 ) -> None:
@@ -393,6 +497,47 @@ def test_execute_ingestion_enables_recent_bounded_work_and_honest_counts(
         assert enqueue_sources.call_args.kwargs["since"] == "2026-07-28T12:00:00+00:00"
         assert enqueue_sources.call_args.kwargs["max_items"] == 5
         assert enqueue_sources.call_args.kwargs["max_runtime_seconds"] == 120.0
+    finally:
+        conn.close()
+
+
+def test_ingestion_item_bound_with_progress_is_satisfied_not_noop(
+    tmp_path: Path,
+) -> None:
+    conn = db.connect(tmp_path / "factory.sqlite")
+    try:
+        db.init_db(conn)
+        ensure_daily_schema(conn)
+        handler, context = _ingestion_handler(
+            conn,
+            tmp_path / "receipts",
+            execute_ingestion=True,
+        )
+        with patch(
+            "research_factory.transcript_strategies.transcript_strategy_report",
+            return_value={"strategy_count": 1, "totals": {}},
+        ), patch(
+            "research_factory.daily_cycle._recent_job_window_start",
+            return_value="2026-07-28T12:00:00+00:00",
+        ), patch(
+            "research_factory.ingest.enqueue_sources",
+            return_value={
+                "sources": 57,
+                "episodes": 5,
+                "episodes_inserted": 4,
+                "source_errors": 0,
+                "skipped_after_max_items": 3,
+                "sources_deferred_due_to_runtime": 0,
+                "runtime_exhausted": False,
+            },
+        ):
+            result = handler(context)
+
+        assert result["processed"] == 5
+        assert result["bounded_remainder"] == 3
+        assert result["work_due"] is True
+        assert result["work_satisfied"] is True
+        assert result["status"] == "completed"
     finally:
         conn.close()
 
@@ -725,6 +870,7 @@ class _FakeClaimedConnection:
     def __init__(self, rows):
         self.rows = rows
         self.execute_thread_ids: list[int] = []
+        self.submitted_labels: dict[int, str] = {}
 
     def execute(self, sql, params=()):
         self.execute_thread_ids.append(threading.get_ident())
@@ -742,25 +888,33 @@ class _FakeClaimedConnection:
 
 
 def _fake_claimed_rows(tmp_path: Path):
-    return [
-        {
+    rows = []
+    for index in range(1, 5):
+        prompt_path = tmp_path / f"prompt-{index}.json"
+        prompt_path.write_text(f"single-shot prompt {index}", encoding="utf-8")
+        rows.append({
             "job_id": index,
             "lease_owner": "daily-owner",
             "label_run_id": f"run-{index}",
-            "prompt_path": str(tmp_path / f"prompt-{index}.json"),
+            "prompt_path": str(prompt_path),
             "output_path": str(tmp_path / f"output-{index}.json"),
-        }
-        for index in range(1, 5)
-    ]
+        })
+    return rows
 
 
 def test_concurrent_claimed_execution_matches_serial_with_fake_codex(tmp_path: Path) -> None:
     rows = _fake_claimed_rows(tmp_path)
+    invocations = []
+    submissions: list[int] = []
 
     def fake_run(*args, **kwargs):
+        invocations.append((args, kwargs))
         return SimpleNamespace(returncode=0)
 
     def fake_submit(conn, *, job_id, output_json_path, worker_id, allow_expired):
+        assert job_id not in conn.submitted_labels
+        conn.submitted_labels[job_id] = f"label-{job_id}"
+        submissions.append(job_id)
         return {"label_id": f"label-{job_id}"}
 
     summaries = []
@@ -799,6 +953,19 @@ def test_concurrent_claimed_execution_matches_serial_with_fake_codex(tmp_path: P
     assert [item["status"] for item in serial["results"]] == [
         item["status"] for item in concurrent["results"]
     ]
+    assert submissions[:4] == [1, 2, 3, 4]
+    assert sorted(submissions[4:]) == [1, 2, 3, 4]
+    assert len(set(submissions[4:])) == 4
+    assert connections[0].submitted_labels == connections[1].submitted_labels
+    assert len(invocations) == 8
+    assert all(call_args[0][-1] == "-" for call_args, _ in invocations)
+    for _, call_kwargs in invocations:
+        assert "Write the final JSON object" in call_kwargs["input"]
+        assert any(
+            f"single-shot prompt {index}" in call_kwargs["input"]
+            and str(tmp_path / f"output-{index}.json") in call_kwargs["input"]
+            for index in range(1, 5)
+        )
     main_thread = threading.get_ident()
     assert all(set(connection.execute_thread_ids) == {main_thread} for connection in connections)
 
@@ -844,6 +1011,126 @@ def test_claimed_execution_finalizes_submission_failure(tmp_path: Path) -> None:
         lease_owner="daily-owner",
         error="invalid exact-evidence metric",
     )
+
+
+def test_claimed_execution_timeout_returns_job_pending_without_spending_attempt(
+    tmp_path: Path,
+) -> None:
+    rows = _fake_claimed_rows(tmp_path)[:1]
+    connection = _FakeClaimedConnection(rows)
+    with patch(
+        "research_factory.headless_codex.runs_dir", return_value=tmp_path
+    ), patch(
+        "research_factory.headless_codex.root", return_value=tmp_path
+    ), patch(
+        "research_factory.headless_codex.resolve_codex_binary",
+        return_value="codex",
+    ), patch(
+        "research_factory.headless_codex.subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="codex", timeout=30),
+    ), patch(
+        "research_factory.headless_codex._finalize_submission_failure",
+        return_value={
+            "finalized": True,
+            "job_status": "pending",
+            "label_run_status": "failed",
+            "attempt_consumed": False,
+        },
+    ) as finalize:
+        result = execute_claimed_label_runs(
+            connection,
+            lease_owner="daily-owner",
+            limit=1,
+            model="gpt-5.5",
+            timeout_seconds=30,
+            audit=False,
+            concurrency=1,
+        )
+
+    assert result["failed"] == 1
+    assert result["results"][0]["status"] == "codex_exec_timeout"
+    assert result["results"][0]["timed_out"] is True
+    finalize.assert_called_once_with(
+        connection,
+        job_id=1,
+        label_run_id="run-1",
+        lease_owner="daily-owner",
+        error="codex_exec_timeout",
+        consume_attempt=False,
+    )
+
+
+def test_reviewer_audit_uses_single_shot_stdin(tmp_path: Path) -> None:
+    prompt_path = tmp_path / "reviewer-prompt.md"
+    output_path = tmp_path / "reviewer-output.json"
+    prompt_path.write_text("review this label exactly once", encoding="utf-8")
+
+    class MainConnection:
+        def execute(self, sql, params=()):
+            if "FROM reviewer_audits" in sql:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "audit-1",
+                            "prompt_path": str(prompt_path),
+                            "output_path": str(output_path),
+                            "patch_tag": "phase1",
+                        }
+                    ]
+                )
+            if "UPDATE reviewer_audits" in sql:
+                return SimpleNamespace(rowcount=1)
+            raise AssertionError(sql)
+
+        def commit(self):
+            return None
+
+    class WorkerConnection:
+        def execute(self, sql, params=()):
+            if "SELECT status FROM reviewer_audits" in sql:
+                return _Cursor(row={"status": "claimed"})
+            if "UPDATE reviewer_audits" in sql:
+                return SimpleNamespace(rowcount=1)
+            raise AssertionError(sql)
+
+        def commit(self):
+            return None
+
+        def close(self):
+            return None
+
+    calls = []
+
+    def fake_run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0)
+
+    with patch(
+        "research_factory.headless_codex.runs_dir", return_value=tmp_path
+    ), patch(
+        "research_factory.headless_codex.root", return_value=tmp_path
+    ), patch(
+        "research_factory.headless_codex.db.connect",
+        return_value=WorkerConnection(),
+    ), patch(
+        "research_factory.headless_codex.subprocess.run",
+        side_effect=fake_run,
+    ), patch(
+        "research_factory.headless_codex.submit_reviewer_audit",
+        return_value={"audit_id": "audit-1"},
+    ):
+        result = execute_pending_reviewer_audits(
+            MainConnection(),
+            patch_tag="phase1",
+            limit=1,
+            model="gpt-5.5",
+        )
+
+    assert result["submitted"] == 1
+    assert calls[0][0][0][-1] == "-"
+    assert "Write the final JSON object" in calls[0][1]["input"]
+    assert str(output_path) in calls[0][1]["input"]
+    assert calls[0][1]["input"].endswith("review this label exactly once")
 
 
 def test_daily_cli_requires_explicit_extraction_flag() -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import re
 import signal
@@ -8,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .paths import label_pack_dir
-from .util import read_text
+from .util import dumps_json, read_text, sha256_text
 
 
 class ValidationError(ValueError):
@@ -44,6 +45,20 @@ def load_label_pack(name: str) -> LabelPack:
         examples=examples,
         evals=evals,
     )
+
+
+def label_pack_provenance(pack: LabelPack) -> dict[str, str]:
+    components = {
+        "prompt_sha256": sha256_text(pack.prompt),
+        "schema_sha256": sha256_text(dumps_json(pack.schema)),
+        "codebook_sha256": sha256_text(pack.codebook),
+        "examples_sha256": sha256_text(dumps_json(pack.examples)),
+        "evals_sha256": sha256_text(dumps_json(pack.evals)),
+    }
+    return {
+        **components,
+        "pack_configuration_sha256": sha256_text(dumps_json(components)),
+    }
 
 
 class _OptionalPackReadTimeout(TimeoutError):
@@ -88,7 +103,20 @@ def validate_label_output(label_pack: str, value: dict[str, Any], *, segment_tex
         validate_label_grounding(label_pack, value, segment_text=segment_text)
 
 
-def repair_label_output_for_submission(label_pack: str, value: dict[str, Any], *, segment_text: str) -> int:
+def repair_label_output_for_submission(
+    label_pack: str,
+    value: dict[str, Any],
+    *,
+    segment_text: str,
+    metric_quarantines: list[dict[str, Any]] | None = None,
+    salvage_structural: bool = False,
+    structural_drops: list[dict[str, Any]] | None = None,
+) -> int:
+    if salvage_structural and label_pack == "ai_discourse_v3_1":
+        # Opt-in only: production behaviour is unchanged unless a caller asks for it.
+        _drop_v31_structurally_invalid_events(
+            label_pack, value, structural_drops=structural_drops
+        )
     if label_pack == "ai_discourse_v1":
         repairs = 0
         for item in _iter_dicts_with_evidence(value):
@@ -160,7 +188,10 @@ def repair_label_output_for_submission(label_pack: str, value: dict[str, Any], *
             repairs += 1
     if label_pack == "ai_discourse_v3_1":
         repairs += _drop_v31_items_with_unresolved_evidence(value, segment_text=segment_text)
-        repairs += _clear_v31_ungrounded_metrics(value)
+        repairs += _clear_v31_ungrounded_metrics(
+            value,
+            metric_quarantines=metric_quarantines,
+        )
     return repairs
 
 
@@ -199,37 +230,177 @@ def _best_bounded_evidence_window(
     return max(candidates, key=score)
 
 
-def _clear_v31_ungrounded_metrics(value: dict[str, Any]) -> int:
-    """Suppress metric fields that cannot be proved by the event evidence."""
+def _v31_metric_grounding_failures(
+    metric: dict[str, Any],
+    *,
+    evidence: str,
+) -> list[str]:
+    raw_text = str(metric.get("raw_text") or "")
+    parts = {
+        field: str(metric.get(field) or "")
+        for field in ("value", "unit", "comparator")
+        if metric.get(field) not in (None, "")
+    }
+    failures: list[str] = []
+    direction = str(metric.get("direction") or "not_applicable")
+    direction_evidence = str(metric.get("direction_evidence") or "")
+    if not raw_text and not parts:
+        if direction == "not_applicable":
+            if direction_evidence:
+                failures.append("direction_evidence_with_not_applicable")
+            return failures
+        if not direction_evidence or direction_evidence not in evidence:
+            failures.append("direction_evidence_not_evidence_substring")
+            return failures
+        semantic_failure = _v31_direction_semantic_failure(
+            direction, direction_evidence
+        )
+        if semantic_failure:
+            failures.append(semantic_failure)
+        return failures
+    if not raw_text or raw_text not in evidence:
+        failures.append("raw_text_not_evidence_substring")
+    for field, part in parts.items():
+        if part not in raw_text and part not in evidence:
+            failures.append(f"{field}_not_raw_text_or_evidence_substring")
+    return failures
+
+
+_V31_DIRECTION_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    "increase": tuple(
+        re.compile(pattern, re.IGNORECASE)
+        for pattern in (
+            r"\b(?:increase[ds]?|increasing|rise[ns]?|rose|rising|grow(?:s|ing|th)?|grew|grown)\b",
+            r"\b(?:surge[ds]?|jump(?:s|ed|ing)?|climb(?:s|ed|ing)?|expand(?:s|ed|ing)?)\b",
+            r"\b(?:improve[ds]?|improving|accelerate[ds]?|accelerating|upward)\b",
+            r"\b(?:became|becoming|moved|moving|trending|will be)\s+(?:materially\s+)?higher\b|\bhigher\s+than\b",
+            r"\b(?:double[ds]?|doubling|triple[ds]?|tripling)\b",
+        )
+    ),
+    "decrease": tuple(
+        re.compile(pattern, re.IGNORECASE)
+        for pattern in (
+            r"\b(?:decrease[ds]?|decreasing|decline[ds]?|declining|fall(?:s|ing|en)?|fell)\b",
+            r"\b(?:drop(?:s|ped|ping)?|shrink(?:s|ing)?|shrank|reduce[ds]?|reducing)\b",
+            r"\b(?:lowered|downward|worsen(?:s|ed|ing)?|contract(?:s|ed|ing)?)\b",
+            r"\b(?:became|becoming|moved|moving|trending|will be)\s+(?:materially\s+)?lower\b|\blower\s+than\b|\blower\b.{0,60}\b(?:coming|ahead)\b",
+        )
+    ),
+    "stable": tuple(
+        re.compile(pattern, re.IGNORECASE)
+        for pattern in (
+            r"\b(?:stable|steady|unchanged|flat)\b",
+            r"\b(?:held|remained|stayed)\s+(?:roughly\s+)?(?:stable|steady|flat|unchanged)\b",
+            r"\bno\s+(?:material\s+)?change\b",
+        )
+    ),
+    "mixed": (re.compile(r"\bmixed\b", re.IGNORECASE),),
+    "unknown": tuple(
+        re.compile(pattern, re.IGNORECASE)
+        for pattern in (
+            r"\b(?:direction|trajectory|trend)\s+(?:is|was|remains?)\s+(?:unknown|unclear|indeterminate)\b",
+            r"\b(?:whether|if)\b.{0,80}\b(?:rise|increase|grow)\b.{0,80}\b(?:or|versus)\b.{0,80}\b(?:fall|decrease|decline)\b",
+            r"\b(?:rise|increase|grow)\b.{0,80}\bor\b.{0,80}\b(?:fall|decrease|decline)\b",
+        )
+    ),
+}
+
+
+def _v31_direction_semantic_failure(direction: str, text: str) -> str | None:
+    """Return the deterministic failure class for grounded direction text."""
+
+    matches = {
+        kind: any(pattern.search(text) for pattern in patterns)
+        for kind, patterns in _V31_DIRECTION_PATTERNS.items()
+    }
+    if direction == "mixed":
+        matches["mixed"] = bool(
+            matches["mixed"] or (matches["increase"] and matches["decrease"])
+        )
+    if matches.get(direction):
+        return None
+    if any(matches.values()):
+        return "wrong_direction"
+    if direction == "stable":
+        return "stable_filler"
+    if direction == "unknown":
+        return "unknown_filler"
+    return "no_directional_claim"
+
+
+def recover_v31_direction_evidence(
+    direction: str, evidence: str
+) -> tuple[str | None, str | None]:
+    """Recover a literal directional phrase without making a semantic inference.
+
+    The returned phrase is always a byte-for-byte substring of ``evidence``.
+    ``failure`` uses the same taxonomy as the validator when deterministic
+    recovery is not possible.
+    """
+
+    expected = _V31_DIRECTION_PATTERNS.get(direction, ())
+    matches = [match for pattern in expected if (match := pattern.search(evidence))]
+    if matches:
+        match = min(matches, key=lambda item: (len(item.group(0)), item.start()))
+        return match.group(0), None
+    if direction == "mixed":
+        increases = [
+            match
+            for pattern in _V31_DIRECTION_PATTERNS["increase"]
+            if (match := pattern.search(evidence))
+        ]
+        decreases = [
+            match
+            for pattern in _V31_DIRECTION_PATTERNS["decrease"]
+            if (match := pattern.search(evidence))
+        ]
+        pairs = [
+            (min(left.start(), right.start()), max(left.end(), right.end()))
+            for left in increases
+            for right in decreases
+            if max(left.end(), right.end()) - min(left.start(), right.start()) <= 240
+        ]
+        if pairs:
+            start, end = min(pairs, key=lambda pair: (pair[1] - pair[0], pair[0]))
+            return evidence[start:end], None
+    failure = _v31_direction_semantic_failure(direction, evidence)
+    return None, failure
+
+
+def _clear_v31_ungrounded_metrics(
+    value: dict[str, Any],
+    *,
+    metric_quarantines: list[dict[str, Any]] | None = None,
+) -> int:
+    """Quarantine, then suppress, metric fields not proved by event evidence."""
 
     repairs = 0
-    for event in value.get("discourse_events") or []:
+    for event_index, event in enumerate(value.get("discourse_events") or []):
         if not isinstance(event, dict):
             continue
         metric = event.get("metric")
         if not isinstance(metric, dict):
             continue
         evidence = str(event.get("evidence") or "")
-        raw_text = str(metric.get("raw_text") or "")
-        parts = [
-            str(metric.get(field) or "")
-            for field in ("value", "unit", "comparator")
-            if metric.get(field) not in (None, "")
-        ]
-        direction = str(metric.get("direction") or "not_applicable")
-        has_metric = bool(raw_text or parts or direction != "not_applicable")
-        if not has_metric:
+        failed_rules = _v31_metric_grounding_failures(metric, evidence=evidence)
+        if not failed_rules:
             continue
-        grounded = bool(raw_text and raw_text in evidence) and all(
-            part in raw_text or part in evidence for part in parts
-        )
-        if grounded:
-            continue
+        if metric_quarantines is not None:
+            metric_quarantines.append(
+                {
+                    "event_index": event_index,
+                    "claim_text": str(event.get("claim_text") or ""),
+                    "original_metric": copy.deepcopy(metric),
+                    "evidence": evidence,
+                    "failed_rules": failed_rules,
+                }
+            )
         event["metric"] = {
             "value": None,
             "unit": None,
             "comparator": None,
             "direction": "not_applicable",
+            "direction_evidence": None,
             "raw_text": None,
         }
         flags = list(event.get("quality_flags") or [])
@@ -313,6 +484,59 @@ def _drop_v1_unsupported_entities(value: dict[str, Any], *, segment_text: str) -
             value["review_reason"] = f"{current} {reason}".strip()[:240] if current else reason
         repairs += 1
     return repairs
+
+
+def _drop_v31_structurally_invalid_events(
+    label_pack: str,
+    value: dict[str, Any],
+    *,
+    structural_drops: list[dict[str, Any]] | None = None,
+) -> int:
+    """Drop individual events that fail the per-event schema.
+
+    ``_validate_schema`` validates the whole object, so one bad enum in one event
+    discards every event in the segment. That is what happened to the only
+    full-contract GLM output that ever produced real volume: 28,019 output tokens
+    thrown away over a single ``reported_actor.actor_type`` token.
+
+    Events are DROPPED, never coerced -- rewriting an out-of-vocabulary enum into a
+    legal one fabricates data. Each drop is recorded with its original payload so
+    the loss stays auditable and recoverable.
+    """
+    pack = load_label_pack(label_pack)
+    item_schema = ((pack.schema.get("properties") or {}).get("discourse_events") or {}).get("items")
+    if not isinstance(item_schema, dict):
+        return 0
+    events = value.get("discourse_events")
+    if not isinstance(events, list):
+        return 0
+
+    kept: list[Any] = []
+    dropped = 0
+    for index, event in enumerate(events):
+        try:
+            _validate_schema(item_schema, event, path=f"$.discourse_events[{index}]")
+        except ValidationError as error:
+            dropped += 1
+            if structural_drops is not None:
+                structural_drops.append(
+                    {
+                        "event_index": index,
+                        "failed_rule": str(error)[:300],
+                        "original_event": copy.deepcopy(event),
+                    }
+                )
+            continue
+        kept.append(event)
+
+    if dropped:
+        value["discourse_events"] = kept
+        value["needs_review"] = True
+        reason = f"Structural salvage dropped {dropped} event(s) failing the per-event schema."
+        current = str(value.get("review_reason") or "").strip()
+        if reason not in current:
+            value["review_reason"] = f"{current} {reason}".strip()[:240]
+    return dropped
 
 
 def _drop_v31_items_with_unresolved_evidence(value: dict[str, Any], *, segment_text: str) -> int:
@@ -451,13 +675,13 @@ def render_prompt(label_pack: str, segment: dict[str, Any], context: dict[str, A
             "# Codebook",
             pack.codebook.strip() or "No separate codebook has been defined for this label pack.",
             "# Static Schema And Examples",
-            json.dumps(static, ensure_ascii=True, indent=2, sort_keys=True),
+            dumps_json(static),
             "# Variable Context",
-            json.dumps(context, ensure_ascii=True, indent=2, sort_keys=True),
+            dumps_json(context),
             "# Segment Text",
             segment["text"],
             "# Output Contract",
-            "Return only one JSON object that validates against the schema. Every field named evidence must be an exact contiguous substring copied from the segment text. Do not use ellipses, stitched quotes, or paraphrases as evidence. Do not include entities that appear only in URLs, boilerplate, title cards, sponsor/ad-read copy, or inferred context. Sponsor/ad-read copy is excluded from durable ai_discourse_v3_1 extraction; route it to rejected_candidates or no_signal. Do not include Markdown fences.",
+            "Return only one JSON object that validates against the schema. Every field named evidence must be an exact contiguous substring copied from the segment text. Do not use ellipses, stitched quotes, or paraphrases as evidence. Default to omitting direction-only metrics: before setting direction, first copy an exact evidence substring that explicitly states the change or state into direction_evidence. If no such substring can be copied, the correct and preferred output is direction=not_applicable with direction_evidence=null; never guess a direction merely to complete the metric object. Magnitude alone is not increase, a current attribute is not stable, and uncertainty about a number is not unknown. When present, metric.raw_text must be one verbatim contiguous evidence substring with no normalization; every non-null metric.value, metric.unit, and metric.comparator requires raw_text and must appear verbatim in raw_text or evidence, otherwise use null. Do not include entities that appear only in URLs, boilerplate, title cards, sponsor/ad-read copy, or inferred context. Sponsor/ad-read copy is excluded from durable ai_discourse_v3_1 extraction; route it to rejected_candidates or no_signal. Do not include Markdown fences.",
         ]
     )
 
@@ -525,18 +749,12 @@ def _validate_v31_metric_grounding(index: int, event: dict[str, Any]) -> None:
         for field in ("value", "unit", "comparator")
         if metric.get(field) not in (None, "")
     ]
-    direction = str(metric.get("direction") or "not_applicable")
-    if not raw_text and not parts and direction == "not_applicable":
-        return
-    if not raw_text or raw_text not in evidence:
+    failures = _v31_metric_grounding_failures(metric, evidence=evidence)
+    if failures:
         raise ValidationError(
-            f"$.discourse_events[{index}].metric.raw_text must be an exact evidence substring"
+            f"$.discourse_events[{index}].metric grounding failed: "
+            + ", ".join(failures)
         )
-    for part in parts:
-        if part not in raw_text and part not in evidence:
-            raise ValidationError(
-                f"$.discourse_events[{index}].metric fields must be exact evidence substrings"
-            )
 
 
 def _validate_exact_offset(path: str, item: dict[str, Any], segment_text: str | None) -> None:

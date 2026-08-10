@@ -6,20 +6,36 @@ import os
 import signal
 import shutil
 import subprocess
+import time
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
 from . import db
 from .discourse import insert_discourse_events
-from .ingest import fetch_and_segment_transcript, record_fetch_transcript_failure
-from .labels import audit_label_grounding, load_label_pack, local_draft_label, render_prompt, repair_label_output_for_submission, validate_label_output
-from .paths import corpus_dir, runs_dir
+from .ingest import (
+    classify_fetch_failure,
+    fetch_and_segment_transcript,
+    record_fetch_transcript_failure,
+)
+from .labels import audit_label_grounding, label_pack_provenance, load_label_pack, local_draft_label, render_prompt, repair_label_output_for_submission, validate_label_output
+from .paths import corpus_dir, resolve_recorded_path, runs_dir
 from .prep import prepare_transcript
 from .transcription import run_transcription_job
-from .util import dumps_json, loads_json, now_iso, read_text, stable_id, write_text_atomic
+from .util import (
+    dumps_json,
+    loads_json,
+    now_iso,
+    read_text,
+    sha256_text,
+    stable_id,
+    write_text_atomic,
+)
 
 
 CORPUS_TEXT_READ_TIMEOUT_SECONDS = 3.0
+CORPUS_MATERIALIZE_TIMEOUT_SECONDS = 30.0
+CORPUS_JOB_MATERIALIZE_BUDGET_SECONDS = 120.0
 # Darwin exposes this as SF_DATALESS in sys/stat.h, but Python's stat module
 # does not currently export it.  Checking the inode flag does not hydrate the
 # file-provider placeholder.
@@ -63,6 +79,12 @@ def run_jobs(
         "claimed_prompts": 0,
         "failed": 0,
         "deferred": 0,
+        "input_readiness": {
+            "checked": 0,
+            "already_hydrated": 0,
+            "materialized_on_demand": 0,
+            "materialization_wall_seconds": 0.0,
+        },
         "details": [],
     }
     job_types = job_types or ("fetch_transcript", "transcribe_audio", "prepare_transcript", "episode_context", "label_segment", "audit_label")
@@ -82,6 +104,17 @@ def run_jobs(
         if not job:
             break
         readiness = prompt_input_readiness(conn, job)
+        readiness_totals = stats["input_readiness"]
+        readiness_totals["checked"] += int(readiness.get("checked", 0))
+        readiness_totals["already_hydrated"] += int(
+            readiness.get("already_hydrated", 0)
+        )
+        readiness_totals["materialized_on_demand"] += int(
+            readiness.get("materialized_on_demand", 0)
+        )
+        readiness_totals["materialization_wall_seconds"] += float(
+            readiness.get("materialization_wall_seconds", 0.0)
+        )
         if not readiness["ready"]:
             release_job(conn, job["id"])
             deferred_job_ids.add(int(job["id"]))
@@ -302,7 +335,7 @@ def release_job(conn, job_id: int) -> None:
 
 
 def prompt_input_readiness(conn, job) -> dict[str, Any]:
-    """Inspect every filesystem input a prompt job will read without opening it."""
+    """Ensure every filesystem input is locally readable within bounded time."""
 
     paths: list[tuple[str, str]] = []
     if job["job_type"] == "label_segment":
@@ -375,13 +408,70 @@ def prompt_input_readiness(conn, job) -> dict[str, Any]:
             for segment in rows
         )
     else:
-        return {"ready": True, "checked": 0, "unready": []}
+        return {
+            "ready": True,
+            "checked": 0,
+            "already_hydrated": 0,
+            "materialized_on_demand": 0,
+            "materialization_wall_seconds": 0.0,
+            "unready": [],
+        }
 
     unready: list[dict[str, Any]] = []
+    already_hydrated = 0
+    materialized_on_demand = 0
+    materialization_wall_seconds = 0.0
     project_root = corpus_dir().parent
     for identifier, text_path in paths:
         path = project_root / text_path
         identity = corpus_path_readiness(path)
+        if identity["ready"]:
+            already_hydrated += 1
+            continue
+        if identity.get("reason") == "dataless":
+            remaining_budget = (
+                CORPUS_JOB_MATERIALIZE_BUDGET_SECONDS
+                - materialization_wall_seconds
+            )
+            if remaining_budget <= 0:
+                identity = {
+                    "ready": False,
+                    "reason": (
+                        "dataless:job_materialization_cap_exceeded:"
+                        f"{CORPUS_JOB_MATERIALIZE_BUDGET_SECONDS:.0f}s"
+                    ),
+                }
+            else:
+                materialized = _materialize_dataless_path(
+                    path,
+                    timeout_seconds=min(
+                        CORPUS_MATERIALIZE_TIMEOUT_SECONDS,
+                        remaining_budget,
+                    ),
+                )
+                materialization_wall_seconds += float(
+                    materialized["elapsed_seconds"]
+                )
+                if (
+                    materialized["ready"]
+                    and materialization_wall_seconds
+                    <= CORPUS_JOB_MATERIALIZE_BUDGET_SECONDS
+                ):
+                    materialized_on_demand += 1
+                    continue
+                if materialized["ready"]:
+                    identity = {
+                        "ready": False,
+                        "reason": (
+                            "dataless:job_materialization_cap_exceeded:"
+                            f"{CORPUS_JOB_MATERIALIZE_BUDGET_SECONDS:.0f}s"
+                        ),
+                    }
+                else:
+                    identity = {
+                        "ready": False,
+                        "reason": f"dataless:{materialized['reason']}",
+                    }
         if not identity["ready"]:
             unready.append(
                 {
@@ -394,8 +484,55 @@ def prompt_input_readiness(conn, job) -> dict[str, Any]:
     return {
         "ready": not unready,
         "checked": len(paths),
+        "already_hydrated": already_hydrated,
+        "materialized_on_demand": materialized_on_demand,
+        "materialization_wall_seconds": round(
+            materialization_wall_seconds, 6
+        ),
         "unready": unready,
     }
+
+
+def _materialize_dataless_path(
+    path: str | Path,
+    *,
+    timeout_seconds: float = CORPUS_MATERIALIZE_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    """Fault one File Provider placeholder in without exceeding its time bound."""
+
+    resolved = Path(path)
+    started = time.monotonic()
+    previous_handler = signal.getsignal(signal.SIGALRM)
+
+    def timeout_handler(_signum, _frame):
+        raise TimeoutError("read_timeout")
+
+    try:
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.setitimer(signal.ITIMER_REAL, max(0.001, float(timeout_seconds)))
+        with resolved.open("rb") as handle:
+            while handle.read(1024 * 1024):
+                pass
+        return {
+            "ready": True,
+            "reason": None,
+            "elapsed_seconds": round(time.monotonic() - started, 6),
+        }
+    except TimeoutError:
+        return {
+            "ready": False,
+            "reason": "read_timeout",
+            "elapsed_seconds": round(time.monotonic() - started, 6),
+        }
+    except OSError as exc:
+        return {
+            "ready": False,
+            "reason": f"read_failed:{exc.__class__.__name__}:{exc.errno}",
+            "elapsed_seconds": round(time.monotonic() - started, 6),
+        }
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
 
 
 def corpus_path_readiness(path: str | Path) -> dict[str, Any]:
@@ -453,6 +590,54 @@ def fail_or_retry_job(conn, job, reason: str) -> None:
 
 
 EPISODE_CONTEXT_SCHEMA_VERSION = "ai_discourse_v3_1_episode_context"
+LABEL_EPISODE_CONTEXT_FIELDS = (
+    "speaker_map",
+    "section_map",
+    "entity_seed",
+    "concept_seed",
+    "extraction_guidance",
+    "excluded_source_context",
+)
+LABEL_SEGMENT_CONTEXT_FIELDS = (
+    "segment_id",
+    "episode_id",
+    "source_id",
+    "source_name",
+    "episode_title",
+    "episode_published_at",
+    "segment_index",
+)
+
+
+def slim_episode_context_for_label(
+    artifact: dict[str, Any],
+    *,
+    relevant_segment_ids: set[str] | None = None,
+) -> dict[str, Any]:
+    slim = {
+        key: artifact[key]
+        for key in LABEL_EPISODE_CONTEXT_FIELDS
+        if key in artifact
+    }
+    if relevant_segment_ids and isinstance(slim.get("section_map"), list):
+        slim["section_map"] = [
+            section
+            for section in slim["section_map"]
+            if isinstance(section, dict)
+            and relevant_segment_ids.intersection(
+                str(segment_id)
+                for segment_id in section.get("segments", [])
+            )
+        ]
+    return slim
+
+
+def slim_label_segment_context(context: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: context[key]
+        for key in LABEL_SEGMENT_CONTEXT_FIELDS
+        if key in context
+    }
 
 
 def gate_v31_label_on_episode_context(conn, job, *, label_pack: str, model: str) -> dict[str, Any] | None:
@@ -533,6 +718,204 @@ def enqueue_episode_context_job_for_segment(conn, job, *, label_pack: str, model
     return context_job_id
 
 
+def bulk_enqueue_missing_episode_context_jobs(
+    conn,
+    *,
+    lane: str = "podcast",
+    label_pack: str = "ai_discourse_v3_1",
+    model: str = "gpt-5.5",
+) -> dict[str, Any]:
+    """Materialize missing episode-context work through the canonical writer."""
+
+    if label_pack == "ai_discourse_v3_1" and model != "gpt-5.5":
+        raise ValueError("ai_discourse_v3_1 episode context requires gpt-5.5")
+
+    terminal_episode_ids = {
+        str(row["episode_id"])
+        for row in conn.execute(
+            """
+            SELECT episode_id
+            FROM transcript_acquisition_status
+            WHERE status = 'manual_transcript_required'
+            """
+        ).fetchall()
+    }
+    for row in conn.execute(
+        """
+        SELECT target_id, payload_json, error
+        FROM jobs
+        WHERE lane = ?
+          AND job_type = 'fetch_transcript'
+          AND status = 'failed'
+        """,
+        (lane,),
+    ).fetchall():
+        payload = loads_json(row["payload_json"], {})
+        classification = classify_fetch_failure(
+            source_kind=str(payload.get("source_kind") or "unknown"),
+            error=str(row["error"] or ""),
+        )
+        if classification["classification"] == "terminal":
+            terminal_episode_ids.add(str(row["target_id"]))
+
+    rows = conn.execute(
+        """
+        SELECT
+          episodes.id AS episode_id,
+          EXISTS (
+            SELECT 1 FROM transcripts
+            WHERE transcripts.episode_id = episodes.id
+              AND transcripts.status = 'ready'
+          ) AS has_ready_transcript,
+          EXISTS (
+            SELECT 1 FROM transcripts
+            WHERE transcripts.episode_id = episodes.id
+              AND transcripts.status LIKE 'quarantined%'
+          ) AS has_quarantined_transcript,
+          EXISTS (
+            SELECT 1 FROM jobs
+            WHERE jobs.lane = ?
+              AND jobs.job_type = 'episode_context'
+              AND jobs.target_id = episodes.id
+              AND jobs.status IN ('pending', 'claimed')
+              AND json_extract(jobs.payload_json, '$.label_pack') = ?
+              AND json_extract(jobs.payload_json, '$.model') = ?
+          ) AS has_active_context_job,
+          EXISTS (
+            SELECT 1 FROM jobs
+            WHERE jobs.lane = ?
+              AND jobs.job_type = 'episode_context'
+              AND jobs.target_id = episodes.id
+              AND jobs.status = 'failed'
+              AND json_extract(jobs.payload_json, '$.label_pack') = ?
+              AND json_extract(jobs.payload_json, '$.model') = ?
+          ) AS has_failed_context_job,
+          (
+            SELECT segments.id
+            FROM segments
+            WHERE segments.episode_id = episodes.id
+            ORDER BY segments.segment_index, segments.id
+            LIMIT 1
+          ) AS representative_segment_id,
+          COALESCE(
+            (
+              SELECT MIN(jobs.priority)
+              FROM jobs
+              JOIN segments ON segments.id = jobs.target_id
+              WHERE segments.episode_id = episodes.id
+                AND jobs.lane = ?
+                AND jobs.job_type = 'label_segment'
+                AND json_extract(jobs.payload_json, '$.label_pack') = ?
+            ),
+            100
+          ) AS source_priority
+        FROM episodes
+        WHERE EXISTS (
+          SELECT 1 FROM transcripts
+          WHERE transcripts.episode_id = episodes.id
+        )
+          AND NOT EXISTS (
+            SELECT 1 FROM episode_context_runs
+            WHERE episode_context_runs.episode_id = episodes.id
+              AND episode_context_runs.label_pack = ?
+              AND episode_context_runs.model = ?
+              AND episode_context_runs.status = 'completed'
+          )
+        ORDER BY episodes.id
+        """,
+        (
+            lane,
+            label_pack,
+            model,
+            lane,
+            label_pack,
+            model,
+            lane,
+            label_pack,
+            label_pack,
+            model,
+        ),
+    ).fetchall()
+
+    skipped: Counter[str] = Counter()
+    enqueued = 0
+    enqueued_job_ids: list[int] = []
+    for row in rows:
+        episode_id = str(row["episode_id"])
+        if not row["has_ready_transcript"] and row["has_quarantined_transcript"]:
+            skipped["quarantined_transcript"] += 1
+            continue
+        if episode_id in terminal_episode_ids:
+            skipped["terminal_transcript_fetch"] += 1
+            continue
+        if row["has_active_context_job"]:
+            skipped["already_pending_or_claimed"] += 1
+            continue
+        if row["has_failed_context_job"]:
+            skipped["existing_failed_context_job"] += 1
+            continue
+        if not row["representative_segment_id"]:
+            skipped["no_segments"] += 1
+            continue
+
+        before_changes = conn.total_changes
+        context_job_id = enqueue_episode_context_job_for_segment(
+            conn,
+            {
+                "target_id": str(row["representative_segment_id"]),
+                "payload_json": "{}",
+                "lane": lane,
+                "priority": int(row["source_priority"]),
+            },
+            label_pack=label_pack,
+            model=model,
+        )
+        if context_job_id is not None and conn.total_changes > before_changes:
+            enqueued += 1
+            enqueued_job_ids.append(int(context_job_id))
+        else:
+            skipped["existing_dedupe_key"] += 1
+
+    pending = int(
+        conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM jobs
+            WHERE lane = ?
+              AND job_type = 'episode_context'
+              AND status = 'pending'
+              AND json_extract(payload_json, '$.label_pack') = ?
+              AND json_extract(payload_json, '$.model') = ?
+            """,
+            (lane, label_pack, model),
+        ).fetchone()[0]
+    )
+    duplicate_dedupe_keys = int(
+        conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM (
+              SELECT dedupe_key
+              FROM jobs
+              GROUP BY dedupe_key
+              HAVING COUNT(*) > 1
+            )
+            """
+        ).fetchone()[0]
+    )
+    return {
+        "candidate_episodes": len(rows),
+        "enqueued": enqueued,
+        "enqueued_job_ids": enqueued_job_ids,
+        "skipped_by_reason": dict(sorted(skipped.items())),
+        "pending_episode_context": pending,
+        "duplicate_dedupe_keys": duplicate_dedupe_keys,
+        "model": model,
+        "label_pack": label_pack,
+        "lane": lane,
+    }
+
+
 def completed_episode_context_for_segment(conn, segment_id: str, *, label_pack: str, model: str):
     row = conn.execute("SELECT episode_id FROM segments WHERE id = ?", (segment_id,)).fetchone()
     if not row:
@@ -576,7 +959,7 @@ def completed_episode_context_for_episode(conn, episode_id: str, *, label_pack: 
     ).fetchone()
     if not row:
         return None
-    artifact_path = Path(row["context_artifact_path"]).expanduser()
+    artifact_path = resolve_recorded_path(row["context_artifact_path"])
     if not artifact_path.exists():
         return None
     return row
@@ -918,15 +1301,35 @@ def create_label_prompt(conn, job, *, label_pack: str, model: str, worker_id: st
         context_run = completed_episode_context_for_segment(conn, job["target_id"], label_pack=label_pack, model=model)
         if not context_run:
             raise ValueError("ai_discourse_v3_1 label prompt requires a completed GPT-5.5 episode_context run")
-        artifact = json.loads(Path(context_run["context_artifact_path"]).read_text(encoding="utf-8"))
-        segment_context["context"]["episode_context_artifact"] = artifact
-        segment_context["context"]["episode_context_run_id"] = context_run["id"]
-        segment_context["context"]["adjacent_segment_context"] = adjacent_segment_context_for_segment(conn, job["target_id"])
-        segment_context["context"]["episode_context_contract"] = (
-            "This compact artifact came from a GPT-5.5 full-episode read. Use it for speaker/entity/concept context, "
+        artifact = json.loads(resolve_recorded_path(context_run["context_artifact_path"]).read_text(encoding="utf-8"))
+        full_segment_context = segment_context["context"]
+        compact_context = slim_label_segment_context(full_segment_context)
+        adjacent_context = adjacent_segment_context_for_segment(
+            conn,
+            job["target_id"],
+            max_chars=1400,
+            include_current=False,
+        )
+        relevant_segment_ids = {
+            str(job["target_id"]),
+            *(
+                str(item["segment_id"])
+                for item in adjacent_context["segments"]
+            ),
+        }
+        slim_artifact = slim_episode_context_for_label(
+            artifact,
+            relevant_segment_ids=relevant_segment_ids,
+        )
+        compact_context["episode_context_artifact"] = slim_artifact
+        compact_context["episode_context_run_id"] = context_run["id"]
+        compact_context["adjacent_segment_context"] = adjacent_context
+        compact_context["episode_context_contract"] = (
+            "This compact artifact came from a GPT-5.5 full-episode read. Use it for speaker/entity/concept context. "
             "Use adjacent_segment_context to resolve speaker continuity across segment boundaries, "
             "but emit evidence only from the current Segment Text section."
         )
+        segment_context["context"] = compact_context
     prompt = render_prompt(label_pack, {"text": segment_context["segment_text"]}, segment_context["context"])
     run_id = stable_id(str(job["id"]), label_pack, model, now_iso(), prefix="run_")
     prompt_path = runs_dir() / "prompts" / f"{run_id}.md"
@@ -934,6 +1337,8 @@ def create_label_prompt(conn, job, *, label_pack: str, model: str, worker_id: st
     output_path.parent.mkdir(parents=True, exist_ok=True)
     write_text_atomic(prompt_path, prompt)
     pack = load_label_pack(label_pack)
+    pack_provenance = label_pack_provenance(pack)
+    rendered_prompt_sha256 = sha256_text(prompt)
     ts = now_iso()
     conn.execute(
         """
@@ -968,13 +1373,40 @@ def create_label_prompt(conn, job, *, label_pack: str, model: str, worker_id: st
     conn.execute(
         "UPDATE jobs SET payload_json = ?, updated_at = ? WHERE id = ?",
         (
-            dumps_json({**loads_json(job["payload_json"], {}), "label_pack": label_pack, "model": model, "label_pack_version": pack.version, "prompt_path": str(prompt_path), "output_path": str(output_path), "label_run_id": run_id}),
+            dumps_json({
+                **loads_json(job["payload_json"], {}),
+                "label_pack": label_pack,
+                "model": model,
+                "label_pack_version": pack.version,
+                "label_pack_provenance": pack_provenance,
+                "rendered_prompt_sha256": rendered_prompt_sha256,
+                "episode_context_fields_included": list(LABEL_EPISODE_CONTEXT_FIELDS),
+                "episode_context_fields_dropped": sorted(
+                    set(artifact) - set(slim_artifact)
+                ) if label_pack == "ai_discourse_v3_1" else [],
+                "segment_context_fields_included": list(
+                    LABEL_SEGMENT_CONTEXT_FIELDS
+                ),
+                "segment_context_fields_dropped": sorted(
+                    set(full_segment_context) - set(compact_context)
+                ) if label_pack == "ai_discourse_v3_1" else [],
+                "prompt_path": str(prompt_path),
+                "output_path": str(output_path),
+                "label_run_id": run_id,
+            }),
             ts,
             job["id"],
         ),
     )
     conn.commit()
-    return {"job_id": str(job["id"]), "label_run_id": run_id, "prompt_path": str(prompt_path), "output_path": str(output_path)}
+    return {
+        "job_id": str(job["id"]),
+        "label_run_id": run_id,
+        "prompt_path": str(prompt_path),
+        "output_path": str(output_path),
+        "rendered_prompt_sha256": rendered_prompt_sha256,
+        "label_pack_provenance": pack_provenance,
+    }
 
 
 def submit_label_output(
@@ -1026,15 +1458,17 @@ def submit_label_output(
     expected_model = payload.get("model")
     if expected_model and label_run["model"] != expected_model:
         raise ValueError(f"Label run {label_run_id} model does not match job {job_id}")
-    if label_run["output_path"] and output_path != Path(label_run["output_path"]).expanduser().resolve():
+    if label_run["output_path"] and output_path != resolve_recorded_path(label_run["output_path"]):
         raise ValueError(f"Output path does not match label run {label_run_id}")
     segment_context = segment_for_job(conn, job)
     output = json.loads(output_path.read_text(encoding="utf-8"))
+    metric_quarantines: list[dict[str, Any]] = []
     if repair_output:
         repair_label_output_for_submission(
             label_pack,
             output,
             segment_text=segment_context["segment_text"],
+            metric_quarantines=metric_quarantines,
         )
     validate_label_output(label_pack, output)
     if output.get("segment_id") != job["target_id"]:
@@ -1052,6 +1486,13 @@ def submit_label_output(
         prompt_path=payload.get("prompt_path"),
         output_path=str(output_path),
         derive_semantics=derive_semantics,
+    )
+    _insert_label_metric_quarantines(
+        conn,
+        label_id=label_id,
+        label_run_id=label_run_id,
+        segment_id=job["target_id"],
+        quarantines=metric_quarantines,
     )
     complete_job(conn, job_id)
     if payload.get("label_run_id"):
@@ -1074,6 +1515,52 @@ def submit_label_output(
     return {"label_id": label_id, "job_id": str(job_id)}
 
 
+def _insert_label_metric_quarantines(
+    conn,
+    *,
+    label_id: str,
+    label_run_id: str,
+    segment_id: str,
+    quarantines: list[dict[str, Any]],
+) -> int:
+    quarantined_at = now_iso()
+    inserted = 0
+    for quarantine in quarantines:
+        event_index = int(quarantine["event_index"])
+        original_metric_json = dumps_json(quarantine["original_metric"])
+        failed_rules_json = dumps_json(quarantine["failed_rules"])
+        quarantine_id = stable_id(
+            label_id,
+            label_run_id,
+            str(event_index),
+            original_metric_json,
+            prefix="lmq_",
+        )
+        cursor = conn.execute(
+            """
+            INSERT OR IGNORE INTO label_metric_quarantines (
+              id, label_id, label_run_id, segment_id, event_index, claim_text,
+              original_metric_json, evidence, failed_rules_json, quarantined_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                quarantine_id,
+                label_id,
+                label_run_id,
+                segment_id,
+                event_index,
+                str(quarantine.get("claim_text") or ""),
+                original_metric_json,
+                str(quarantine.get("evidence") or ""),
+                failed_rules_json,
+                quarantined_at,
+            ),
+        )
+        inserted += int(cursor.rowcount == 1)
+    return inserted
+
+
 def recover_label_handoffs(conn, *, release_missing_outputs: bool = False) -> dict[str, int]:
     ts = now_iso()
     stats = {"checked": 0, "missing_outputs": 0, "released_jobs": 0, "failed_runs": 0}
@@ -1088,7 +1575,7 @@ def recover_label_handoffs(conn, *, release_missing_outputs: bool = False) -> di
     ).fetchall()
     for row in rows:
         stats["checked"] += 1
-        output_path = Path(row["output_path"]).expanduser() if row["output_path"] else None
+        output_path = resolve_recorded_path(row["output_path"]) if row["output_path"] else None
         output_missing = not output_path or not output_path.exists()
         if not output_missing:
             continue
@@ -1374,7 +1861,13 @@ def episode_context_for_segment(conn, segment_row) -> dict[str, Any]:
     }
 
 
-def adjacent_segment_context_for_segment(conn, segment_id: str, *, max_chars: int = 3500) -> dict[str, Any]:
+def adjacent_segment_context_for_segment(
+    conn,
+    segment_id: str,
+    *,
+    max_chars: int = 3500,
+    include_current: bool = True,
+) -> dict[str, Any]:
     row = conn.execute(
         """
         SELECT id, episode_id, segment_index
@@ -1397,6 +1890,8 @@ def adjacent_segment_context_for_segment(conn, segment_id: str, *, max_chars: in
     ).fetchall()
     items = []
     for neighbor in neighbors:
+        if not include_current and neighbor["segment_index"] == row["segment_index"]:
+            continue
         text = _read_corpus_text_with_timeout(neighbor["text_path"], error_prefix="adjacent_segment")
         role = "current"
         if neighbor["segment_index"] < row["segment_index"]:

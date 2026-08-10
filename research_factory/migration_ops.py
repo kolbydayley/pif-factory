@@ -178,6 +178,16 @@ def _online_backup(source_path: Path, destination_path: Path) -> None:
     try:
         source.backup(destination)
         destination.commit()
+        # The backup API copies the source database header, including WAL
+        # journal mode.  A standalone restore point must not require a missing
+        # -wal/-shm pair merely to be opened read-only for verification.
+        journal_mode = str(
+            destination.execute("PRAGMA journal_mode=DELETE").fetchone()[0]
+        ).lower()
+        if journal_mode != "delete":
+            raise RuntimeError(
+                f"standalone SQLite backup retained journal mode {journal_mode}"
+            )
     finally:
         destination.close()
         source.close()

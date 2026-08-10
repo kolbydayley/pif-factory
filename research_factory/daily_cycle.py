@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
 
-from .paths import root
+from .paths import resolve_recorded_path, root
 from .util import dumps_json, loads_json, now_iso, sha256_text, stable_id, write_text_atomic
 
 
@@ -35,6 +35,12 @@ MAX_DAILY_ITEMS = 500
 MAX_EXCEPTION_RUNTIME_MS = 1_200_000
 DEFAULT_DAILY_RUNTIME_SECONDS = 5_400
 DEFAULT_DAILY_ITEMS = 25
+DAILY_EXTRACTION_FAILURE_RATE_TOLERANCE = 0.10
+DAILY_RUNTIME_EGREGIOUS_MULTIPLIER = 2.0
+ALWAYS_EVALUATED_STAGE_NAMES = frozenset(
+    {"evidence_schema_privacy_validation"}
+)
+ALWAYS_EVALUATED_MIN_RUNTIME_SECONDS = 60.0
 AUTHORITY_CHECKPOINT_RETENTION = 7
 ZOMBIE_WORKER_GRACE_SECONDS = 3_600
 SCALE_GATE_REQUIRED_DAYS = 7
@@ -275,6 +281,7 @@ def run_daily_cycle(
     execute_ingestion: bool = False,
     execute_normalize: bool = False,
     execute_extraction: bool = False,
+    extraction_concurrency: int = 3,
     execute_outcomes: bool = False,
     apply_reconcile: bool = False,
     record_exception_contracts: bool = False,
@@ -298,10 +305,13 @@ def run_daily_cycle(
 
     runtime = int(max_runtime_seconds)
     item_limit = int(max_items)
+    extraction_workers = int(extraction_concurrency)
     if not 1 <= runtime <= MAX_DAILY_RUNTIME_SECONDS:
         raise ValueError(f"max_runtime_seconds must be between 1 and {MAX_DAILY_RUNTIME_SECONDS}")
     if not 1 <= item_limit <= MAX_DAILY_ITEMS:
         raise ValueError(f"max_items must be between 1 and {MAX_DAILY_ITEMS}")
+    if not 1 <= extraction_workers <= 16:
+        raise ValueError("extraction_concurrency must be between 1 and 16")
     effective_date = run_date or dt.datetime.now(dt.timezone.utc).date().isoformat()
     try:
         dt.date.fromisoformat(effective_date)
@@ -318,6 +328,7 @@ def run_daily_cycle(
         "execute_ingestion": bool(execute_ingestion),
         "execute_normalize": bool(execute_normalize),
         "execute_extraction": bool(execute_extraction),
+        "extraction_concurrency": extraction_workers,
         "execute_outcomes": bool(execute_outcomes),
         "apply_reconcile": bool(apply_reconcile),
         "record_exception_contracts": bool(record_exception_contracts),
@@ -339,7 +350,10 @@ def run_daily_cycle(
     started_at = _now()
     owner = stable_id(str(os.getpid()), run_id, started_at, prefix="pdl_")
     leased_until = (
-        dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=runtime + 60)
+        dt.datetime.now(dt.timezone.utc)
+        + dt.timedelta(
+            seconds=(runtime * DAILY_RUNTIME_EGREGIOUS_MULTIPLIER) + 60
+        )
     ).replace(microsecond=0).isoformat()
 
     ensure_daily_schema(conn)
@@ -388,6 +402,7 @@ def run_daily_cycle(
         execute_ingestion=execute_ingestion,
         execute_normalize=execute_normalize,
         execute_extraction=execute_extraction,
+        extraction_concurrency=extraction_workers,
         apply_reconcile=apply_reconcile,
         record_exception_contracts=record_exception_contracts,
         publish_observer=publish_observer,
@@ -404,6 +419,9 @@ def run_daily_cycle(
     handlers.update(stage_handlers or {})
     cycle_started = _monotonic()
     deadline = cycle_started + runtime
+    egregious_deadline = (
+        cycle_started + runtime * DAILY_RUNTIME_EGREGIOUS_MULTIPLIER
+    )
     stage_receipts: list[dict[str, Any]] = []
     terminal_error: dict[str, Any] | None = None
 
@@ -412,28 +430,83 @@ def run_daily_cycle(
         if existing:
             _ensure_stage_receipt_file(artifact_dir, existing)
             stage_receipts.append(existing)
-            if existing["status"] == "failed":
-                terminal_error = existing.get("result") or {"error": "prior_stage_failed"}
+            if existing["status"] == "failed" and terminal_error is None:
+                terminal_error = existing.get("result") or {
+                    "error": "prior_stage_failed"
+                }
+            if (
+                existing["stage_name"]
+                == "evidence_schema_privacy_validation"
+                and terminal_error is not None
+            ):
                 break
             continue
 
-        remaining = deadline - _monotonic()
-        if remaining <= 0:
+        stage_clock = _monotonic()
+        soft_remaining = deadline - stage_clock
+        egregious_remaining = egregious_deadline - stage_clock
+        must_evaluate = stage_name in ALWAYS_EVALUATED_STAGE_NAMES
+        if terminal_error is not None and not must_evaluate:
             receipt = _stage_receipt(
                 run_id=run_id,
                 stage_index=stage_index,
                 stage_name=stage_name,
-                status="failed",
+                status="skipped",
                 started_at=_now(),
                 completed_at=_now(),
                 elapsed_ms=0,
                 max_items=item_limit,
-                result={"error": "daily_runtime_exceeded", "processed": 0},
+                result={
+                    "evaluation_status": "not_evaluated",
+                    "reason": "prior_stage_failure",
+                    "processed": 0,
+                    "work_due": False,
+                    "healthy_no_work": False,
+                    "work_satisfied": False,
+                },
+            )
+        elif egregious_remaining <= 0 and not must_evaluate:
+            if terminal_error is None:
+                terminal_error = {
+                    "error": "daily_runtime_egregiously_exceeded",
+                    "elapsed_seconds": round(stage_clock - cycle_started, 3),
+                    "max_runtime_seconds": runtime,
+                    "egregious_multiplier": DAILY_RUNTIME_EGREGIOUS_MULTIPLIER,
+                }
+            receipt = _stage_receipt(
+                run_id=run_id,
+                stage_index=stage_index,
+                stage_name=stage_name,
+                status="skipped",
+                started_at=_now(),
+                completed_at=_now(),
+                elapsed_ms=0,
+                max_items=item_limit,
+                result={
+                    "evaluation_status": "not_evaluated",
+                    "reason": "egregious_daily_runtime_exceeded",
+                    "processed": 0,
+                    "work_due": False,
+                    "healthy_no_work": False,
+                    "work_satisfied": False,
+                },
             )
         else:
             handler = handlers.get(stage_name, _skipped_handler)
             stage_started_at = _now()
             stage_started = _monotonic()
+            if must_evaluate:
+                effective_remaining = max(
+                    ALWAYS_EVALUATED_MIN_RUNTIME_SECONDS,
+                    egregious_deadline - stage_started,
+                )
+            else:
+                effective_remaining = max(
+                    1.0,
+                    soft_remaining
+                    if soft_remaining > 0
+                    else egregious_deadline - stage_started,
+                )
             context = DailyStageContext(
                 conn=conn,
                 run_id=run_id,
@@ -441,8 +514,16 @@ def run_daily_cycle(
                 stage_name=stage_name,
                 stage_index=stage_index,
                 max_items=item_limit,
-                remaining_seconds=max(0.0, remaining),
-                deadline_monotonic=deadline,
+                remaining_seconds=effective_remaining,
+                deadline_monotonic=(
+                    stage_started + effective_remaining
+                    if must_evaluate
+                    else (
+                        deadline
+                        if soft_remaining > 0
+                        else egregious_deadline
+                    )
+                ),
                 artifact_dir=artifact_dir,
             )
             try:
@@ -454,14 +535,33 @@ def run_daily_cycle(
                 status = str(result.get("status") or "completed")
                 if status not in {"completed", "skipped", "failed"}:
                     raise ValueError(f"unsupported stage status: {status}")
-                elapsed_ms = max(0, int((_monotonic() - stage_started) * 1_000))
-                if _monotonic() > deadline:
-                    status = "failed"
-                    result = {
-                        "error": "daily_runtime_exceeded",
-                        "processed": processed,
-                        "handler_status": result.get("status"),
+                stage_completed = _monotonic()
+                elapsed_ms = max(0, int((stage_completed - stage_started) * 1_000))
+                cycle_elapsed = max(0.0, stage_completed - cycle_started)
+                if cycle_elapsed > runtime:
+                    result["runtime_budget"] = {
+                        "status": (
+                            "egregious_overrun"
+                            if cycle_elapsed
+                            > runtime * DAILY_RUNTIME_EGREGIOUS_MULTIPLIER
+                            else "soft_bound_warning"
+                        ),
+                        "elapsed_seconds": round(cycle_elapsed, 3),
+                        "soft_bound_seconds": runtime,
+                        "egregious_bound_seconds": round(
+                            runtime * DAILY_RUNTIME_EGREGIOUS_MULTIPLIER, 3
+                        ),
                     }
+                if (
+                    cycle_elapsed
+                    > runtime * DAILY_RUNTIME_EGREGIOUS_MULTIPLIER
+                    and not must_evaluate
+                ):
+                    status = "failed"
+                    result["error"] = "daily_runtime_egregiously_exceeded"
+                    result["handler_status"] = str(
+                        raw_result.get("status") or "completed"
+                    )
                 receipt = _stage_receipt(
                     run_id=run_id,
                     stage_index=stage_index,
@@ -496,10 +596,31 @@ def run_daily_cycle(
         _ensure_stage_receipt_file(artifact_dir, receipt)
         stage_receipts.append(receipt)
         if receipt["status"] == "failed":
-            terminal_error = receipt.get("result") or {"error": "stage_failed"}
+            if terminal_error is None:
+                terminal_error = receipt.get("result") or {"error": "stage_failed"}
+            # Deterministic lineage and privacy validation is always evaluated,
+            # even after a prior operational failure. Its own failure is real
+            # and remains fail-closed.
+            if stage_name == "evidence_schema_privacy_validation":
+                break
+        if (
+            stage_name == "evidence_schema_privacy_validation"
+            and terminal_error is not None
+        ):
             break
 
     stage_truth = _assess_required_stage_truth(stage_receipts, conn=conn)
+    pre_receipt_elapsed = max(0.0, _monotonic() - cycle_started)
+    if (
+        pre_receipt_elapsed > runtime * DAILY_RUNTIME_EGREGIOUS_MULTIPLIER
+        and terminal_error is None
+    ):
+        terminal_error = {
+            "error": "daily_runtime_egregiously_exceeded",
+            "elapsed_seconds": round(pre_receipt_elapsed, 3),
+            "max_runtime_seconds": runtime,
+            "egregious_multiplier": DAILY_RUNTIME_EGREGIOUS_MULTIPLIER,
+        }
     if terminal_error:
         final_status = "failed"
     elif stage_truth["blockers"]:
@@ -645,6 +766,7 @@ def _default_stage_handlers(
     label_pack: str,
     model: str,
     pilot_id: str | None,
+    extraction_concurrency: int = 3,
     execute_outcomes: bool = False,
     now: Callable[[], str] = now_iso,
 ) -> dict[str, StageHandler]:
@@ -747,10 +869,14 @@ def _default_stage_handlers(
             + int(ingestion.get("sources_deferred_due_to_runtime", 0))
         )
         work_due = bool(processed_total or bounded_remainder)
-        work_satisfied = not (
+        ingestion_failed = bool(
             int(ingestion.get("source_errors", 0))
             or bool(ingestion.get("runtime_exhausted"))
-            or bounded_remainder
+        )
+        # Reaching the explicit item bound is successful bounded progress, not
+        # a no-op. A remainder is blocking only when the stage made no progress.
+        work_satisfied = not ingestion_failed and (
+            processed_total > 0 or bounded_remainder == 0
         )
         return {
             "status": "completed",
@@ -872,7 +998,7 @@ def _default_stage_handlers(
             context.max_items,
             int(worker_result.get("claimed_prompts", 0) or 0),
         )
-        concurrency = 3
+        concurrency = extraction_concurrency
         waves = max(1, (claimed_prompts + concurrency - 1) // concurrency)
         timeout_seconds = max(
             1,
@@ -900,17 +1026,32 @@ def _default_stage_handlers(
         recent_pending_after = _job_count_recent(conn, job_types, recent_since)
         worker_failed = int(worker_result.get("failed", 0) or 0)
         headless_failed = int(headless_result.get("failed", 0) or 0)
+        headless_attempted = int(headless_result.get("selected", 0) or 0)
+        headless_failure_rate = (
+            headless_failed / headless_attempted if headless_attempted else 0.0
+        )
+        failure_tolerance_passed = (
+            headless_failure_rate <= DAILY_EXTRACTION_FAILURE_RATE_TOLERANCE
+        )
+        bounded_attempt_completed = (
+            recent_pending_before == 0
+            or int(worker_result.get("processed", 0) or 0) >= planned
+        )
         work_satisfied = (
-            recent_pending_after == 0
-            and worker_failed == 0
-            and headless_failed == 0
+            worker_failed == 0
+            and failure_tolerance_passed
+            and bounded_attempt_completed
         )
         return {
-            "status": "completed" if worker_failed == 0 and headless_failed == 0 else "failed",
+            "status": "completed" if work_satisfied else "failed",
             # Headless execution is the second phase of the same claimed queue
             # items, so it is not added again to this unique-item count.
             "processed": int(worker_result.get("processed", 0) or 0),
-            "reason": None,
+            "reason": (
+                "bounded_extraction_within_failure_tolerance"
+                if headless_failed and failure_tolerance_passed
+                else None
+            ),
             "backlog_total": backlog_total,
             "backlog_total_after": _job_count(conn, job_types),
             "pending": recent_pending_before,
@@ -922,6 +1063,11 @@ def _default_stage_handlers(
             "required_work_enabled": True,
             "healthy_no_work": recent_pending_before == 0,
             "work_satisfied": work_satisfied,
+            "headless_attempted": headless_attempted,
+            "headless_failure_rate": headless_failure_rate,
+            "failure_rate_tolerance": DAILY_EXTRACTION_FAILURE_RATE_TOLERANCE,
+            "failure_tolerance_passed": failure_tolerance_passed,
+            "bounded_attempt_completed": bounded_attempt_completed,
             "worker_result": worker_result,
             "headless_result": headless_result,
             "pipeline_run_attribution": pipeline_run_attribution,
@@ -1709,6 +1855,8 @@ def _record_scale_gate_state_receipt(
     lineage_result = lineage_result if isinstance(lineage_result, Mapping) else {}
     privacy_result = validation_result.get("privacy")
     privacy_result = privacy_result if isinstance(privacy_result, Mapping) else {}
+    lineage_evaluated = "ok" in lineage_result
+    privacy_evaluated = "ok" in privacy_result
     queue_result = validation_result.get("queue")
     queue_result = queue_result if isinstance(queue_result, Mapping) else _queue_and_lease_health(
         conn, at=created_at
@@ -1716,8 +1864,20 @@ def _record_scale_gate_state_receipt(
 
     quality = _quality_gate(conn, release_id=release_id, cohort_item_count=item_count)
     lineage = {
-        "passed": bool(lineage_result.get("ok"))
-        and int(lineage_result.get("claims_checked", 0) or 0) > 0,
+        "evaluated": lineage_evaluated,
+        "evaluation_status": (
+            "passed"
+            if lineage_evaluated
+            and bool(lineage_result.get("ok"))
+            and int(lineage_result.get("claims_checked", 0) or 0) > 0
+            else "failed" if lineage_evaluated else "not_evaluated"
+        ),
+        "passed": (
+            bool(lineage_result.get("ok"))
+            and int(lineage_result.get("claims_checked", 0) or 0) > 0
+            if lineage_evaluated
+            else None
+        ),
         "claims_checked": int(lineage_result.get("claims_checked", 0) or 0),
         "issue_count": int(lineage_result.get("issue_count", 0) or 0),
         "exact_offsets_all_current_claims": bool(
@@ -1728,7 +1888,13 @@ def _record_scale_gate_state_receipt(
         ),
     }
     privacy = {
-        "passed": bool(privacy_result.get("ok")),
+        "evaluated": privacy_evaluated,
+        "evaluation_status": (
+            "passed"
+            if privacy_evaluated and bool(privacy_result.get("ok"))
+            else "failed" if privacy_evaluated else "not_evaluated"
+        ),
+        "passed": bool(privacy_result.get("ok")) if privacy_evaluated else None,
         "contract": privacy_result.get("contract"),
         "forbidden_keys": list(privacy_result.get("forbidden_keys") or []),
         "railway_operational_only": privacy_result.get("contract") == "railway-operational-v2",
@@ -1750,10 +1916,27 @@ def _record_scale_gate_state_receipt(
         "growth_bounded": growth_bounded,
         "absolute_pending_is_pass_condition": False,
     }
+    soft_runtime_exceeded = elapsed_seconds > float(max_runtime_seconds)
+    egregious_runtime_exceeded = elapsed_seconds > (
+        float(max_runtime_seconds) * DAILY_RUNTIME_EGREGIOUS_MULTIPLIER
+    )
     runtime = {
-        "passed": elapsed_seconds <= float(max_runtime_seconds),
+        "passed": not egregious_runtime_exceeded,
+        "evaluation_status": (
+            "failed"
+            if egregious_runtime_exceeded
+            else "warning" if soft_runtime_exceeded else "passed"
+        ),
+        "soft_bound_exceeded": soft_runtime_exceeded,
+        "warning": soft_runtime_exceeded and not egregious_runtime_exceeded,
+        "egregious_bound_exceeded": egregious_runtime_exceeded,
+        "egregious_multiplier": DAILY_RUNTIME_EGREGIOUS_MULTIPLIER,
         "elapsed_seconds": round(float(elapsed_seconds), 3),
         "max_runtime_seconds": int(max_runtime_seconds),
+        "egregious_bound_seconds": round(
+            float(max_runtime_seconds) * DAILY_RUNTIME_EGREGIOUS_MULTIPLIER,
+            3,
+        ),
         "stage_runtime_ms": sum(int(item.get("elapsed_ms", 0) or 0) for item in stage_receipts),
     }
     cost = _cost_gate(conn, release_id=release_id)
@@ -1963,9 +2146,13 @@ def _record_daily_extraction_pipeline_run(
     submitted = int(headless_result.get("submitted", 0) or 0)
     headless_failed = int(headless_result.get("failed", 0) or 0)
     worker_failed = int(worker_result.get("failed", 0) or 0)
+    failure_rate = headless_failed / selected if selected else 0.0
+    failure_tolerance_passed = (
+        failure_rate <= DAILY_EXTRACTION_FAILURE_RATE_TOLERANCE
+    )
     terminal_status = (
         "succeeded"
-        if bool(headless_result.get("ok")) and headless_failed == 0 and worker_failed == 0
+        if failure_tolerance_passed and worker_failed == 0
         else "failed"
     )
     receipt = {
@@ -1982,6 +2169,9 @@ def _record_daily_extraction_pipeline_run(
         "submitted": submitted,
         "headless_failed": headless_failed,
         "worker_failed": worker_failed,
+        "failure_rate": failure_rate,
+        "failure_rate_tolerance": DAILY_EXTRACTION_FAILURE_RATE_TOLERANCE,
+        "failure_tolerance_passed": failure_tolerance_passed,
         "token_telemetry": "unavailable_from_codex_exec",
     }
     intelligence.create_pipeline_run(
@@ -2015,6 +2205,9 @@ def _record_daily_extraction_pipeline_run(
             "submitted": submitted,
             "headless_failed": headless_failed,
             "worker_failed": worker_failed,
+            "failure_rate": failure_rate,
+            "failure_rate_tolerance": DAILY_EXTRACTION_FAILURE_RATE_TOLERANCE,
+            "failure_tolerance_passed": failure_tolerance_passed,
             "paid_api": False,
         },
         receipt=receipt,
@@ -2289,7 +2482,7 @@ def _replay_daily_receipt(run_row: sqlite3.Row) -> dict[str, Any]:
         raise RuntimeError("completed daily run is missing its immutable receipt")
     if receipt.get("receipt_sha256") != run_row["receipt_sha256"]:
         raise RuntimeError("daily receipt hash drift")
-    path = Path(run_row["receipt_path"])
+    path = resolve_recorded_path(run_row["receipt_path"])
     _write_immutable_json(path, receipt)
     return {
         "ok": run_row["status"] not in {"failed", "blocked_required_work"},

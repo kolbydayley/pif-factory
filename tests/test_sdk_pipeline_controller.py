@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import json
 import tempfile
@@ -25,6 +26,7 @@ from research_factory.sdk_pipeline_controller import (
     default_checkpoint,
     load_checkpoint,
     numeric_usage,
+    run_controller_daily_cycle,
 )
 
 
@@ -493,6 +495,194 @@ class SDKPipelineControllerTests(unittest.TestCase):
                 controller = controller_from_args(args)
                 controller.observer()
             self.assertEqual(bounded.call_args.kwargs["timeout_seconds"], 7)
+
+    def test_serve_defaults_enable_real_daily_work_with_explicit_bounds(self) -> None:
+        args = build_parser().parse_args(["serve", "--once"])
+        self.assertTrue(args.execute_ingestion)
+        self.assertTrue(args.execute_extraction)
+        self.assertTrue(args.execute_outcomes)
+        self.assertEqual(args.daily_max_items, 25)
+        self.assertEqual(args.daily_runtime_seconds, 3600)
+        self.assertEqual(args.daily_concurrency, 10)
+        self.assertEqual(args.model, "gpt-5.5")
+
+    def test_controller_daily_cycle_threads_flags_bounds_and_concurrency(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source_list = root / "sources.yaml"
+            source_list.write_text("sources: []\n", encoding="utf-8")
+            args = build_parser().parse_args(
+                [
+                    "--db",
+                    str(root / "factory.sqlite"),
+                    "--project-root",
+                    str(root),
+                    "--daily-source-list",
+                    str(source_list),
+                    "--daily-max-items",
+                    "17",
+                    "--daily-runtime-seconds",
+                    "1234",
+                    "--daily-concurrency",
+                    "3",
+                    "serve",
+                    "--once",
+                ]
+            )
+            connection = types.SimpleNamespace(close=lambda: None)
+            scale_gate = {
+                "genuinely_successful": True,
+                "gates": {"cost": {"passed": True}},
+            }
+            with patch(
+                "research_factory.sdk_pipeline_controller.pipeline_lock",
+                return_value=contextlib.nullcontext(True),
+            ), patch(
+                "research_factory.sdk_pipeline_controller.factory_db.connect",
+                return_value=connection,
+            ), patch(
+                "research_factory.sdk_pipeline_controller.ensure_daily_schema"
+            ), patch(
+                "research_factory.sdk_pipeline_controller._successful_daily_receipt_for_date",
+                return_value=None,
+            ), patch(
+                "research_factory.sdk_pipeline_controller.run_daily_cycle",
+                return_value={"ok": True, "receipt": {"scale_gate": scale_gate}},
+            ) as daily:
+                result = run_controller_daily_cycle(args, now=NOW)
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["configuration"]["concurrency"], 3)
+            call = daily.call_args.kwargs
+            self.assertEqual(call["max_items"], 17)
+            self.assertEqual(call["max_runtime_seconds"], 1234)
+            self.assertEqual(call["extraction_concurrency"], 3)
+            self.assertTrue(
+                call["idempotency_key"].startswith(
+                    "pif-controller-daily-2026-07-14-"
+                )
+            )
+            self.assertTrue(call["execute_ingestion"])
+            self.assertTrue(call["execute_extraction"])
+            self.assertTrue(call["execute_outcomes"])
+
+    def test_controller_daily_cycle_noops_after_same_date_success(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            args = build_parser().parse_args(
+                [
+                    "--db",
+                    str(root / "factory.sqlite"),
+                    "--project-root",
+                    str(root),
+                    "serve",
+                    "--once",
+                ]
+            )
+            connection = types.SimpleNamespace(close=lambda: None)
+            gates = {
+                name: {"passed": True}
+                for name in (
+                    "cost",
+                    "lineage",
+                    "operations",
+                    "privacy",
+                    "quality",
+                    "queue",
+                    "release",
+                    "runtime",
+                )
+            }
+            successful = {
+                "run_id": "manual-run",
+                "daily_receipt": {"run_id": "manual-run"},
+                "scale_receipt": {
+                    "genuinely_successful": True,
+                    "gates": gates,
+                },
+            }
+            with patch(
+                "research_factory.sdk_pipeline_controller.pipeline_lock",
+                return_value=contextlib.nullcontext(True),
+            ), patch(
+                "research_factory.sdk_pipeline_controller.factory_db.connect",
+                return_value=connection,
+            ), patch(
+                "research_factory.sdk_pipeline_controller.ensure_daily_schema"
+            ), patch(
+                "research_factory.sdk_pipeline_controller._successful_daily_receipt_for_date",
+                return_value=successful,
+            ), patch(
+                "research_factory.sdk_pipeline_controller.run_daily_cycle"
+            ) as daily:
+                result = run_controller_daily_cycle(args, now=NOW)
+            self.assertEqual(result["status"], "no_op_genuinely_successful_today")
+            self.assertTrue(result["no_op"])
+            self.assertEqual(set(result["gate_table"]), set(gates))
+            self.assertTrue(all(result["gate_table"].values()))
+            daily.assert_not_called()
+
+    def test_controller_daily_cycle_reports_pipeline_lock_contention(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            args = build_parser().parse_args(
+                ["--project-root", str(root), "serve", "--once"]
+            )
+            with patch(
+                "research_factory.sdk_pipeline_controller.pipeline_lock",
+                return_value=contextlib.nullcontext(False),
+            ), patch(
+                "research_factory.sdk_pipeline_controller.factory_db.connect"
+            ) as connect:
+                result = run_controller_daily_cycle(args, now=NOW)
+            self.assertEqual(result["status"], "deferred_pipeline_lock_busy")
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["deferred"])
+            self.assertEqual(result["daily_intent"]["status"], "deferred_pipeline_lock_busy")
+            connect.assert_not_called()
+
+    def test_controller_daily_cycle_preserves_genuine_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            args = build_parser().parse_args(
+                [
+                    "--db",
+                    str(root / "factory.sqlite"),
+                    "--project-root",
+                    str(root),
+                    "serve",
+                    "--once",
+                ]
+            )
+            connection = types.SimpleNamespace(close=lambda: None)
+            with patch(
+                "research_factory.sdk_pipeline_controller.pipeline_lock",
+                return_value=contextlib.nullcontext(True),
+            ), patch(
+                "research_factory.sdk_pipeline_controller.factory_db.connect",
+                return_value=connection,
+            ), patch(
+                "research_factory.sdk_pipeline_controller.ensure_daily_schema"
+            ), patch(
+                "research_factory.sdk_pipeline_controller._successful_daily_receipt_for_date",
+                return_value=None,
+            ), patch(
+                "research_factory.sdk_pipeline_controller.run_daily_cycle",
+                return_value={
+                    "ok": False,
+                    "status": "failed",
+                    "receipt": {
+                        "run_id": "broken-run",
+                        "scale_gate": {
+                            "genuinely_successful": False,
+                            "gates": {"operations": {"passed": False}},
+                        },
+                    },
+                },
+            ):
+                result = run_controller_daily_cycle(args, now=NOW)
+            self.assertFalse(result["ok"])
+            self.assertFalse(result["genuinely_successful"])
+            self.assertEqual(result["daily_intent"]["status"], "failed")
 
     def test_activation_requires_matching_project_and_future_expiry(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

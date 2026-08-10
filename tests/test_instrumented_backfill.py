@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import contextlib
 import json
 from unittest.mock import patch
 
-from research_factory.instrumented_backfill import _historic_baseline
+import pytest
+
+from research_factory.instrumented_backfill import (
+    _historic_baseline,
+    _run_context_batch,
+    run_instrumented_backfill,
+)
 
 
 class _Rows:
@@ -74,3 +81,39 @@ def test_historical_baseline_skips_unreadable_segment_instead_of_aborting() -> N
     assert result["labels_skipped"] == 1
     assert result["skip_reasons"] == {"ValueError": 1}
     assert result["baseline_unavailable"] is None
+
+
+def test_run_context_batch_no_ops_when_no_jobs_are_eligible() -> None:
+    assert _run_context_batch([], "empty-batch-worker", 900) == []
+
+
+@pytest.mark.parametrize("concurrency", [3, 6, 10, 16, 24, 32])
+def test_label_only_authorized_concurrency_steps_reach_lock(
+    concurrency: int,
+) -> None:
+    connection = type("_Connection", (), {"close": lambda self: None})()
+    with patch(
+        "research_factory.instrumented_backfill.db.connect",
+        return_value=connection,
+    ) as connect, patch(
+        "research_factory.instrumented_backfill.pipeline_lock",
+        return_value=contextlib.nullcontext(False),
+    ):
+        result = run_instrumented_backfill(
+            max_contexts=0,
+            max_labels=0,
+            concurrency=concurrency,
+            label_only_existing_context=True,
+        )
+    assert result == {"ok": False, "stopped": True, "reason": "pipeline_lock_busy"}
+    connect.assert_called_once()
+
+
+def test_label_only_rejects_unapproved_concurrency() -> None:
+    with pytest.raises(ValueError, match="authorized steps"):
+        run_instrumented_backfill(
+            max_contexts=0,
+            max_labels=0,
+            concurrency=12,
+            label_only_existing_context=True,
+        )

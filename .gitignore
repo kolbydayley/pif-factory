@@ -40,3 +40,6 @@ factory.db
 *.egg-info/
 dist/
 build/
+
+# Shadow scoring artifacts (data, reproducible from lanes).
+shadow/

@@ -154,11 +154,12 @@
             "additionalProperties": false,
             "required": ["value", "unit", "comparator", "direction", "raw_text"],
             "properties": {
-              "value": {"type": ["string", "null"]},
-              "unit": {"type": ["string", "null"]},
-              "comparator": {"type": ["string", "null"]},
-              "direction": {"type": "string", "enum": ["increase", "decrease", "stable", "mixed", "not_applicable", "unknown"]},
-              "raw_text": {"type": ["string", "null"]}
+              "value": {"type": ["string", "null"], "description": "When non-null, requires non-null metric.raw_text and must be a verbatim value substring appearing within metric.raw_text or the event evidence. Preserve spoken numeric form without normalization; use null when no verbatim numeric form exists."},
+              "unit": {"type": ["string", "null"], "description": "When non-null, requires non-null metric.raw_text and must be a verbatim unit substring appearing within metric.raw_text or the event evidence, never a free-prose descriptor. Use null when the transcript contains no verbatim unit."},
+              "comparator": {"type": ["string", "null"], "description": "When non-null, requires non-null metric.raw_text and must be a verbatim comparator substring appearing within metric.raw_text or the event evidence, never a free-prose descriptor. Use null when the transcript contains no verbatim comparator."},
+              "direction": {"type": "string", "enum": ["increase", "decrease", "stable", "mixed", "not_applicable", "unknown"], "description": "Evidence-supported qualitative movement. When value, unit, and comparator are all null, every non-not_applicable direction requires direction_evidence containing the explicit change-or-state assertion. Magnitude alone is not increase; a current attribute is not stable; uncertainty about a value is not unknown."},
+              "direction_evidence": {"type": ["string", "null"], "description": "For a direction-only metric, a verbatim contiguous substring of the event evidence containing the explicit change-or-state assertion that justifies direction, such as grew, fell, held steady, or roughly doubled. Use null for not_applicable and for numeric metrics that are already grounded by raw_text. If no such exact directional assertion exists, do not emit the metric."},
+              "raw_text": {"type": ["string", "null"], "description": "When non-null, one verbatim contiguous substring of the event evidence. No ellipses, stitching across speaker tags, paraphrase, or normalization; preserve numbers exactly as spoken. May be null only for a direction-only qualitative claim grounded by direction_evidence."}
             }
           },
           "signal_reason": {"type": "string", "minLength": 40, "maxLength": 500},
