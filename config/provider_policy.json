@@ -24,11 +24,16 @@
   },
   "stages": {
     "label_segment": {
-      "provider": "codex",
-      "model": "gpt-5.5",
+      "provider": "glm_opencode",
+      "model": "opencode-go/glm-5.2",
       "candidate_provider": "glm_opencode",
       "candidate_model": "opencode-go/glm-5.2",
-      "agreement_threshold": 0.9
+      "agreement_threshold": 0.9,
+      "frozen_fallback": {
+        "provider": "codex",
+        "model": "gpt-5.5"
+      },
+      "promotion_report": "work/loadtest-20260813/qual_round_4/report_recalibrated.json"
     },
     "episode_context": {
       "provider": "codex",
