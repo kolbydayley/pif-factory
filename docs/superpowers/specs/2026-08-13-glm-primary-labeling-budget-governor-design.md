@@ -84,9 +84,18 @@ Offline; zero production mutation; receipts record
   corrected harness that passed the 07-27 canary: dedicated non-coding agent,
   full ontology + calibration guidance, adequate deadlines, isolated ephemeral
   OpenCode data dirs. (b) Grok `grok-4.6` low-reasoning via the grok CLI with
-  an equivalent harness. Precondition for (b): install and authenticate the
-  grok CLI (not present on the machine at design time) and build a small
-  transport adapter mirroring the OpenCode one.
+  an equivalent harness. Precondition for (b) satisfied 2026-08-13: Grok
+  Build CLI 1.0.3 installed (`~/.grok/bin/grok`), authenticated, and
+  smoke-tested headless (`--prompt-file`, `-m grok-4.6`,
+  `--reasoning-effort low`, `--json-schema`, `--max-turns 1`; the response
+  arrives wrapped as `{"text": "<json>"}`). Smoke result on 3 production
+  segments already labeled by Codex gpt-5.5: 47/47 evidence spans were exact
+  source substrings (100% grounding), ~25-31s wall per segment, richer claim
+  sets than the production labels (7/12/16 claims vs 1/0/0), sponsor copy
+  correctly excluded. Observed issues: "Theodore"/"Roosevelt" split into two
+  person entities; over-extraction risk (precision) must be measured by the
+  judge, not assumed from grounding. A transport adapter mirroring the
+  OpenCode one still needs to be built.
 - **Task**: draft complete `ai_discourse_v3_1` labels on bounded windows.
 - **Reference**: segments already labeled by production Codex gpt-5.5
   (existing ground truth), plus a Codex judge for field-level agreement on
