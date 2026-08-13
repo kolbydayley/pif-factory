@@ -57,6 +57,17 @@ LABEL_SCHEMA: Dict[str, Any] = {
 }
 
 
+GLM_JSON_INSTRUCTION = """
+Your ENTIRE reply must be the JSON object itself: start with "{" and end with "}". No prose before or after, no markdown fences, no commentary.
+Output ONLY a single JSON object with exactly these keys:
+claims (array of {claim_text, claim_type, evidence, confidence}),
+entities ({people, organizations, products} arrays of strings),
+topics (array of {topic, stance, intensity, evidence}),
+summary (string), needs_review (boolean), overall_confidence (number).
+Include every key even when its value is an empty array.
+"""
+
+
 def unwrap_grok_response(stdout: str) -> Dict[str, Any]:
     """Grok headless JSON mode wraps the payload as {"text": "<json>"}."""
     raw = json.loads(stdout)

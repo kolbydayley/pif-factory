@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List
 
-from .cheap_lane_adapters import draft_glm, draft_grok, validate_label
+from .cheap_lane_adapters import GLM_JSON_INSTRUCTION, draft_glm, draft_grok, validate_label
 from .pif_budget_governor import WeeklyLedger, allowance, read_weekly_snapshot
 
 PIF_ROOT = Path.home() / "pif-factory"
@@ -145,7 +145,7 @@ def main() -> None:
         if args.lane == "grok":
             result = draft_grok(prompt)
         else:
-            result = draft_glm(prompt, glm_state)
+            result = draft_glm(prompt + GLM_JSON_INSTRUCTION, glm_state)
         result["segment_id"] = row["segment_id"]
         result["segment_text"] = text
         return result
