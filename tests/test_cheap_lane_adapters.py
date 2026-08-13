@@ -113,3 +113,37 @@ def test_validate_rewrites_evidence_to_exact_substring():
     assert len(result["label"]["claims"]) == 1
     assert result["label"]["claims"][0]["evidence"] in seg
     assert result["recovered"] == 1
+
+
+def test_window_text_short_segment_single_window():
+    from research_factory.cheap_lane_adapters import window_text
+    assert window_text("short segment", max_chars=6000) == ["short segment"]
+
+
+def test_window_text_splits_on_line_boundaries_with_overlap():
+    from research_factory.cheap_lane_adapters import window_text
+    lines = [f"Speaker 1: line {i} of the conversation about topic {i}" for i in range(300)]
+    text = "\n".join(lines)
+    windows = window_text(text, max_chars=4000, overlap_chars=400)
+    assert all(len(w) <= 4000 for w in windows)
+    assert len(windows) >= 3
+    # every window is a contiguous substring of the original
+    assert all(w in text for w in windows)
+    # consecutive windows overlap
+    for a, b in zip(windows, windows[1:]):
+        assert a[-100:] in b or b[:100] in a
+
+
+def test_merge_window_labels_dedupes_by_evidence():
+    from research_factory.cheap_lane_adapters import merge_window_labels
+    l1 = {"claims": [{"claim_text": "a", "claim_type": "assessment", "evidence": "shared evidence span", "confidence": 0.9}],
+          "entities": {"people": ["Ann"], "organizations": [], "products": []},
+          "topics": [], "summary": "first", "needs_review": False, "overall_confidence": 0.9}
+    l2 = {"claims": [{"claim_text": "a2", "claim_type": "assessment", "evidence": "shared evidence span", "confidence": 0.8},
+                     {"claim_text": "b", "claim_type": "prediction", "evidence": "unique span", "confidence": 0.7}],
+          "entities": {"people": ["Ann", "Bob"], "organizations": [], "products": []},
+          "topics": [], "summary": "second", "needs_review": True, "overall_confidence": 0.7}
+    merged = merge_window_labels([l1, l2])
+    assert len(merged["claims"]) == 2  # dupe evidence collapsed
+    assert sorted(merged["entities"]["people"]) == ["Ann", "Bob"]
+    assert merged["needs_review"] is True

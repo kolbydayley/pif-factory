@@ -214,6 +214,68 @@ def validate_label(label: Any, segment_text: str) -> Dict[str, Any]:
             "recovered": recovered, "reason": None}
 
 
+def window_text(text: str, *, max_chars: int = 6000, overlap_chars: int = 500):
+    """Split long text into <=max_chars windows on line boundaries with overlap.
+
+    Every window is a contiguous substring of the original text, so evidence
+    grounded in a window is grounded in the full segment.
+    """
+    if len(text) <= max_chars:
+        return [text]
+    windows = []
+    start = 0
+    while start < len(text):
+        end = min(start + max_chars, len(text))
+        if end < len(text):
+            newline = text.rfind("\n", start, end)
+            if newline > start + max_chars // 2:
+                end = newline
+        windows.append(text[start:end])
+        if end >= len(text):
+            break
+        next_start = end - overlap_chars
+        newline = text.find("\n", next_start)
+        if 0 <= newline < end:
+            next_start = newline + 1
+        start = max(next_start, start + 1)
+    return windows
+
+
+def merge_window_labels(labels) -> Dict[str, Any]:
+    """Merge per-window labels: dedupe claims/topics by evidence, union entities."""
+    merged: Dict[str, Any] = {
+        "claims": [], "topics": [],
+        "entities": {"people": [], "organizations": [], "products": []},
+        "summary": "", "needs_review": False, "overall_confidence": 1.0,
+    }
+    seen_claims, seen_topics = set(), set()
+    summaries = []
+    for label in labels:
+        for claim in label.get("claims") or []:
+            key = _WHITESPACE.sub(" ", claim.get("evidence", "")).strip().lower()
+            if key and key not in seen_claims:
+                seen_claims.add(key)
+                merged["claims"].append(claim)
+        for topic in label.get("topics") or []:
+            key = (topic.get("topic", "").lower(),
+                   _WHITESPACE.sub(" ", topic.get("evidence", "")).strip().lower())
+            if key not in seen_topics:
+                seen_topics.add(key)
+                merged["topics"].append(topic)
+        for kind in ("people", "organizations", "products"):
+            for name in (label.get("entities") or {}).get(kind) or []:
+                if name not in merged["entities"][kind]:
+                    merged["entities"][kind].append(name)
+        if label.get("summary"):
+            summaries.append(label["summary"])
+        merged["needs_review"] = merged["needs_review"] or bool(label.get("needs_review"))
+        conf = label.get("overall_confidence")
+        if isinstance(conf, (int, float)):
+            merged["overall_confidence"] = min(merged["overall_confidence"], float(conf))
+    merged["summary"] = " ".join(summaries)[:600]
+    return merged
+
+
 def draft_grok(prompt: str, *, timeout: int = 240) -> Dict[str, Any]:
     """One headless Grok drafting call. ``prompt`` is the fully rendered prompt."""
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as handle:

@@ -25,7 +25,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List
 
-from .cheap_lane_adapters import GLM_JSON_INSTRUCTION, draft_glm, draft_grok, validate_label
+from .cheap_lane_adapters import (
+    GLM_JSON_INSTRUCTION,
+    draft_glm,
+    draft_grok,
+    merge_window_labels,
+    validate_label,
+    window_text,
+)
 from .pif_budget_governor import WeeklyLedger, allowance, read_weekly_snapshot
 
 PIF_ROOT = Path.home() / "pif-factory"
@@ -123,6 +130,30 @@ def main() -> None:
     parser.add_argument("--concurrency", type=int, default=None)
     args = parser.parse_args()
 
+    # single-writer lock: a stale or concurrent run must not share the shadow DB
+    SHADOW_ROOT.mkdir(parents=True, exist_ok=True)
+    lock_path = SHADOW_ROOT / "runner.lock"
+    try:
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(lock_fd, str(os.getpid()).encode())
+        os.close(lock_fd)
+    except FileExistsError:
+        holder = lock_path.read_text().strip()
+        try:
+            alive = holder.isdigit() and (os.kill(int(holder), 0) is None)
+        except (ProcessLookupError, PermissionError, ValueError):
+            alive = False
+        if alive:
+            print(json.dumps({"aborted": "runner_lock_held", "holder_pid": holder}))
+            return
+        lock_path.write_text(str(os.getpid()))
+    try:
+        _run(args)
+    finally:
+        lock_path.unlink(missing_ok=True)
+
+
+def _run(args) -> None:
     init_shadow_db()
     template = load_prompt_template()
     concurrency = args.concurrency or LANE_CONCURRENCY[args.lane]
@@ -139,16 +170,28 @@ def main() -> None:
     rows = select_unlabeled_segments(args.count, exclude_drafted_lane=args.lane)
     glm_state = SHADOW_ROOT / "glm-state"
 
+    def draft_window(window: str) -> Dict[str, Any]:
+        prompt = template.replace("{SEGMENT_TEXT}", window)
+        if args.lane == "grok":
+            return draft_grok(prompt)
+        return draft_glm(prompt + GLM_JSON_INSTRUCTION, glm_state)
+
     def draft_one(row: Dict[str, Any]) -> Dict[str, Any]:
         text = (PIF_ROOT / row["text_path"]).read_text()
-        prompt = template.replace("{SEGMENT_TEXT}", text)
-        if args.lane == "grok":
-            result = draft_grok(prompt)
-        else:
-            result = draft_glm(prompt + GLM_JSON_INSTRUCTION, glm_state)
-        result["segment_id"] = row["segment_id"]
-        result["segment_text"] = text
-        return result
+        windows = window_text(text)
+        labels = []
+        elapsed = 0.0
+        for window in windows:
+            result = draft_window(window)
+            elapsed += result["elapsed"]
+            if not result["ok"]:
+                return {"ok": False, "error": result["error"], "elapsed": elapsed,
+                        "segment_id": row["segment_id"], "segment_text": text}
+            labels.append(result["label"])
+        label = labels[0] if len(labels) == 1 else merge_window_labels(labels)
+        return {"ok": True, "label": label, "elapsed": elapsed,
+                "windows": len(windows),
+                "segment_id": row["segment_id"], "segment_text": text}
 
     drafted, failed, dropped_events = 0, 0, 0
     stored: List[Dict[str, Any]] = []
