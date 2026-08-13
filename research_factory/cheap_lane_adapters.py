@@ -81,6 +81,63 @@ def extract_json_lenient(text: str) -> Dict[str, Any]:
     raise ValueError("no JSON object found in model output")
 
 
+_SPEAKER_TAG = re.compile(r"Speaker \d+:\s*")
+_WHITESPACE = re.compile(r"\s+")
+
+
+def _normalize_with_map(text: str) -> tuple:
+    """Collapse speaker tags + whitespace; keep normalized→original offset map."""
+    stripped = []
+    offset_map = []
+    i = 0
+    while i < len(text):
+        tag = _SPEAKER_TAG.match(text, i)
+        if tag:
+            i = tag.end()
+            continue
+        stripped.append(text[i])
+        offset_map.append(i)
+        i += 1
+    normalized_chars = []
+    normalized_map = []
+    prev_space = False
+    for ch, orig in zip(stripped, offset_map):
+        if ch.isspace():
+            if prev_space:
+                continue
+            normalized_chars.append(" ")
+            normalized_map.append(orig)
+            prev_space = True
+        else:
+            normalized_chars.append(ch.lower())
+            normalized_map.append(orig)
+            prev_space = False
+    return "".join(normalized_chars), normalized_map
+
+
+def ground_span(evidence: str, segment_text: str):
+    """Map evidence to an exact contiguous substring of segment_text.
+
+    Exact matches pass through. Otherwise match in speaker-tag-stripped,
+    whitespace-collapsed, case-folded space and map back to the original
+    exact span. Returns the exact original substring, or None.
+    """
+    if evidence and evidence in segment_text:
+        return evidence
+    if not evidence:
+        return None
+    norm_seg, offset_map = _normalize_with_map(segment_text)
+    norm_ev = _WHITESPACE.sub(" ", evidence).strip().lower()
+    if not norm_ev:
+        return None
+    pos = norm_seg.find(norm_ev)
+    if pos < 0:
+        return None
+    start = offset_map[pos]
+    end = offset_map[pos + len(norm_ev) - 1] + 1
+    return segment_text[start:end]
+
+
 def _valid_claim(claim: Any) -> bool:
     return (isinstance(claim, dict)
             and isinstance(claim.get("claim_text"), str)
@@ -118,22 +175,32 @@ def validate_label(label: Any, segment_text: str) -> Dict[str, Any]:
         return {"schema_ok": False, "label": None, "dropped": 0, "reason": "bad_topic"}
 
     dropped = 0
+    recovered = 0
     kept_claims = []
     for claim in label["claims"]:
-        if claim["evidence"] and claim["evidence"] in segment_text:
-            kept_claims.append(claim)
-        else:
+        span = ground_span(claim["evidence"], segment_text)
+        if span is None:
             dropped += 1
+            continue
+        if span != claim["evidence"]:
+            claim = dict(claim, evidence=span)
+            recovered += 1
+        kept_claims.append(claim)
     kept_topics = []
     for topic in label["topics"]:
-        if topic["evidence"] and topic["evidence"] in segment_text:
-            kept_topics.append(topic)
-        else:
+        span = ground_span(topic["evidence"], segment_text)
+        if span is None:
             dropped += 1
+            continue
+        if span != topic["evidence"]:
+            topic = dict(topic, evidence=span)
+            recovered += 1
+        kept_topics.append(topic)
     cleaned = dict(label)
     cleaned["claims"] = kept_claims
     cleaned["topics"] = kept_topics
-    return {"schema_ok": True, "label": cleaned, "dropped": dropped, "reason": None}
+    return {"schema_ok": True, "label": cleaned, "dropped": dropped,
+            "recovered": recovered, "reason": None}
 
 
 def draft_grok(prompt: str, *, timeout: int = 240) -> Dict[str, Any]:

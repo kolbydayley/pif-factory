@@ -77,3 +77,39 @@ def test_validate_schema_rejects_bad_claim_type():
 def test_label_schema_has_required_top_level_keys():
     assert set(LABEL_SCHEMA["required"]) == {
         "claims", "entities", "topics", "summary", "needs_review", "overall_confidence"}
+
+
+def test_ground_span_exact_passthrough():
+    from research_factory.cheap_lane_adapters import ground_span
+    seg = "alpha beta gamma"
+    assert ground_span("beta gamma", seg) == "beta gamma"
+
+
+def test_ground_span_recovers_across_speaker_tags():
+    from research_factory.cheap_lane_adapters import ground_span
+    seg = "as this sort\nSpeaker 3: of unilateral thing.\nSpeaker 4: Almost so."
+    got = ground_span("as this sort of unilateral thing.", seg)
+    assert got == "as this sort\nSpeaker 3: of unilateral thing."
+    assert got in seg
+
+
+def test_ground_span_recovers_collapsed_whitespace():
+    from research_factory.cheap_lane_adapters import ground_span
+    seg = "hello   world\n  again"
+    assert ground_span("hello world again", seg) == "hello   world\n  again"
+
+
+def test_ground_span_none_for_paraphrase():
+    from research_factory.cheap_lane_adapters import ground_span
+    assert ground_span("completely different words", "the actual transcript text") is None
+
+
+def test_validate_rewrites_evidence_to_exact_substring():
+    seg = "intro\nSpeaker 1: the product is\nSpeaker 1: really fast today"
+    label = _label(claims=[{"claim_text": "a", "claim_type": "assessment",
+                            "evidence": "the product is really fast", "confidence": 0.9}])
+    result = validate_label(label, seg)
+    assert result["schema_ok"] is True
+    assert len(result["label"]["claims"]) == 1
+    assert result["label"]["claims"][0]["evidence"] in seg
+    assert result["recovered"] == 1
