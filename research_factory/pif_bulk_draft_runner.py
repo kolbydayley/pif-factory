@@ -108,7 +108,7 @@ def select_unlabeled_segments(count: int, *, exclude_drafted_lane: str) -> List[
 
 
 def judge_candidate(segment_text: str, label_json: str) -> Dict[str, Any]:
-    prompt = JUDGE_PROMPT.format(SEG=segment_text[:6000], CAND=label_json[:6000])
+    prompt = JUDGE_PROMPT.format(SEG=segment_text[:24000], CAND=label_json[:12000])
     proc = subprocess.run(
         ["codex", "exec", "-m", "gpt-5.5", "--sandbox", "read-only",
          "--skip-git-repo-check", "--output-last-message", "/dev/stdout", "-"],
