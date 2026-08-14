@@ -30,10 +30,12 @@ from .cheap_lane_adapters import (
     GLM_JSON_INSTRUCTION,
     draft_glm,
     draft_grok,
+    draft_with_omission,
     merge_window_labels,
     validate_label,
     window_text,
 )
+from .lane_profiles import LANE_PROFILES, OMISSION_SUFFIX
 from .pif_budget_governor import WeeklyLedger, allowance, read_weekly_snapshot
 
 PIF_ROOT = Path.home() / "pif-factory"
@@ -43,7 +45,7 @@ SHADOW_DB = SHADOW_ROOT / "drafts.sqlite"
 LEDGER_DB = SHADOW_ROOT / "codex_weekly_ledger.sqlite"
 CODEX_SESSIONS = Path.home() / ".codex" / "sessions"
 
-LANE_CONCURRENCY = {"grok": 6, "glm": 3}
+LANE_CONCURRENCY = {lane: prof["concurrency"] for lane, prof in LANE_PROFILES.items()}
 MIN_AUDIT_RATE = 0.05
 
 PROMPT_V2_PATH = PIF_ROOT / "work" / "loadtest-20260813" / "prompt_v2.py"
@@ -170,16 +172,22 @@ def _run(args) -> None:
 
     rows = select_unlabeled_segments(args.count, exclude_drafted_lane=args.lane)
     glm_state = SHADOW_ROOT / "glm-state"
+    profile = LANE_PROFILES[args.lane]
+    template = template + profile["prompt_addendum"]
+
+    def draft_prompt(prompt: str) -> Dict[str, Any]:
+        if args.lane == "grok":
+            return draft_grok(prompt, reasoning_effort=profile["reasoning_effort"])
+        return draft_glm(prompt + GLM_JSON_INSTRUCTION, glm_state)
 
     def draft_window(window: str) -> Dict[str, Any]:
-        prompt = template.replace("{SEGMENT_TEXT}", window)
-        if args.lane == "grok":
-            return draft_grok(prompt)
-        return draft_glm(prompt + GLM_JSON_INSTRUCTION, glm_state)
+        """Draft one window, plus the profile's omission-audit passes."""
+        return draft_with_omission(draft_prompt, template, window,
+                                   profile["omission_passes"], OMISSION_SUFFIX)
 
     def draft_one(row: Dict[str, Any]) -> Dict[str, Any]:
         text = (PIF_ROOT / row["text_path"]).read_text()
-        windows = window_text(text)
+        windows = window_text(text, max_chars=profile["window_chars"])
         labels = []
         elapsed = 0.0
         for window in windows:

@@ -276,7 +276,35 @@ def merge_window_labels(labels) -> Dict[str, Any]:
     return merged
 
 
-def draft_grok(prompt: str, *, timeout: int = 240) -> Dict[str, Any]:
+def draft_with_omission(draft_fn, template: str, window: str, passes: int,
+                        omission_suffix: str) -> Dict[str, Any]:
+    """Draft one window via ``draft_fn(prompt)``, then run up to ``passes``
+    omission-audit passes, merging genuinely new claims into the label.
+
+    Omission passes are best-effort: a failed pass keeps the first-pass label.
+    """
+    result = draft_fn(template.replace("{SEGMENT_TEXT}", window))
+    if not result["ok"]:
+        return result
+    label, elapsed = result["label"], result["elapsed"]
+    for _ in range(passes):
+        prior = "\n".join("- " + (c.get("claim_text") or "")
+                          for c in (label.get("claims") or [])
+                          if isinstance(c, dict)) or "(none)"
+        omission_template = template + omission_suffix.replace("{PRIOR_CLAIMS}", prior)
+        second = draft_fn(omission_template.replace("{SEGMENT_TEXT}", window))
+        if not second["ok"]:
+            break
+        elapsed += second["elapsed"]
+        extra = (second["label"] or {}).get("claims") or []
+        if not extra:
+            break
+        label = dict(label, claims=list(label.get("claims") or []) + extra)
+    return {"ok": True, "label": label, "elapsed": elapsed, "error": None}
+
+
+def draft_grok(prompt: str, *, timeout: int = 240,
+               reasoning_effort: str = GROK_REASONING_EFFORT) -> Dict[str, Any]:
     """One headless Grok drafting call. ``prompt`` is the fully rendered prompt."""
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as handle:
         handle.write(prompt)
@@ -285,7 +313,7 @@ def draft_grok(prompt: str, *, timeout: int = 240) -> Dict[str, Any]:
     try:
         proc = subprocess.run(
             [GROK_BINARY, "--prompt-file", prompt_path,
-             "-m", GROK_MODEL, "--reasoning-effort", GROK_REASONING_EFFORT,
+             "-m", GROK_MODEL, "--reasoning-effort", reasoning_effort,
              "--json-schema", json.dumps(LABEL_SCHEMA),
              "--disable-web-search", "--no-subagents", "--no-memory", "--no-plan",
              "--max-turns", "1"],
