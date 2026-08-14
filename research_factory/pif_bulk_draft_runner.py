@@ -190,27 +190,36 @@ def _run(args) -> None:
         windows = window_text(text, max_chars=profile["window_chars"])
         labels = []
         elapsed = 0.0
+        calls = 0
         for window in windows:
             result = draft_window(window)
             elapsed += result["elapsed"]
+            calls += result.get("calls", 1)
             if not result["ok"]:
                 return {"ok": False, "error": result["error"], "elapsed": elapsed,
+                        "error_class": result.get("error_class", "other"),
+                        "calls": calls,
                         "segment_id": row["segment_id"], "segment_text": text}
             labels.append(result["label"])
         label = labels[0] if len(labels) == 1 else merge_window_labels(labels)
         return {"ok": True, "label": label, "elapsed": elapsed,
-                "windows": len(windows),
+                "windows": len(windows), "calls": calls,
                 "segment_id": row["segment_id"], "segment_text": text}
 
     drafted, failed, dropped_events = 0, 0, 0
+    calls_made = 0
+    failure_counts: Dict[str, int] = {}
     stored: List[Dict[str, Any]] = []
     start = time.monotonic()
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         futures = [pool.submit(draft_one, row) for row in rows]
         for future in as_completed(futures):
             res = future.result()
+            calls_made += res.get("calls", 0)
             if not res["ok"]:
                 failed += 1
+                klass = res.get("error_class", "other")
+                failure_counts[klass] = failure_counts.get(klass, 0) + 1
                 continue
             validation = validate_label(res["label"], res["segment_text"])
             if not validation["schema_ok"]:
@@ -259,6 +268,8 @@ def _run(args) -> None:
     receipt = {
         "run_id": run_id, "lane": args.lane,
         "drafted": drafted, "failed": failed,
+        "calls_made": calls_made,
+        "failure_counts": failure_counts,
         "dropped_events": dropped_events,
         "wall_seconds": round(wall, 1),
         "throughput_per_hour": round(3600 * drafted / wall, 1) if wall else 0,

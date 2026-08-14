@@ -28,3 +28,46 @@ def test_red_on_low_drafting_or_low_audit():
 
 def test_red_on_missing_audit_sample():
     assert evaluate_receipt(_receipt(audit_pass_rate=None), 100)["reason"] == "no_audit_sample"
+
+
+def test_consumption_summary_totals_and_warns(tmp_path, monkeypatch):
+    import json as _json
+    import time as _time
+    from research_factory import pif_dual_lane_daily as daily
+    monkeypatch.setattr(daily, "SHADOW_ROOT", tmp_path)
+    now = _time.time()
+    for i, (calls, age_days) in enumerate([(500, 1), (400, 2), (300, 9)]):  # 3rd is stale
+        p = tmp_path / f"receipt-bulk-grok-2026081{i}T000000.json"
+        p.write_text(_json.dumps({"calls_made": calls}))
+        import os
+        os.utime(p, (now - age_days * 86400, now - age_days * 86400))
+    s = daily.consumption_summary(
+        "grok", {"calls_made": 200, "failure_counts": {"timeout": 2}}, now=now)
+    assert s["calls_7d"] == 900          # stale receipt excluded
+    assert s["calls_today"] == 200
+    assert s["failures_today"] == {"timeout": 2}
+    assert s["weekly_call_budget"] == 1000
+    assert "quota_warning" in s          # 900 >= 0.8 * 1000
+
+
+def test_consumption_summary_no_budget_lane(tmp_path, monkeypatch):
+    from research_factory import pif_dual_lane_daily as daily
+    monkeypatch.setattr(daily, "SHADOW_ROOT", tmp_path)
+    s = daily.consumption_summary("glm", None)
+    assert s["calls_7d"] == 0 and "weekly_call_budget" not in s
+    assert "quota_warning" not in s
+
+
+def test_draft_with_omission_counts_calls():
+    from research_factory.cheap_lane_adapters import draft_with_omission
+    from research_factory.lane_profiles import OMISSION_SUFFIX
+    calls = []
+
+    def fake(prompt):
+        calls.append(prompt)
+        label = {"claims": [{"claim_text": f"c{len(calls)}", "claim_type": "assessment",
+                             "evidence": "e", "confidence": 0.9}]}
+        return {"ok": True, "label": label, "elapsed": 1.0, "calls": 1}
+
+    res = draft_with_omission(fake, "T {SEGMENT_TEXT}", "w", 1, OMISSION_SUFFIX)
+    assert res["calls"] == 2

@@ -284,8 +284,9 @@ def draft_with_omission(draft_fn, template: str, window: str, passes: int,
     Omission passes are best-effort: a failed pass keeps the first-pass label.
     """
     result = draft_fn(template.replace("{SEGMENT_TEXT}", window))
+    calls = result.get("calls", 1)
     if not result["ok"]:
-        return result
+        return dict(result, calls=calls)
     label, elapsed = result["label"], result["elapsed"]
     for _ in range(passes):
         prior = "\n".join("- " + (c.get("claim_text") or "")
@@ -293,6 +294,7 @@ def draft_with_omission(draft_fn, template: str, window: str, passes: int,
                           if isinstance(c, dict)) or "(none)"
         omission_template = template + omission_suffix.replace("{PRIOR_CLAIMS}", prior)
         second = draft_fn(omission_template.replace("{SEGMENT_TEXT}", window))
+        calls += second.get("calls", 1)
         if not second["ok"]:
             break
         elapsed += second["elapsed"]
@@ -300,7 +302,7 @@ def draft_with_omission(draft_fn, template: str, window: str, passes: int,
         if not extra:
             break
         label = dict(label, claims=list(label.get("claims") or []) + extra)
-    return {"ok": True, "label": label, "elapsed": elapsed, "error": None}
+    return {"ok": True, "label": label, "elapsed": elapsed, "error": None, "calls": calls}
 
 
 def draft_grok(prompt: str, *, timeout: int = 240,
@@ -321,14 +323,16 @@ def draft_grok(prompt: str, *, timeout: int = 240,
         elapsed = time.monotonic() - started
         if proc.returncode != 0:
             return {"ok": False, "label": None, "elapsed": elapsed,
-                    "error": proc.stderr[-500:]}
+                    "error": proc.stderr[-500:], "error_class": "provider", "calls": 1}
         return {"ok": True, "label": unwrap_grok_response(proc.stdout),
-                "elapsed": elapsed, "error": None}
+                "elapsed": elapsed, "error": None, "calls": 1}
     except subprocess.TimeoutExpired:
-        return {"ok": False, "label": None, "elapsed": float(timeout), "error": "timeout"}
+        return {"ok": False, "label": None, "elapsed": float(timeout),
+                "error": "timeout", "error_class": "timeout", "calls": 1}
     except (json.JSONDecodeError, ValueError) as exc:
         return {"ok": False, "label": None,
-                "elapsed": time.monotonic() - started, "error": f"parse: {exc}"}
+                "elapsed": time.monotonic() - started,
+                "error": f"parse: {exc}", "error_class": "parse", "calls": 1}
     finally:
         os.unlink(prompt_path)
 
@@ -338,7 +342,8 @@ def draft_glm(prompt: str, state_root: Path, *, timeout: int = 300) -> Dict[str,
     auth_source = Path.home() / ".local" / "share" / "opencode" / "auth.json"
     if not auth_source.is_file():
         return {"ok": False, "label": None, "elapsed": 0.0,
-                "error": "opencode auth material unavailable"}
+                "error": "opencode auth material unavailable",
+                "error_class": "provider", "calls": 0}
     state_root = Path(state_root)
     state_root.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
@@ -360,11 +365,14 @@ def draft_glm(prompt: str, state_root: Path, *, timeout: int = 300) -> Dict[str,
             elapsed = time.monotonic() - started
             if proc.returncode != 0:
                 return {"ok": False, "label": None, "elapsed": elapsed,
-                        "error": (proc.stderr or proc.stdout)[-500:]}
+                        "error": (proc.stderr or proc.stdout)[-500:],
+                        "error_class": "provider", "calls": 1}
             return {"ok": True, "label": extract_json_lenient(proc.stdout),
-                    "elapsed": elapsed, "error": None}
+                    "elapsed": elapsed, "error": None, "calls": 1}
     except subprocess.TimeoutExpired:
-        return {"ok": False, "label": None, "elapsed": float(timeout), "error": "timeout"}
+        return {"ok": False, "label": None, "elapsed": float(timeout),
+                "error": "timeout", "error_class": "timeout", "calls": 1}
     except (json.JSONDecodeError, ValueError) as exc:
         return {"ok": False, "label": None,
-                "elapsed": time.monotonic() - started, "error": f"parse: {exc}"}
+                "elapsed": time.monotonic() - started,
+                "error": f"parse: {exc}", "error_class": "parse", "calls": 1}

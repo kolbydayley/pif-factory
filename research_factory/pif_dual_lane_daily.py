@@ -33,6 +33,46 @@ ROLL_ROOT = PIF_ROOT / "work" / "pif-ops" / "bulk-daily"
 GREEN_MIN_DRAFT_FRACTION = 0.8
 GREEN_MIN_AUDIT_PASS = 0.8
 
+# Consumption proxy. Neither SuperGrok nor OpenCode Go exposes a remaining-
+# quota API, so lane call counts stand in for quota pressure. The grok weekly
+# call budget derives from the observed dashboard reading on 2026-08-14:
+# ~580 CLI calls had consumed 54% of the weekly SuperGrok Lite window
+# (window resets Wednesdays ~08:48 ET) => capacity ~1,075 calls/week. 1000 is
+# the conservative planning number; re-derive it if the plan tier changes.
+WEEKLY_CALL_BUDGETS = {"grok": 1000}
+QUOTA_WARN_FRACTION = 0.8
+
+
+def consumption_summary(lane: str, day_receipt: Optional[Dict[str, Any]],
+                        now: Optional[float] = None) -> Dict[str, Any]:
+    """Per-lane consumption proxy: today's calls + failure taxonomy, the
+    trailing-7-day call total from stored receipts, and a weekly projection
+    against the lane's call budget (where one is known)."""
+    import time as _time
+    now = now or _time.time()
+    week_ago = now - 7 * 86400
+    calls_7d = 0
+    for path in SHADOW_ROOT.glob(f"receipt-bulk-{lane}-*.json"):
+        if path.stat().st_mtime >= week_ago:
+            try:
+                calls_7d += json.loads(path.read_text()).get("calls_made") or 0
+            except (json.JSONDecodeError, OSError):
+                continue
+    summary: Dict[str, Any] = {
+        "calls_today": (day_receipt or {}).get("calls_made"),
+        "failures_today": (day_receipt or {}).get("failure_counts") or {},
+        "calls_7d": calls_7d,
+    }
+    budget = WEEKLY_CALL_BUDGETS.get(lane)
+    if budget:
+        summary["weekly_call_budget"] = budget
+        summary["budget_used_fraction"] = round(calls_7d / budget, 3)
+        if calls_7d >= QUOTA_WARN_FRACTION * budget:
+            summary["quota_warning"] = (
+                f"{lane} trailing-7d calls {calls_7d} >= "
+                f"{QUOTA_WARN_FRACTION:.0%} of weekly budget {budget}")
+    return summary
+
 
 def evaluate_receipt(receipt: Optional[Dict[str, Any]], cap: int) -> Dict[str, Any]:
     """Pure green/red decision for one lane-day from its bulk-run receipt."""
@@ -85,6 +125,7 @@ def roll_lane(lane: str, date: str) -> Dict[str, Any]:
             "drafted": (receipt or {}).get("drafted"),
             "audit_pass_rate": (receipt or {}).get("audit_pass_rate"),
             "throughput_per_hour": (receipt or {}).get("throughput_per_hour"),
+            "consumption": consumption_summary(lane, receipt),
             "tier_after": tick}
 
 
