@@ -28,6 +28,7 @@ from typing import Any, Dict, List
 
 from .cheap_lane_adapters import (
     GLM_JSON_INSTRUCTION,
+    draft_codex,
     draft_glm,
     draft_grok,
     draft_with_omission,
@@ -43,6 +44,7 @@ CANONICAL_DB = PIF_ROOT / "data" / "factory.sqlite"
 SHADOW_ROOT = PIF_ROOT / "work" / "bulk-drafts"
 SHADOW_DB = SHADOW_ROOT / "drafts.sqlite"
 LEDGER_DB = SHADOW_ROOT / "codex_weekly_ledger.sqlite"
+DRAFT_LEDGER_DB = SHADOW_ROOT / "codex_draft_ledger.sqlite"
 CODEX_SESSIONS = Path.home() / ".codex" / "sessions"
 
 LANE_CONCURRENCY = {lane: prof["concurrency"] for lane, prof in LANE_PROFILES.items()}
@@ -88,7 +90,8 @@ def init_shadow_db() -> None:
                )""")
 
 
-def select_unlabeled_segments(count: int, *, exclude_drafted_lane: str) -> List[Dict[str, Any]]:
+def select_unlabeled_segments(count: int, *, exclude_drafted_lane: str,
+                              order: str = "newest") -> List[Dict[str, Any]]:
     """Unlabeled segments not already drafted by ANY lane. Read-only.
 
     Lanes partition the backlog: a segment drafted by one lane is not
@@ -102,14 +105,16 @@ def select_unlabeled_segments(count: int, *, exclude_drafted_lane: str) -> List[
         with sqlite3.connect(SHADOW_DB) as conn:
             drafted = {row[0] for row in conn.execute(
                 "SELECT DISTINCT segment_id FROM draft_labels")}
+    order_sql = {"newest": "s.created_at DESC",
+                 "longest": "s.word_count DESC"}[order]
     conn = sqlite3.connect(f"file:{CANONICAL_DB}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        """SELECT s.id AS segment_id, s.text_path
+        f"""SELECT s.id AS segment_id, s.text_path
            FROM segments s
            LEFT JOIN labels l ON l.segment_id = s.id
            WHERE l.id IS NULL
-           ORDER BY s.created_at DESC
+           ORDER BY {order_sql}
            LIMIT ?""", (count + len(drafted),)).fetchall()
     conn.close()
     return [dict(r) for r in rows if r["segment_id"] not in drafted][:count]
@@ -168,22 +173,31 @@ def _run(args) -> None:
     concurrency = args.concurrency or LANE_CONCURRENCY[args.lane]
     run_id = f"bulk-{args.lane}-{time.strftime('%Y%m%dT%H%M%S')}"
 
-    ledger = WeeklyLedger(LEDGER_DB)
+    profile_early = LANE_PROFILES[args.lane]
+    is_codex_lane = args.lane == "codex"
+    ledger = WeeklyLedger(DRAFT_LEDGER_DB if is_codex_lane else LEDGER_DB)
     snapshot = read_weekly_snapshot(CODEX_SESSIONS)
-    budget = allowance(snapshot, ledger, now=int(time.time()))
+    budget = allowance(
+        snapshot, ledger, now=int(time.time()),
+        **({"cap_points": profile_early["draft_budget_cap_points"]}
+           if is_codex_lane else {}))
     if not budget["allowed"]:
         print(json.dumps({"run_id": run_id, "aborted": "codex_budget",
                           "budget": budget}))
         return
 
-    rows = select_unlabeled_segments(args.count, exclude_drafted_lane=args.lane)
+    rows = select_unlabeled_segments(
+        args.count, exclude_drafted_lane=args.lane,
+        order=profile_early.get("select_order", "newest"))
     glm_state = SHADOW_ROOT / "glm-state"
-    profile = LANE_PROFILES[args.lane]
+    profile = profile_early
     template = template + profile["prompt_addendum"]
 
     def draft_prompt(prompt: str) -> Dict[str, Any]:
         if args.lane == "grok":
             return draft_grok(prompt, reasoning_effort=profile["reasoning_effort"])
+        if is_codex_lane:
+            return draft_codex(prompt + GLM_JSON_INSTRUCTION, model=profile["model"])
         return draft_glm(prompt + GLM_JSON_INSTRUCTION, glm_state,
                          model=profile.get("model", "opencode-go/glm-5.2"))
 
@@ -250,8 +264,15 @@ def _run(args) -> None:
                 print(f"[{run_id}] drafted={drafted} failed={failed}", flush=True)
     wall = time.monotonic() - start
 
-    # Codex audit sample inside governor allowance
-    audit_n = max(1, int(len(stored) * max(args.audit_rate, MIN_AUDIT_RATE))) if stored else 0
+    # Codex audit sample inside governor allowance. The codex lane skips
+    # audits (the reference model auditing itself is circular); its whole
+    # run delta — drafting spend — is attributed to the draft ledger instead.
+    if is_codex_lane:
+        after_draft = read_weekly_snapshot(CODEX_SESSIONS)
+        if snapshot and after_draft:
+            ledger.record(snapshot, after_draft, run_id=run_id)
+    audit_n = (max(1, int(len(stored) * max(args.audit_rate, MIN_AUDIT_RATE)))
+               if stored and not is_codex_lane else 0)
     random.seed(run_id)
     sample = random.sample(stored, min(audit_n, len(stored)))
     before = read_weekly_snapshot(CODEX_SESSIONS)
@@ -268,7 +289,7 @@ def _run(args) -> None:
                     "UPDATE draft_labels SET audit_json = ? WHERE segment_id = ? AND lane = ?",
                     (json.dumps(verdict), rec["segment_id"], args.lane))
     after = read_weekly_snapshot(CODEX_SESSIONS)
-    if before and after:
+    if before and after and not is_codex_lane:
         ledger.record(before, after, run_id=run_id)
 
     ok_audits = [a for a in audits if a.get("ok")]

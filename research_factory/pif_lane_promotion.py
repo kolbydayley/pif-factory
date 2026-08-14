@@ -174,7 +174,8 @@ def tier_tick(lane: str, date: str, green: bool) -> Dict[str, Any]:
         contiguous = last is not None and dt.date.fromisoformat(last) == today - dt.timedelta(days=1)
         tier_state["streak_days"] = (tier_state["streak_days"] + 1) if contiguous else 1
         tier_state["last_green_date"] = date
-        if (tier_state["streak_days"] >= STREAK_DAYS_REQUIRED
+        if (tier_state.get("ladder", True)
+                and tier_state["streak_days"] >= STREAK_DAYS_REQUIRED
                 and tier_state["tier_index"] < len(TIERS) - 1):
             tier_state["tier_index"] += 1
             tier_state["daily_cap"] = TIERS[tier_state["tier_index"]]

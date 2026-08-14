@@ -337,6 +337,39 @@ def draft_grok(prompt: str, *, timeout: int = 240,
         os.unlink(prompt_path)
 
 
+def draft_codex(prompt: str, *, timeout: int = 300,
+                model: str = "gpt-5.5") -> Dict[str, Any]:
+    """One Codex drafting call (subscription-billed, budget-governed by the
+    caller). Used by the codex quality lane on the hardest backlog segments."""
+    started = time.monotonic()
+    try:
+        proc = subprocess.run(
+            ["codex", "exec", "-m", model, "--sandbox", "read-only",
+             "--skip-git-repo-check", "--output-last-message", "/dev/stdout", "-"],
+            input=prompt, capture_output=True, text=True, timeout=timeout)
+        elapsed = time.monotonic() - started
+        if proc.returncode != 0:
+            return {"ok": False, "label": None, "elapsed": elapsed,
+                    "error": proc.stderr[-500:], "error_class": "provider", "calls": 1}
+        text = proc.stdout.strip()
+        decoder = json.JSONDecoder()
+        idx = text.find("{")
+        while idx >= 0:
+            try:
+                obj, _ = decoder.raw_decode(text, idx)
+                if isinstance(obj, dict) and "claims" in obj:
+                    return {"ok": True, "label": obj, "elapsed": elapsed,
+                            "error": None, "calls": 1}
+            except json.JSONDecodeError:
+                pass
+            idx = text.find("{", idx + 1)
+        return {"ok": False, "label": None, "elapsed": elapsed,
+                "error": "no label JSON in codex reply", "error_class": "parse", "calls": 1}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "label": None, "elapsed": float(timeout),
+                "error": "timeout", "error_class": "timeout", "calls": 1}
+
+
 def draft_glm(prompt: str, state_root: Path, *, timeout: int = 300,
               model: str = GLM_MODEL) -> Dict[str, Any]:
     """One OpenCode GLM drafting call in an isolated ephemeral data dir.

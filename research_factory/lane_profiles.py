@@ -56,6 +56,21 @@ LANE_PROFILES: Dict[str, Dict[str, Any]] = {
         "reasoning_effort": None,
         "prompt_addendum": "",
     },
+    "codex": {
+        # Quality lane: the reference model drafting the HARDEST backlog
+        # segments (longest-first selection), inside a dedicated 10-point
+        # weekly budget slice separate from the 30-point audit governor.
+        # No audit sampling — the reference model auditing itself is circular.
+        "model": "gpt-5.5",
+        "concurrency": 3,
+        "omission_passes": 0,
+        "window_chars": 6000,
+        "reasoning_effort": None,
+        "prompt_addendum": "",
+        "audit": False,
+        "select_order": "longest",
+        "draft_budget_cap_points": 10.0,
+    },
     "grok": {
         # Qualified config: LOW effort, NO omission pass (re-qualified
         # 2026-08-14, work/loadtest-20260813/qual_round_6/report_v2.json:

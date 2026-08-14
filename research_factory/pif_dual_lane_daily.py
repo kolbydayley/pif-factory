@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .lane_profiles import LANE_PROFILES
 from .pif_lane_promotion import tier_state_path, tier_tick
 
 PIF_ROOT = Path.home() / "pif-factory"
@@ -101,8 +102,13 @@ def zai_quota_snapshot() -> Optional[Dict[str, Any]]:
         return None
 
 
-def evaluate_receipt(receipt: Optional[Dict[str, Any]], cap: int) -> Dict[str, Any]:
-    """Pure green/red decision for one lane-day from its bulk-run receipt."""
+def evaluate_receipt(receipt: Optional[Dict[str, Any]], cap: int, *,
+                     require_audit: bool = True) -> Dict[str, Any]:
+    """Pure green/red decision for one lane-day from its bulk-run receipt.
+
+    ``require_audit=False`` is for the codex quality lane, which skips audit
+    sampling (the reference model auditing itself is circular).
+    """
     if receipt is None:
         return {"green": False, "reason": "no_receipt"}
     if receipt.get("aborted"):
@@ -110,11 +116,12 @@ def evaluate_receipt(receipt: Optional[Dict[str, Any]], cap: int) -> Dict[str, A
     drafted = receipt.get("drafted") or 0
     if drafted < GREEN_MIN_DRAFT_FRACTION * cap:
         return {"green": False, "reason": f"drafted_{drafted}_below_{GREEN_MIN_DRAFT_FRACTION:.0%}_of_{cap}"}
-    audit_pass = receipt.get("audit_pass_rate")
-    if audit_pass is None:
-        return {"green": False, "reason": "no_audit_sample"}
-    if audit_pass < GREEN_MIN_AUDIT_PASS:
-        return {"green": False, "reason": f"audit_pass_{audit_pass}_below_{GREEN_MIN_AUDIT_PASS}"}
+    if require_audit:
+        audit_pass = receipt.get("audit_pass_rate")
+        if audit_pass is None:
+            return {"green": False, "reason": "no_audit_sample"}
+        if audit_pass < GREEN_MIN_AUDIT_PASS:
+            return {"green": False, "reason": f"audit_pass_{audit_pass}_below_{GREEN_MIN_AUDIT_PASS}"}
     return {"green": True, "reason": None}
 
 
@@ -142,7 +149,9 @@ def roll_lane(lane: str, date: str) -> Dict[str, Any]:
          "--lane", lane, "--count", str(count), "--audit-rate", "0.12"],
         capture_output=True, text=True, cwd=str(PIF_ROOT), timeout=4 * 3600)
     receipt = newest_receipt(lane, not_before=started)
-    verdict = evaluate_receipt(receipt, count)
+    verdict = evaluate_receipt(
+        receipt, count,
+        require_audit=LANE_PROFILES.get(lane, {}).get("audit", True))
     if proc.returncode != 0 and verdict["green"]:
         verdict = {"green": False, "reason": f"runner_exit_{proc.returncode}"}
     tick = tier_tick(lane, date, green=verdict["green"])
@@ -159,7 +168,7 @@ def roll_lane(lane: str, date: str) -> Dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", default=dt.date.today().isoformat())
-    parser.add_argument("--lanes", default="glm,glm-zai,grok")
+    parser.add_argument("--lanes", default="glm,glm-zai,grok,codex")
     args = parser.parse_args()
 
     ROLL_ROOT.mkdir(parents=True, exist_ok=True)

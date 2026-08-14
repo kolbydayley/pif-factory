@@ -118,3 +118,15 @@ def test_dual_lane_tier_ticks_are_independent(sandbox):
     glm_state = json.loads(promo.TIER_STATE_PATH.read_text())
     assert glm_state["lane"] == "glm" and glm_state["streak_days"] == 1
     assert state["lane"] == "grok" and state["streak_days"] == 1
+
+
+def test_ladder_false_tier_state_never_promotes(sandbox):
+    import json as _json
+    path = promo.tier_state_path("codex")
+    path.write_text(_json.dumps({
+        "lane": "codex", "tier_index": 0, "daily_cap": 60, "streak_days": 0,
+        "last_green_date": None, "frozen": False, "ladder": False}))
+    for day in range(1, 10):
+        state = promo.tier_tick("codex", f"2026-09-{day:02d}", green=True)
+    assert state["daily_cap"] == 60 and state["tier_index"] == 0
+    assert state["streak_days"] == 9  # streaks recorded, promotion suppressed

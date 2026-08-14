@@ -71,3 +71,11 @@ def test_draft_with_omission_counts_calls():
 
     res = draft_with_omission(fake, "T {SEGMENT_TEXT}", "w", 1, OMISSION_SUFFIX)
     assert res["calls"] == 2
+
+
+def test_no_audit_lane_green_without_audit_sample():
+    r = _receipt(audit_pass_rate=None)
+    assert evaluate_receipt(r, 100, require_audit=False)["green"] is True
+    assert evaluate_receipt(r, 100)["green"] is False  # audited lanes unchanged
+    assert evaluate_receipt(_receipt(drafted=50, audit_pass_rate=None), 100,
+                            require_audit=False)["green"] is False  # draft floor still applies
