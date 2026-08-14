@@ -28,6 +28,14 @@ PIF_ROOT = Path.home() / "pif-factory"
 POLICY_PATH = PIF_ROOT / "config" / "provider_policy.json"
 TIER_STATE_PATH = PIF_ROOT / "work" / "bulk-drafts" / "tier_state.json"
 
+
+def tier_state_path(lane: str) -> Path:
+    """Per-lane tier state. glm keeps the legacy single-file path (live state
+    predates dual lanes); every other lane gets its own file."""
+    if lane == "glm":
+        return TIER_STATE_PATH
+    return TIER_STATE_PATH.with_name(f"tier_state_{lane}.json")
+
 TIERS = [100, 400, 1600, None]  # None = uncapped
 STREAK_DAYS_REQUIRED = 7
 
@@ -61,7 +69,7 @@ def _notify(title: str, body: str) -> None:
 
 
 def gates_green(report: Dict[str, Any], lane: str) -> bool:
-    lane_data = (report.get("lanes") or {}).get(lane) or {}
+    lane_data = (report.get("lanes") or {}).get(lane) or report.get(lane) or {}
     return bool(lane_data.get("gates_passed"))
 
 
@@ -91,7 +99,7 @@ def promote(report_path: Path, lane: str) -> Dict[str, Any]:
         "promoted_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "promotion_report": stage["promotion_report"],
     }
-    _save(TIER_STATE_PATH, tier_state)
+    _save(tier_state_path(lane), tier_state)
     _git_commit([POLICY_PATH],
                 f"feat(policy): promote {lane} to label_segment bulk lane\n\n"
                 f"Qualification report: {stage['promotion_report']}\n\n"
@@ -109,11 +117,12 @@ def freeze(lane: str, reason: str) -> Dict[str, Any]:
     stage["model"] = fallback["model"]
     stage["frozen_reason"] = reason
     _save(POLICY_PATH, policy)
-    if TIER_STATE_PATH.exists():
-        tier_state = _load(TIER_STATE_PATH)
+    lane_tier_path = tier_state_path(lane)
+    if lane_tier_path.exists():
+        tier_state = _load(lane_tier_path)
         tier_state["frozen"] = True
         tier_state["freeze_reason"] = reason
-        _save(TIER_STATE_PATH, tier_state)
+        _save(lane_tier_path, tier_state)
     _git_commit([POLICY_PATH],
                 f"fix(policy): auto-freeze {lane} bulk lane -> Codex bounded\n\n"
                 f"Reason: {reason}\n\n"
@@ -122,9 +131,37 @@ def freeze(lane: str, reason: str) -> Dict[str, Any]:
     return {"frozen": lane, "reason": reason}
 
 
+def init_tier(lane: str, report_path: Path) -> Dict[str, Any]:
+    """Initialize tier state for a lane WITHOUT touching provider policy.
+
+    This is the shadow second-lane path: the lane drafts the backlog at the
+    tier ladder's caps while the label_segment primary stays as-is. Requires a
+    qualification report with green gates, same bar as promote().
+    """
+    report = _load(report_path)
+    if not gates_green(report, lane):
+        raise SystemExit(f"refusing tier init: lane '{lane}' gates not green in {report_path}")
+    path = tier_state_path(lane)
+    if path.exists() and not _load(path).get("frozen"):
+        raise SystemExit(f"tier state for '{lane}' already exists at {path}")
+    rel_report = (str(report_path.relative_to(PIF_ROOT))
+                  if str(report_path).startswith(str(PIF_ROOT)) else str(report_path))
+    tier_state = {
+        "lane": lane, "tier_index": 0, "daily_cap": TIERS[0],
+        "streak_days": 0, "last_green_date": None, "frozen": False,
+        "promoted_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "promotion_report": rel_report,
+        "shadow_lane": True,
+    }
+    _save(path, tier_state)
+    _notify(f"PIF: {lane} shadow bulk lane initialized",
+            f"Gates green in {rel_report}; tier 100/day, Codex audit-only.")
+    return tier_state
+
+
 def tier_tick(lane: str, date: str, green: bool) -> Dict[str, Any]:
     """Record one day's outcome; promote tier on a 7-day continuous streak."""
-    tier_state = _load(TIER_STATE_PATH)
+    tier_state = _load(tier_state_path(lane))
     if tier_state.get("lane") != lane:
         raise SystemExit(f"tier state belongs to '{tier_state.get('lane')}', not '{lane}'")
     if tier_state.get("frozen"):
@@ -144,7 +181,7 @@ def tier_tick(lane: str, date: str, green: bool) -> Dict[str, Any]:
             tier_state["streak_days"] = 0
             _notify(f"PIF: {lane} tier promoted",
                     f"New daily cap: {tier_state['daily_cap'] or 'uncapped'}")
-    _save(TIER_STATE_PATH, tier_state)
+    _save(tier_state_path(lane), tier_state)
     return tier_state
 
 
@@ -157,6 +194,9 @@ def main() -> None:
     f = sub.add_parser("freeze")
     f.add_argument("--lane", required=True)
     f.add_argument("--reason", required=True)
+    i = sub.add_parser("init-tier")
+    i.add_argument("--report", type=Path, required=True)
+    i.add_argument("--lane", required=True)
     t = sub.add_parser("tier-tick")
     t.add_argument("--lane", required=True)
     t.add_argument("--date", required=True)
@@ -166,6 +206,8 @@ def main() -> None:
         print(json.dumps(promote(args.report, args.lane), indent=1))
     elif args.command == "freeze":
         print(json.dumps(freeze(args.lane, args.reason), indent=1))
+    elif args.command == "init-tier":
+        print(json.dumps(init_tier(args.lane, args.report), indent=1))
     else:
         print(json.dumps(tier_tick(args.lane, args.date, args.green), indent=1))
 

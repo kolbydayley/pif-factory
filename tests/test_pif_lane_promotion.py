@@ -76,3 +76,45 @@ def test_tier_tick_refuses_frozen_lane(sandbox):
     promo.freeze("glm", "breach")
     with pytest.raises(SystemExit):
         promo.tier_tick("glm", "2026-08-14", green=True)
+
+
+def test_tier_state_paths_are_per_lane(sandbox):
+    assert promo.tier_state_path("glm") == promo.TIER_STATE_PATH  # legacy live file
+    grok_path = promo.tier_state_path("grok")
+    assert grok_path != promo.TIER_STATE_PATH
+    assert grok_path.name == "tier_state_grok.json"
+
+
+def test_init_tier_seeds_shadow_lane_without_policy_edit(sandbox):
+    report = _report(sandbox, "grok", green=True)
+    policy_before = promo.POLICY_PATH.read_text()
+    state = promo.init_tier("grok", report)
+    assert promo.POLICY_PATH.read_text() == policy_before  # policy untouched
+    assert state["daily_cap"] == 100 and state["shadow_lane"] is True
+    saved = json.loads(promo.tier_state_path("grok").read_text())
+    assert saved["lane"] == "grok" and saved["frozen"] is False
+
+
+def test_init_tier_refuses_red_gates_and_existing_state(sandbox):
+    with pytest.raises(SystemExit):
+        promo.init_tier("grok", _report(sandbox, "grok", green=False))
+    promo.init_tier("grok", _report(sandbox, "grok", green=True))
+    with pytest.raises(SystemExit):
+        promo.init_tier("grok", _report(sandbox, "grok", green=True))
+
+
+def test_init_tier_accepts_recalibrated_report_shape(sandbox):
+    path = sandbox / "recal.json"
+    path.write_text(json.dumps({"grok": {"gates_passed": True, "metrics": {}}}))
+    state = promo.init_tier("grok", path)
+    assert state["lane"] == "grok"
+
+
+def test_dual_lane_tier_ticks_are_independent(sandbox):
+    promo.promote(_report(sandbox, "glm", green=True), "glm")
+    promo.init_tier("grok", _report(sandbox, "grok", green=True))
+    promo.tier_tick("glm", "2026-08-14", green=True)
+    state = promo.tier_tick("grok", "2026-08-14", green=True)
+    glm_state = json.loads(promo.TIER_STATE_PATH.read_text())
+    assert glm_state["lane"] == "glm" and glm_state["streak_days"] == 1
+    assert state["lane"] == "grok" and state["streak_days"] == 1
