@@ -97,3 +97,13 @@ def test_first_pass_failure_propagates():
 
     res = draft_with_omission(fake, TEMPLATE, "seg text", 1, OMISSION_SUFFIX)
     assert not res["ok"] and res["error"] == "boom"
+
+
+def test_glm_zai_lane_profile_matches_glm_contract():
+    glm, zai = LANE_PROFILES["glm"], LANE_PROFILES["glm-zai"]
+    # Identical drafting contract — only the billing route differs.
+    for key in ("omission_passes", "window_chars", "concurrency", "prompt_addendum"):
+        assert glm[key] == zai[key]
+    assert zai["model"].startswith("zai-coding-plan/")
+    assert glm["model"].startswith("opencode-go/")
+    assert glm["model"].split("/")[1] == zai["model"].split("/")[1]  # same weights

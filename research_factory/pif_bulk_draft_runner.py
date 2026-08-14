@@ -89,13 +89,19 @@ def init_shadow_db() -> None:
 
 
 def select_unlabeled_segments(count: int, *, exclude_drafted_lane: str) -> List[Dict[str, Any]]:
-    """Unlabeled segments not already drafted by this lane. Read-only."""
+    """Unlabeled segments not already drafted by ANY lane. Read-only.
+
+    Lanes partition the backlog: a segment drafted by one lane is not
+    re-drafted by another (fleet throughput sums instead of overlapping).
+    Cross-lane quality checking comes from the Codex audit sample, not
+    duplicate drafting. ``exclude_drafted_lane`` is kept for signature
+    stability; the exclusion is global.
+    """
     drafted: set = set()
     if SHADOW_DB.exists():
         with sqlite3.connect(SHADOW_DB) as conn:
             drafted = {row[0] for row in conn.execute(
-                "SELECT segment_id FROM draft_labels WHERE lane = ?",
-                (exclude_drafted_lane,))}
+                "SELECT DISTINCT segment_id FROM draft_labels")}
     conn = sqlite3.connect(f"file:{CANONICAL_DB}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
@@ -127,7 +133,7 @@ def judge_candidate(segment_text: str, label_json: str) -> Dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--lane", choices=["grok", "glm"], required=True)
+    parser.add_argument("--lane", choices=sorted(LANE_PROFILES), required=True)
     parser.add_argument("--count", type=int, default=100)
     parser.add_argument("--audit-rate", type=float, default=0.10)
     parser.add_argument("--concurrency", type=int, default=None)

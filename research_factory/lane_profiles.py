@@ -45,6 +45,17 @@ LANE_PROFILES: Dict[str, Dict[str, Any]] = {
         "reasoning_effort": None,   # opencode has no effort knob
         "prompt_addendum": "",
     },
+    "glm-zai": {
+        # Second GLM lane: identical model + contract as "glm", billed to the
+        # z.ai coding plan instead of OpenCode Go so both subscriptions drain
+        # in parallel. Route gate: work/loadtest-20260813/glm_tune/zai52.
+        "model": "zai-coding-plan/glm-5.2",
+        "concurrency": 3,
+        "omission_passes": 0,
+        "window_chars": 6000,
+        "reasoning_effort": None,
+        "prompt_addendum": "",
+    },
     "grok": {
         # Qualified config: LOW effort, NO omission pass (re-qualified
         # 2026-08-14, work/loadtest-20260813/qual_round_6/report_v2.json:

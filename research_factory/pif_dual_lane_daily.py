@@ -71,7 +71,7 @@ def consumption_summary(lane: str, day_receipt: Optional[Dict[str, Any]],
             summary["quota_warning"] = (
                 f"{lane} trailing-7d calls {calls_7d} >= "
                 f"{QUOTA_WARN_FRACTION:.0%} of weekly budget {budget}")
-    if lane == "glm":
+    if lane in ("glm", "glm-zai"):
         zai = zai_quota_snapshot()
         if zai is not None:
             summary["zai_plan_percentages"] = zai
@@ -159,7 +159,7 @@ def roll_lane(lane: str, date: str) -> Dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", default=dt.date.today().isoformat())
-    parser.add_argument("--lanes", default="glm,grok")
+    parser.add_argument("--lanes", default="glm,glm-zai,grok")
     args = parser.parse_args()
 
     ROLL_ROOT.mkdir(parents=True, exist_ok=True)
