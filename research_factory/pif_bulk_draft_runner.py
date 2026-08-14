@@ -178,7 +178,8 @@ def _run(args) -> None:
     def draft_prompt(prompt: str) -> Dict[str, Any]:
         if args.lane == "grok":
             return draft_grok(prompt, reasoning_effort=profile["reasoning_effort"])
-        return draft_glm(prompt + GLM_JSON_INSTRUCTION, glm_state)
+        return draft_glm(prompt + GLM_JSON_INSTRUCTION, glm_state,
+                         model=profile.get("model", "opencode-go/glm-5.2"))
 
     def draft_window(window: str) -> Dict[str, Any]:
         """Draft one window, plus the profile's omission-audit passes."""

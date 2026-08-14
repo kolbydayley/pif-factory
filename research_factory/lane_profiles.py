@@ -34,6 +34,11 @@ Claims already extracted:
 LANE_PROFILES: Dict[str, Dict[str, Any]] = {
     "glm": {
         # Live production lane — behavior identical to the promoted config.
+        # "model" selects the opencode billing route: the same glm-5.2 weights
+        # are reachable as opencode-go/glm-5.2 (Go subscription) or
+        # zai-coding-plan/glm-5.2 (z.ai coding plan). Kolby holds both subs
+        # (2026-08-14) and will keep one; flip this knob when a route retires.
+        "model": "opencode-go/glm-5.2",
         "concurrency": 3,
         "omission_passes": 0,
         "window_chars": 6000,

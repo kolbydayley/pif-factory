@@ -71,7 +71,34 @@ def consumption_summary(lane: str, day_receipt: Optional[Dict[str, Any]],
             summary["quota_warning"] = (
                 f"{lane} trailing-7d calls {calls_7d} >= "
                 f"{QUOTA_WARN_FRACTION:.0%} of weekly budget {budget}")
+    if lane == "glm":
+        zai = zai_quota_snapshot()
+        if zai is not None:
+            summary["zai_plan_percentages"] = zai
     return summary
+
+
+def zai_quota_snapshot() -> Optional[Dict[str, Any]]:
+    """Best-effort live read of the z.ai coding-plan quota API — the one GLM
+    route with programmatic visibility. Returns window percentages, or None
+    when the key is absent or the API unreachable. Never raises."""
+    try:
+        auth = json.loads((Path.home() / ".local" / "share" / "opencode"
+                           / "auth.json").read_text())
+        key = auth.get("zai-coding-plan", {}).get("key")
+        if not key:
+            return None
+        import urllib.request
+        req = urllib.request.Request(
+            "https://api.z.ai/api/monitor/usage/quota/limit",
+            headers={"Authorization": f"Bearer {key}"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+        limits = (data.get("data") or {}).get("limits") or []
+        return {f"{l.get('type')}_{l.get('unit')}_{l.get('number')}":
+                l.get("percentage") for l in limits}
+    except Exception:  # noqa: BLE001 - monitoring must never break the roll
+        return None
 
 
 def evaluate_receipt(receipt: Optional[Dict[str, Any]], cap: int) -> Dict[str, Any]:

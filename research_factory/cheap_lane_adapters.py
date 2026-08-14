@@ -337,8 +337,14 @@ def draft_grok(prompt: str, *, timeout: int = 240,
         os.unlink(prompt_path)
 
 
-def draft_glm(prompt: str, state_root: Path, *, timeout: int = 300) -> Dict[str, Any]:
-    """One OpenCode GLM drafting call in an isolated ephemeral data dir."""
+def draft_glm(prompt: str, state_root: Path, *, timeout: int = 300,
+              model: str = GLM_MODEL) -> Dict[str, Any]:
+    """One OpenCode GLM drafting call in an isolated ephemeral data dir.
+
+    ``model`` selects the billing route by prefix: ``opencode-go/glm-5.2``
+    (Go subscription) or ``zai-coding-plan/glm-5.2`` (z.ai coding plan) —
+    same weights, different subscription and quota window.
+    """
     auth_source = Path.home() / ".local" / "share" / "opencode" / "auth.json"
     if not auth_source.is_file():
         return {"ok": False, "label": None, "elapsed": 0.0,
@@ -360,7 +366,7 @@ def draft_glm(prompt: str, state_root: Path, *, timeout: int = 300) -> Dict[str,
             env["XDG_DATA_HOME"] = str(data_root)
             proc = subprocess.run(
                 [OPENCODE_BINARY, "run", "--pure", "--dir", str(scratch),
-                 "--model", GLM_MODEL, prompt],
+                 "--model", model, prompt],
                 capture_output=True, text=True, timeout=timeout, env=env)
             elapsed = time.monotonic() - started
             if proc.returncode != 0:
