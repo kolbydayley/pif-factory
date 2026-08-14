@@ -46,11 +46,16 @@ LANE_PROFILES: Dict[str, Dict[str, Any]] = {
         "prompt_addendum": "",
     },
     "grok": {
-        # Qualified config: LOW effort + 1 omission pass. Medium effort was
-        # measured (grok_tune/medium1density) at ~4x the latency for +0.006
-        # coverage and more junk — low wins.
+        # Qualified config: LOW effort, NO omission pass (re-qualified
+        # 2026-08-14, work/loadtest-20260813/qual_round_6/report_v2.json:
+        # coverage 0.902 vs 0.889 codex baseline, support 0.996, junk 0.010,
+        # pass 1.0, 402 segs/hr). Dropping the omission pass halved SuperGrok
+        # pool burn (~2x weekly capacity) for -0.04 coverage still above
+        # baseline. Measured-rejected: medium effort (~4x latency), compact
+        # output contract (pass_rate 0.80), omission pass (r5: +0.04 coverage
+        # for 2x pool burn — not worth it under the Lite weekly cap).
         "concurrency": 6,
-        "omission_passes": 1,
+        "omission_passes": 0,
         "window_chars": 6000,
         "reasoning_effort": "low",
         "prompt_addendum": "",

@@ -29,8 +29,9 @@ def test_profiles_cover_both_lanes_with_required_knobs():
             assert key in prof, f"{lane} missing {key}"
     # GLM live lane must stay at its promoted zero-omission config.
     assert LANE_PROFILES["glm"]["omission_passes"] == 0
-    # Grok qualified WITH the omission pass; dropping it is a re-qualification.
-    assert LANE_PROFILES["grok"]["omission_passes"] >= 1
+    # Grok re-qualified WITHOUT the omission pass (qual_round_6, 2026-08-14);
+    # adding it back is a re-qualification event.
+    assert LANE_PROFILES["grok"]["omission_passes"] == 0
 
 
 def test_zero_passes_is_single_call():
