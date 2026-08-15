@@ -131,9 +131,20 @@ class TurnTransport(Protocol):
 
 
 def _policy_model(stage: str) -> str:
-    from .provider_policy import stage_policy
+    from .provider_policy import ProviderPolicyError, stage_policy
 
-    return stage_policy(stage).model
+    resolved = stage_policy(stage)
+    # This controller can only execute the managed Codex app-server transport.
+    # Fail closed instead of shipping a foreign model name to Codex (2026-08-14:
+    # a glm_opencode promotion misrouted 25/25 jobs into HTTP 400s and reset
+    # the daily-cycle streak because only .model was consumed here).
+    if resolved.transport != "codex_exec_subscription":
+        raise ProviderPolicyError(
+            f"stage {stage!r} routes to transport {resolved.transport!r}, "
+            "which this controller cannot execute; only "
+            "'codex_exec_subscription' is supported"
+        )
+    return resolved.model
 
 
 def iso_now(now: dt.datetime | None = None) -> str:

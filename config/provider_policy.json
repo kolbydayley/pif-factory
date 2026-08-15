@@ -24,8 +24,8 @@
   },
   "stages": {
     "label_segment": {
-      "provider": "glm_opencode",
-      "model": "opencode-go/glm-5.2",
+      "provider": "codex",
+      "model": "gpt-5.5",
       "candidate_provider": "glm_opencode",
       "candidate_model": "opencode-go/glm-5.2",
       "agreement_threshold": 0.9,
@@ -33,7 +33,8 @@
         "provider": "codex",
         "model": "gpt-5.5"
       },
-      "promotion_report": "work/loadtest-20260813/qual_round_4/report_recalibrated.json"
+      "promotion_report": "work/loadtest-20260813/qual_round_4/report_recalibrated.json",
+      "demotion_note": "2026-08-14: reverted to codex — the SDK controller has no opencode_local transport and shipped the GLM model name to the Codex app-server (25/25 HTTP 400, daily-cycle streak reset). Re-promote only after the controller can execute the opencode_local transport."
     },
     "episode_context": {
       "provider": "codex",
