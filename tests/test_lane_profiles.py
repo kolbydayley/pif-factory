@@ -101,8 +101,9 @@ def test_first_pass_failure_propagates():
 
 def test_glm_zai_lane_profile_matches_glm_contract():
     glm, zai = LANE_PROFILES["glm"], LANE_PROFILES["glm-zai"]
-    # Identical drafting contract — only the billing route differs.
-    for key in ("omission_passes", "window_chars", "concurrency", "prompt_addendum"):
+    # Identical drafting CONTRACT — billing route and concurrency (an
+    # operational, route-specific knob) may differ.
+    for key in ("omission_passes", "window_chars", "prompt_addendum"):
         assert glm[key] == zai[key]
     assert zai["model"].startswith("zai-coding-plan/")
     assert glm["model"].startswith("opencode-go/")

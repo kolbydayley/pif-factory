@@ -49,8 +49,10 @@ LANE_PROFILES: Dict[str, Dict[str, Any]] = {
         # Second GLM lane: identical model + contract as "glm", billed to the
         # z.ai coding plan instead of OpenCode Go so both subscriptions drain
         # in parallel. Route gate: work/loadtest-20260813/glm_tune/zai52.
+        # Concurrency 5 (vs Go's 3): the zai route runs ~160s/call, and the
+        # 400/day Pro-tier cap must fit the roller's window comfortably.
         "model": "zai-coding-plan/glm-5.2",
-        "concurrency": 3,
+        "concurrency": 5,
         "omission_passes": 0,
         "window_chars": 6000,
         "reasoning_effort": None,

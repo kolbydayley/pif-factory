@@ -54,6 +54,11 @@ def consumption_summary(lane: str, day_receipt: Optional[Dict[str, Any]],
     week_ago = now - 7 * 86400
     calls_7d = 0
     for path in SHADOW_ROOT.glob(f"receipt-bulk-{lane}-*.json"):
+        # run-ids are timestamps: the char after the lane prefix must be a
+        # digit, else "glm-*" would also swallow "glm-zai-*" receipts.
+        suffix = path.name[len(f"receipt-bulk-{lane}-"):]
+        if not (suffix and suffix[0].isdigit()):
+            continue
         if path.stat().st_mtime >= week_ago:
             try:
                 calls_7d += json.loads(path.read_text()).get("calls_made") or 0
@@ -126,7 +131,9 @@ def evaluate_receipt(receipt: Optional[Dict[str, Any]], cap: int, *,
 
 
 def newest_receipt(lane: str, not_before: float) -> Optional[Dict[str, Any]]:
-    paths = sorted(SHADOW_ROOT.glob(f"receipt-bulk-{lane}-*.json"),
+    prefix = f"receipt-bulk-{lane}-"
+    paths = sorted((p for p in SHADOW_ROOT.glob(f"{prefix}*.json")
+                    if p.name[len(prefix):][:1].isdigit()),
                    key=lambda p: p.stat().st_mtime, reverse=True)
     for path in paths:
         if path.stat().st_mtime >= not_before:
@@ -144,10 +151,19 @@ def roll_lane(lane: str, date: str) -> Dict[str, Any]:
     cap = state.get("daily_cap")
     count = cap if cap else 400  # uncapped tier still rolls in bounded chunks
     started = dt.datetime.now().timestamp()
-    proc = subprocess.run(
-        [sys.executable, "-B", "-m", "research_factory.pif_bulk_draft_runner",
-         "--lane", lane, "--count", str(count), "--audit-rate", "0.12"],
-        capture_output=True, text=True, cwd=str(PIF_ROOT), timeout=4 * 3600)
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-B", "-m", "research_factory.pif_bulk_draft_runner",
+             "--lane", lane, "--count", str(count), "--audit-rate", "0.12"],
+            capture_output=True, text=True, cwd=str(PIF_ROOT), timeout=10 * 3600)
+    except subprocess.TimeoutExpired:
+        # Per-segment drafts are already stored; record a red day, never crash
+        # the roller (a crash skips the tier tick and the day receipt).
+        tick = tier_tick(lane, date, green=False)
+        return {"lane": lane, "cap": cap, "green": False,
+                "reason": "runner_timeout_10h",
+                "consumption": consumption_summary(lane, None),
+                "tier_after": tick}
     receipt = newest_receipt(lane, not_before=started)
     verdict = evaluate_receipt(
         receipt, count,
