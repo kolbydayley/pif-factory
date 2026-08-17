@@ -71,7 +71,11 @@ LANE_PROFILES: Dict[str, Dict[str, Any]] = {
         "prompt_addendum": "",
         "audit": False,
         "select_order": "longest",
-        "draft_budget_cap_points": 10.0,
+        # 10 -> 20 points 2026-08-17: Kolby granted +10 weekly points to PIF;
+        # allocated here (the audit/judge share of the other lanes uses ~1-2
+        # points/week, so drafting is where extra Codex tokens convert to
+        # throughput). ~55-60 calls/point measured 2026-08-14.
+        "draft_budget_cap_points": 20.0,
     },
     "grok": {
         # Qualified config: LOW effort, NO omission pass (re-qualified

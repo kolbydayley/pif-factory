@@ -17,7 +17,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 DAY_SECONDS = 86400
-DEFAULT_CAP_POINTS = 30.0
+# 30 points (Kolby, 2026-08-13) raised to 40 (Kolby, 2026-08-17: "you can
+# increase the usage of Codex tokens by ten percent").
+DEFAULT_CAP_POINTS = 40.0
 BORROW_FACTOR = 2.0
 
 
