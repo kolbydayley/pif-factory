@@ -141,6 +141,21 @@ def newest_receipt(lane: str, not_before: float) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _runner_lock_held(stdout: Optional[str]) -> bool:
+    """True when the bulk runner aborted because another run holds the
+    single-writer lock (it prints one JSON line and exits 0, no receipt)."""
+    for line in (stdout or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            if json.loads(line).get("aborted") == "runner_lock_held":
+                return True
+        except json.JSONDecodeError:
+            continue
+    return False
+
+
 def roll_lane(lane: str, date: str) -> Dict[str, Any]:
     state_path = tier_state_path(lane)
     if not state_path.exists():
@@ -164,6 +179,13 @@ def roll_lane(lane: str, date: str) -> Dict[str, Any]:
                 "reason": "runner_timeout_10h",
                 "consumption": consumption_summary(lane, None),
                 "tier_after": tick}
+    if _runner_lock_held(proc.stdout):
+        # Another bulk run (manual or a second roll entry point) holds the
+        # single-writer lock. That is contention, not a lane failure: record
+        # a retryable skip and DO NOT tier-tick — a red tick here would let a
+        # scheduler catch-up run zero a streak while a legitimate run is
+        # mid-flight (observed 2026-08-17).
+        return {"lane": lane, "skipped": "runner_lock_held"}
     receipt = newest_receipt(lane, not_before=started)
     verdict = evaluate_receipt(
         receipt, count,

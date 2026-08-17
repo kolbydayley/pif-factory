@@ -79,3 +79,18 @@ def test_no_audit_lane_green_without_audit_sample():
     assert evaluate_receipt(r, 100)["green"] is False  # audited lanes unchanged
     assert evaluate_receipt(_receipt(drafted=50, audit_pass_rate=None), 100,
                             require_audit=False)["green"] is False  # draft floor still applies
+
+
+def test_runner_lock_held_detected_from_stdout():
+    from research_factory.pif_dual_lane_daily import _runner_lock_held
+    out = '{"aborted": "runner_lock_held", "holder_pid": "123"}\n'
+    assert _runner_lock_held(out) is True
+    assert _runner_lock_held("[glm] rolling...\n" + out) is True
+
+
+def test_runner_lock_held_ignores_normal_output():
+    from research_factory.pif_dual_lane_daily import _runner_lock_held
+    assert _runner_lock_held(None) is False
+    assert _runner_lock_held("") is False
+    assert _runner_lock_held('{"run_id": "bulk-glm-x", "drafted": 94}\n') is False
+    assert _runner_lock_held('not json {curly\n') is False
