@@ -46,8 +46,8 @@ def test_consumption_summary_totals_and_warns(tmp_path, monkeypatch):
     assert s["calls_7d"] == 900          # stale receipt excluded
     assert s["calls_today"] == 200
     assert s["failures_today"] == {"timeout": 2}
-    assert s["weekly_call_budget"] == 1000
-    assert "quota_warning" in s          # 900 >= 0.8 * 1000
+    assert s["weekly_call_budget"] == 650
+    assert "quota_warning" in s          # 900 >= 0.8 * 650
 
 
 def test_consumption_summary_no_budget_lane(tmp_path, monkeypatch):
