@@ -40,7 +40,10 @@ GREEN_MIN_AUDIT_PASS = 0.8
 # ~580 CLI calls had consumed 54% of the weekly SuperGrok Lite window
 # (window resets Wednesdays ~08:48 ET) => capacity ~1,075 calls/week. 1000 is
 # the conservative planning number; re-derive it if the plan tier changes.
-WEEKLY_CALL_BUDGETS = {"grok": 1000}
+# 1000 was the 2026-08-14 dashboard-derived estimate; 2026-08-18 the pool
+# 402'd ("usage balance exhausted") at ~657 successful calls (757 attempted),
+# so 650 is the measured planning number.
+WEEKLY_CALL_BUDGETS = {"grok": 650}
 QUOTA_WARN_FRACTION = 0.8
 
 
@@ -141,6 +144,14 @@ def newest_receipt(lane: str, not_before: float) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _provider_quota_exhausted(receipt: Dict[str, Any]) -> bool:
+    """True when a run drafted nothing and every call failed provider-side."""
+    calls = receipt.get("calls_made") or 0
+    failures = receipt.get("failure_counts") or {}
+    return (calls > 0 and not receipt.get("drafted")
+            and failures.get("provider", 0) >= calls)
+
+
 def _runner_lock_held(stdout: Optional[str]) -> bool:
     """True when the bulk runner aborted because another run holds the
     single-writer lock (it prints one JSON line and exits 0, no receipt)."""
@@ -187,6 +198,14 @@ def roll_lane(lane: str, date: str) -> Dict[str, Any]:
         # mid-flight (observed 2026-08-17).
         return {"lane": lane, "skipped": "runner_lock_held"}
     receipt = newest_receipt(lane, not_before=started)
+    if receipt and _provider_quota_exhausted(receipt):
+        # Every call failed provider-side with nothing drafted: the weekly
+        # pool is spent (grok 402s at ~650 successful calls/week, measured
+        # 2026-08-18) or the provider is down. Neither is a lane-quality
+        # regression, so skip without a tier tick; the lane resumes on the
+        # provider's reset.
+        return {"lane": lane, "skipped": "provider_quota_exhausted_or_outage",
+                "consumption": consumption_summary(lane, receipt)}
     verdict = evaluate_receipt(
         receipt, count,
         require_audit=LANE_PROFILES.get(lane, {}).get("audit", True))

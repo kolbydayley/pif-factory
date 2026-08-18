@@ -94,3 +94,15 @@ def test_runner_lock_held_ignores_normal_output():
     assert _runner_lock_held("") is False
     assert _runner_lock_held('{"run_id": "bulk-glm-x", "drafted": 94}\n') is False
     assert _runner_lock_held('not json {curly\n') is False
+
+
+def test_provider_quota_exhaustion_detected():
+    from research_factory.pif_dual_lane_daily import _provider_quota_exhausted
+    assert _provider_quota_exhausted(
+        {"drafted": 0, "calls_made": 100, "failure_counts": {"provider": 100}}) is True
+    assert _provider_quota_exhausted(
+        {"drafted": 95, "calls_made": 138, "failure_counts": {"provider": 5}}) is False
+    assert _provider_quota_exhausted(
+        {"drafted": 0, "calls_made": 0, "failure_counts": {}}) is False
+    assert _provider_quota_exhausted(
+        {"drafted": 0, "calls_made": 10, "failure_counts": {"timeout": 10}}) is False
