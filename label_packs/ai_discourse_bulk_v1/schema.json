@@ -1,0 +1,120 @@
+{
+  "$id": "ai_discourse_bulk_v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "claims",
+    "entities",
+    "topics",
+    "summary",
+    "needs_review",
+    "overall_confidence"
+  ],
+  "properties": {
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim_text",
+          "claim_type",
+          "evidence",
+          "confidence"
+        ],
+        "properties": {
+          "claim_text": {
+            "type": "string"
+          },
+          "claim_type": {
+            "type": "string",
+            "enum": [
+              "assessment",
+              "factual_assertion",
+              "prediction",
+              "product_observation",
+              "recommendation"
+            ]
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "entities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "people",
+        "organizations",
+        "products"
+      ],
+      "properties": {
+        "people": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "organizations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "products": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "topics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "topic",
+          "stance",
+          "intensity",
+          "evidence"
+        ],
+        "properties": {
+          "topic": {
+            "type": "string"
+          },
+          "stance": {
+            "type": "string",
+            "enum": [
+              "bearish",
+              "bullish",
+              "mixed",
+              "neutral"
+            ]
+          },
+          "intensity": {
+            "type": "number"
+          },
+          "evidence": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "string"
+    },
+    "needs_review": {
+      "type": "boolean"
+    },
+    "overall_confidence": {
+      "type": "number"
+    }
+  }
+}
