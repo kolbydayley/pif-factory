@@ -14,7 +14,12 @@ from .util import dumps_json, sha256_text
 
 DEFAULT_COHORT_PATH = root() / "config" / "production_cohort_v1.json"
 COHORT_SCHEMA_VERSION = "pif_production_cohort_v1"
-EXPECTED_EPISODES = 25
+# Frozen cohort shapes per scale tier: episode_count -> (shows, episodes per
+# show). 25 is the original hand-audited gold cohort; 100 is the tier the
+# scale gate promotes to after a 7-day green streak (balanced 10x10 by the
+# same symmetry principle as 5x5).
+COHORT_SHAPES = {25: (5, 5), 100: (10, 10)}
+EXPECTED_EPISODES = 25  # legacy alias for the original cohort
 EXPECTED_SHOWS = 5
 
 
@@ -34,8 +39,10 @@ def load_production_cohort(path: str | Path | None = None) -> dict[str, Any]:
     if cohort.get("schema_version") != COHORT_SCHEMA_VERSION:
         raise CohortValidationError(f"production cohort must use {COHORT_SCHEMA_VERSION}")
     episodes = cohort.get("episodes")
-    if not isinstance(episodes, list) or len(episodes) != EXPECTED_EPISODES:
-        raise CohortValidationError(f"production cohort must contain exactly {EXPECTED_EPISODES} episodes")
+    if not isinstance(episodes, list) or len(episodes) not in COHORT_SHAPES:
+        allowed = ", ".join(str(n) for n in sorted(COHORT_SHAPES))
+        raise CohortValidationError(f"production cohort must contain exactly {allowed} episodes")
+    expected_shows, per_show = COHORT_SHAPES[len(episodes)]
     ids: list[str] = []
     source_counts: Counter[str] = Counter()
     for index, item in enumerate(episodes):
@@ -48,10 +55,11 @@ def load_production_cohort(path: str | Path | None = None) -> dict[str, Any]:
             raise CohortValidationError(f"cohort episode {index} has incomplete identity fields")
         ids.append(str(episode_id))
         source_counts[str(source_id)] += 1
-    if len(set(ids)) != EXPECTED_EPISODES:
+    if len(set(ids)) != len(episodes):
         raise CohortValidationError("production cohort episode IDs must be unique")
-    if len(source_counts) != EXPECTED_SHOWS or set(source_counts.values()) != {5}:
-        raise CohortValidationError("production cohort must contain five episodes from each of five shows")
+    if len(source_counts) != expected_shows or set(source_counts.values()) != {per_show}:
+        raise CohortValidationError(
+            f"production cohort must contain {per_show} episodes from each of {expected_shows} shows")
     cohort["path"] = str(cohort_path)
     cohort["sha256"] = sha256_text(dumps_json(payload))
     cohort["episode_ids"] = ids

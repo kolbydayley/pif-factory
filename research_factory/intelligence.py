@@ -2575,10 +2575,15 @@ def _collect_release_members(
                     f"episode {row['id']} published_at differs from the cohort manifest"
                 )
     if require_production_shape:
-        if len(episode_rows) != 25:
-            raise IntelligenceValidationError("production release must contain exactly 25 episodes")
-        if len({row["source_id"] for row in episode_rows}) != 5:
-            raise IntelligenceValidationError("production release must contain exactly five shows")
+        from .cohort import COHORT_SHAPES
+        if len(episode_rows) not in COHORT_SHAPES:
+            allowed = ", ".join(str(n) for n in sorted(COHORT_SHAPES))
+            raise IntelligenceValidationError(
+                f"production release must contain exactly {allowed} episodes")
+        expected_shows, _per_show = COHORT_SHAPES[len(episode_rows)]
+        if len({row["source_id"] for row in episode_rows}) != expected_shows:
+            raise IntelligenceValidationError(
+                f"production release must contain exactly {expected_shows} shows")
 
     for episode in episode_rows:
         completed_context = conn.execute(
