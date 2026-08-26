@@ -21,6 +21,14 @@ with zero configuration (explicit Kolby requirement).
 | Renderer | `scripts/pif_dashboard_build.py` | Embeds data.json into a template → `work/pif-ops/dashboard/dashboard.html` |
 | Nightly job (external) | codex-cron `pif-dashboard-refresh`, daily 21:30, cwd this repo | Runs aggregator then renderer; fires after `pif-canonical-promotion` (21:00) so each night's labels are included |
 
+## Live dashboard
+
+Production URL: <https://dashboards-production-dcba.up.railway.app/d/pif-signal-desk.html>
+
+The Railway `keystone-dashboards` host serves the current published artifact.
+The nightly job regenerates the local artifact only; publishing a new snapshot
+is still a separate, explicit step.
+
 Regenerate manually:
 
     python3 -B -m research_factory.pif_discourse_aggregates
@@ -79,7 +87,8 @@ cycled; colors follow entities.
    extraction over the `ai_discourse_bulk_v1` pack (8.5k+ labels waiting).
 4. Prediction track records / consensus-formation views once
    outcome-resolution data matures.
-5. Optional: publish to the Railway dashboard host instead of a local file.
+5. Automate Railway publishing after the nightly local build once continuous
+   public publishing is explicitly authorized.
 
 ## Verification habits that caught real bugs during the build
 
