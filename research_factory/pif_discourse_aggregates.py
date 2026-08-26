@@ -174,7 +174,8 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         """
         SELECT ap.actor_name, ap.actor_type, ap.concept_name, ap.stance,
                ap.claim_type, ap.evidence_json, ap.segment_id,
-               e.published_at, e.source_id, e.title AS episode_title
+               s.episode_id, e.published_at, e.source_id,
+               e.title AS episode_title
         FROM actor_positions ap
         JOIN segments s ON s.id = ap.segment_id
         JOIN episodes e ON e.id = s.episode_id
@@ -192,7 +193,7 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             cell["vol"] += 1
             cell[stance_group(r["stance"])] += 1
             topic_total[topic] += 1
-            note_breadth(topic, widx[wk], r["segment_id"][:24], r["source_id"])
+            note_breadth(topic, widx[wk], r["episode_id"], r["source_id"])
         name = (r["actor_name"] or "").strip()
         if not name or r["actor_type"] not in ("guest", "host", "person"):
             continue
