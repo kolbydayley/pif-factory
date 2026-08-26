@@ -175,10 +175,26 @@ def roll_lane(lane: str, date: str) -> Dict[str, Any]:
     if state.get("frozen"):
         return {"lane": lane, "skipped": "frozen"}
     cap = state.get("daily_cap")
+    # Deadline pacing (Kolby 2026-08-25): lanes with live quota visibility
+    # pace to ~95% of their window by its reset instead of idling at the
+    # tier cap. Fail-closed: no pacing signal -> the tier cap rules.
     # Uncapped tier still rolls in bounded chunks, but never SMALLER than
     # the top capped tier -- promoting 1600 -> uncapped must not drop the
     # daily roll to 400 (observed planning bug, fixed 2026-08-25).
-    count = cap if cap else 1600
+    try:
+        from .pif_pacing import paced_count
+        pace = paced_count(lane)
+    except Exception:  # noqa: BLE001 - pacing must never break the roll
+        pace = None
+    if pace is not None:
+        count = pace["count"]
+        if count <= 0:
+            # Window budget spent: skip without a tier tick (like a quota
+            # exhaustion day, this is not a lane-quality regression).
+            return {"lane": lane, "skipped": "paced_zero_quota",
+                    "pacing": pace}
+    else:
+        count = cap if cap else 1600
     started = dt.datetime.now().timestamp()
     try:
         proc = subprocess.run(
@@ -215,7 +231,8 @@ def roll_lane(lane: str, date: str) -> Dict[str, Any]:
     if proc.returncode != 0 and verdict["green"]:
         verdict = {"green": False, "reason": f"runner_exit_{proc.returncode}"}
     tick = tier_tick(lane, date, green=verdict["green"])
-    return {"lane": lane, "cap": cap, "green": verdict["green"],
+    return {"lane": lane, "cap": cap, "paced_count": count, "pacing": pace,
+            "green": verdict["green"],
             "reason": verdict["reason"],
             "run_id": (receipt or {}).get("run_id"),
             "drafted": (receipt or {}).get("drafted"),
