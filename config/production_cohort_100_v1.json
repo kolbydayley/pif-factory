@@ -1,0 +1,555 @@
+{
+ "schema_version": "pif_production_cohort_v1",
+ "cohort_id": "pif-gold-100-v1",
+ "content_adapter": "podcast",
+ "episode_count": 100,
+ "show_count": 10,
+ "parent_cohort_id": "pif-gold-25-v1",
+ "selection_policy": {
+  "baseline": "completed GPT-5.5 ai_discourse_v3_1 full-episode extraction with every segment ready-labeled",
+  "shape": "balanced 10 shows x 10 episodes, extending the 5x5 symmetry of pif-gold-25-v1",
+  "show_selection": "retain original shows with >=10 qualified episodes, fill by qualified-episode count (desc, source_id tiebreak)",
+  "episode_selection": "original cohort episodes first (audited pilot continuity), then published_at desc (id tiebreak)",
+  "generated_by": "scripts/build_production_cohort_100.py",
+  "generated_at": "2026-08-26T02:05:19+00:00"
+ },
+ "composition": {
+  "retained_original_shows": [
+   "econtalk",
+   "latent-space",
+   "microsoft-research-podcast",
+   "practical-ai"
+  ],
+  "added_shows": [
+   "odd-lots",
+   "the-changelog",
+   "python-bytes",
+   "talk-python-to-me",
+   "js-party",
+   "eye-on-ai"
+  ],
+  "dropped_original_shows": [
+   "big-technology-podcast"
+  ],
+  "dropped_original_episodes": 5,
+  "eligible_show_pool": {
+   "corecursive": 21,
+   "decoder-with-nilay-patel": 10,
+   "econtalk": 29,
+   "eye-on-ai": 25,
+   "js-party": 27,
+   "latent-space": 62,
+   "microsoft-research-podcast": 60,
+   "odd-lots": 149,
+   "practical-ai": 62,
+   "python-bytes": 48,
+   "syntax": 16,
+   "talk-python-to-me": 45,
+   "the-changelog": 76,
+   "the-enterprise-ai-show": 12,
+   "the-pragmatic-engineer": 25
+  }
+ },
+ "episodes": [
+  {
+   "id": "ep_059ded175468559ef73004d8",
+   "source_id": "econtalk",
+   "published_at": "2026-03-30T10:30:00+00:00"
+  },
+  {
+   "id": "ep_03ded6fc08bec3f1a0405c93",
+   "source_id": "econtalk",
+   "published_at": "2026-01-12T11:30:00+00:00"
+  },
+  {
+   "id": "ep_01a0696860dd993f65f69b76",
+   "source_id": "econtalk",
+   "published_at": "2025-02-03T11:30:00+00:00"
+  },
+  {
+   "id": "ep_01e16c484773b69611c4f5d6",
+   "source_id": "econtalk",
+   "published_at": "2024-09-23T10:30:00+00:00"
+  },
+  {
+   "id": "ep_04a936e3ab2a5c7cd8e7147f",
+   "source_id": "econtalk",
+   "published_at": "2013-04-01T06:30:00+00:00"
+  },
+  {
+   "id": "ep_06ca308865a4d5045aa6bd67",
+   "source_id": "econtalk",
+   "published_at": "2024-06-03T10:30:00+00:00"
+  },
+  {
+   "id": "ep_052ac1a0bc1d21e58e6246bd",
+   "source_id": "econtalk",
+   "published_at": "2023-02-13T11:30:00+00:00"
+  },
+  {
+   "id": "ep_020d623997eb2e31df64831d",
+   "source_id": "econtalk",
+   "published_at": "2022-10-31T10:30:00+00:00"
+  },
+  {
+   "id": "ep_0385e435fc08a027c1726038",
+   "source_id": "econtalk",
+   "published_at": "2022-05-02T10:30:00+00:00"
+  },
+  {
+   "id": "ep_064ea4f69e9b6e096928840f",
+   "source_id": "econtalk",
+   "published_at": "2022-01-31T11:30:00+00:00"
+  },
+  {
+   "id": "ep_836bf17e53e7a0892a3c07ce",
+   "source_id": "eye-on-ai",
+   "published_at": "2026-06-29T13:46:00+00:00"
+  },
+  {
+   "id": "ep_10b38d7e8aa749e44852064e",
+   "source_id": "eye-on-ai",
+   "published_at": "2026-06-20T16:30:00+00:00"
+  },
+  {
+   "id": "ep_1b5699a23f1e3c2e0a2b4aab",
+   "source_id": "eye-on-ai",
+   "published_at": "2026-06-16T16:25:00+00:00"
+  },
+  {
+   "id": "ep_2542d8ea3f13ccc9cd1b7564",
+   "source_id": "eye-on-ai",
+   "published_at": "2026-06-13T22:00:00+00:00"
+  },
+  {
+   "id": "ep_08c9a9a767cd3522458bc792",
+   "source_id": "eye-on-ai",
+   "published_at": "2026-06-12T15:38:00+00:00"
+  },
+  {
+   "id": "ep_55daeca99b5361ddae3ed255",
+   "source_id": "eye-on-ai",
+   "published_at": "2026-06-02T18:45:00+00:00"
+  },
+  {
+   "id": "ep_2a82955a8cf87cbbf5e604f5",
+   "source_id": "eye-on-ai",
+   "published_at": "2026-06-01T13:18:00+00:00"
+  },
+  {
+   "id": "ep_d73477a9d08027dc5f295d3a",
+   "source_id": "eye-on-ai",
+   "published_at": "2026-01-07T21:00:00+00:00"
+  },
+  {
+   "id": "ep_7fc1bfb7ec6a8891fb718782",
+   "source_id": "eye-on-ai",
+   "published_at": "2026-01-04T21:00:00+00:00"
+  },
+  {
+   "id": "ep_3e72e1e9ed91e343fce6ccc1",
+   "source_id": "eye-on-ai",
+   "published_at": "2025-12-24T14:00:00+00:00"
+  },
+  {
+   "id": "ep_791fbdf6b57e862b887d7118",
+   "source_id": "js-party",
+   "published_at": "2024-11-07T20:30:00+00:00"
+  },
+  {
+   "id": "ep_a4b02df3a4b2af4fee847985",
+   "source_id": "js-party",
+   "published_at": "2024-10-31T19:30:00+00:00"
+  },
+  {
+   "id": "ep_7fb8c1f5bec56690c2fcce2e",
+   "source_id": "js-party",
+   "published_at": "2024-10-17T17:00:00+00:00"
+  },
+  {
+   "id": "ep_57e099685c96b463b4c02b50",
+   "source_id": "js-party",
+   "published_at": "2024-10-10T16:10:00+00:00"
+  },
+  {
+   "id": "ep_48a623f354c4eaf086bbc267",
+   "source_id": "js-party",
+   "published_at": "2024-10-03T17:00:00+00:00"
+  },
+  {
+   "id": "ep_cbe58c19da466ed192e32080",
+   "source_id": "js-party",
+   "published_at": "2024-09-26T18:30:00+00:00"
+  },
+  {
+   "id": "ep_a1d18505778dd875465b593d",
+   "source_id": "js-party",
+   "published_at": "2024-09-12T15:30:00+00:00"
+  },
+  {
+   "id": "ep_236daacbda41419777e5fa1d",
+   "source_id": "js-party",
+   "published_at": "2024-09-05T21:00:00+00:00"
+  },
+  {
+   "id": "ep_daf36ac3d0b27331fd6e9d80",
+   "source_id": "js-party",
+   "published_at": "2024-08-29T16:00:00+00:00"
+  },
+  {
+   "id": "ep_34dd85a72a8eca2f6cdcff7c",
+   "source_id": "js-party",
+   "published_at": "2024-08-22T19:30:00+00:00"
+  },
+  {
+   "id": "ep_09e2e71c0f74fb64ca859156",
+   "source_id": "latent-space",
+   "published_at": "2026-06-24T18:53:16+00:00"
+  },
+  {
+   "id": "ep_4051d4f942c4ec9fd9233c62",
+   "source_id": "latent-space",
+   "published_at": "2026-06-17T17:58:06+00:00"
+  },
+  {
+   "id": "ep_7b6b53d4dff291d5953c66b8",
+   "source_id": "latent-space",
+   "published_at": "2026-06-03T19:27:49+00:00"
+  },
+  {
+   "id": "ep_780e4321f53f8b9011ffeb85",
+   "source_id": "latent-space",
+   "published_at": "2026-07-08T22:55:07+00:00"
+  },
+  {
+   "id": "ep_e43801e1f35d88bd75e0c5ab",
+   "source_id": "latent-space",
+   "published_at": "2026-07-01T14:42:39+00:00"
+  },
+  {
+   "id": "ep_a2c0cde3ebd3d530c6ffc5df",
+   "source_id": "latent-space",
+   "published_at": "2026-06-04T20:39:18+00:00"
+  },
+  {
+   "id": "ep_c81adb45c86d0ae8f0951c16",
+   "source_id": "latent-space",
+   "published_at": "2026-06-03T17:13:57+00:00"
+  },
+  {
+   "id": "ep_ce2c5c808ecaf746579bc0af",
+   "source_id": "latent-space",
+   "published_at": "2026-05-27T17:46:16+00:00"
+  },
+  {
+   "id": "ep_9c3038dfe6df9113152f98ec",
+   "source_id": "latent-space",
+   "published_at": "2026-05-05T20:34:11+00:00"
+  },
+  {
+   "id": "ep_b6289d49e029329282392260",
+   "source_id": "latent-space",
+   "published_at": "2026-04-20T16:17:17+00:00"
+  },
+  {
+   "id": "ep_8d9a45888f13814004d79864",
+   "source_id": "microsoft-research-podcast",
+   "published_at": "2026-04-20T16:23:00+00:00"
+  },
+  {
+   "id": "ep_c70c38149a4443491efc0ec4",
+   "source_id": "microsoft-research-podcast",
+   "published_at": "2026-04-09T16:09:43+00:00"
+  },
+  {
+   "id": "ep_55fa2a2ba4e27f02260a3398",
+   "source_id": "microsoft-research-podcast",
+   "published_at": "2026-03-23T15:00:00+00:00"
+  },
+  {
+   "id": "ep_94e2d08d0d9e41b8a7ac35ca",
+   "source_id": "microsoft-research-podcast",
+   "published_at": "2025-08-21T16:00:00+00:00"
+  },
+  {
+   "id": "ep_5a0096ed535e043a0a2ece7e",
+   "source_id": "microsoft-research-podcast",
+   "published_at": "2025-07-10T16:00:00+00:00"
+  },
+  {
+   "id": "ep_c08f3036f729d0aa65bc325b",
+   "source_id": "microsoft-research-podcast",
+   "published_at": "2026-03-03T13:00:00+00:00"
+  },
+  {
+   "id": "ep_badba0af6a6f1e573e71e3db",
+   "source_id": "microsoft-research-podcast",
+   "published_at": "2025-12-01T19:16:00+00:00"
+  },
+  {
+   "id": "ep_3546dbadc5a52bd6194d679b",
+   "source_id": "microsoft-research-podcast",
+   "published_at": "2025-10-06T14:04:00+00:00"
+  },
+  {
+   "id": "ep_97a45100ce0d305f58d7dd69",
+   "source_id": "microsoft-research-podcast",
+   "published_at": "2025-08-07T16:00:00+00:00"
+  },
+  {
+   "id": "ep_5c675193ff465e91aa9fdfbd",
+   "source_id": "microsoft-research-podcast",
+   "published_at": "2025-07-24T20:05:00+00:00"
+  },
+  {
+   "id": "ep_f13c9b4095374095cfaeff0a",
+   "source_id": "odd-lots",
+   "published_at": "2026-07-06T08:00:00+00:00"
+  },
+  {
+   "id": "ep_fa287b2451abaadf89f0bad4",
+   "source_id": "odd-lots",
+   "published_at": "2026-07-03T08:00:00+00:00"
+  },
+  {
+   "id": "ep_d573ebad269e2d102e088f97",
+   "source_id": "odd-lots",
+   "published_at": "2026-06-29T08:00:00+00:00"
+  },
+  {
+   "id": "ep_013a52d011ddec819ec7b845",
+   "source_id": "odd-lots",
+   "published_at": "2026-06-25T08:00:00+00:00"
+  },
+  {
+   "id": "ep_8ed5dcbd4a578db9c9d452d3",
+   "source_id": "odd-lots",
+   "published_at": "2026-06-22T08:00:00+00:00"
+  },
+  {
+   "id": "ep_8a0c6919d7cfe6bcd9cacd30",
+   "source_id": "odd-lots",
+   "published_at": "2026-06-19T08:00:00+00:00"
+  },
+  {
+   "id": "ep_831df2cc8290e95d5511c51d",
+   "source_id": "odd-lots",
+   "published_at": "2026-06-04T08:00:00+00:00"
+  },
+  {
+   "id": "ep_75d8eb86c4eec79d0bbd5412",
+   "source_id": "odd-lots",
+   "published_at": "2026-05-16T08:00:00+00:00"
+  },
+  {
+   "id": "ep_0306c72bf71610d3eccc8648",
+   "source_id": "odd-lots",
+   "published_at": "2025-10-02T08:00:00+00:00"
+  },
+  {
+   "id": "ep_019d8005078ee4d4d3194b18",
+   "source_id": "odd-lots",
+   "published_at": "2025-08-18T08:00:00+00:00"
+  },
+  {
+   "id": "ep_6a5787a9372e75669b90385d",
+   "source_id": "practical-ai",
+   "published_at": "2026-07-02T09:00:00+00:00"
+  },
+  {
+   "id": "ep_0024a1ddf6205a4a1c2a73ad",
+   "source_id": "practical-ai",
+   "published_at": "2026-06-25T09:00:00+00:00"
+  },
+  {
+   "id": "ep_903cc763f0f106d7f4610f17",
+   "source_id": "practical-ai",
+   "published_at": "2026-06-11T09:00:00+00:00"
+  },
+  {
+   "id": "ep_7c6022a2544ce19235993847",
+   "source_id": "practical-ai",
+   "published_at": "2026-06-04T09:00:00+00:00"
+  },
+  {
+   "id": "ep_6f2a3729a8012f0e3510d239",
+   "source_id": "practical-ai",
+   "published_at": "2026-05-21T09:00:00+00:00"
+  },
+  {
+   "id": "ep_31e508ed9e1805de97ddc338",
+   "source_id": "practical-ai",
+   "published_at": "2026-05-28T09:00:00+00:00"
+  },
+  {
+   "id": "ep_be12c2edb1fd13f7a9cf1b61",
+   "source_id": "practical-ai",
+   "published_at": "2026-05-14T09:00:00+00:00"
+  },
+  {
+   "id": "ep_97eec5d647307d5472b2ffa5",
+   "source_id": "practical-ai",
+   "published_at": "2026-05-07T09:00:00+00:00"
+  },
+  {
+   "id": "ep_4a0cd0348b591ddb972adcf6",
+   "source_id": "practical-ai",
+   "published_at": "2026-04-23T09:00:00+00:00"
+  },
+  {
+   "id": "ep_e66097644a1156559f43976e",
+   "source_id": "practical-ai",
+   "published_at": "2026-04-16T09:00:00+00:00"
+  },
+  {
+   "id": "ep_c7f1f017de8f3d1274d7c8b0",
+   "source_id": "python-bytes",
+   "published_at": "2026-07-07T08:00:00+00:00"
+  },
+  {
+   "id": "ep_9e0af529561fa0d36c0216da",
+   "source_id": "python-bytes",
+   "published_at": "2024-12-23T08:00:00+00:00"
+  },
+  {
+   "id": "ep_67024a9ed323931d874da1f2",
+   "source_id": "python-bytes",
+   "published_at": "2024-12-16T08:00:00+00:00"
+  },
+  {
+   "id": "ep_a8683f2ef62dbc9e2b3964e0",
+   "source_id": "python-bytes",
+   "published_at": "2024-12-09T08:00:00+00:00"
+  },
+  {
+   "id": "ep_68d99201d8105483bec5a8dd",
+   "source_id": "python-bytes",
+   "published_at": "2024-12-02T08:00:00+00:00"
+  },
+  {
+   "id": "ep_457a713fea880622f7c8cc32",
+   "source_id": "python-bytes",
+   "published_at": "2024-11-25T08:00:00+00:00"
+  },
+  {
+   "id": "ep_7b7e61c0a20bc58bdad88650",
+   "source_id": "python-bytes",
+   "published_at": "2024-11-18T08:00:00+00:00"
+  },
+  {
+   "id": "ep_bc0c6a58a81d219aa992297a",
+   "source_id": "python-bytes",
+   "published_at": "2024-11-14T08:00:00+00:00"
+  },
+  {
+   "id": "ep_0fe5ffeba00fc2bf86cdb509",
+   "source_id": "python-bytes",
+   "published_at": "2024-11-04T08:00:00+00:00"
+  },
+  {
+   "id": "ep_3df3c9a71725418c41df02bf",
+   "source_id": "python-bytes",
+   "published_at": "2024-10-28T08:00:00+00:00"
+  },
+  {
+   "id": "ep_499b81408f59d83c7b411188",
+   "source_id": "talk-python-to-me",
+   "published_at": "2026-06-17T15:20:03+00:00"
+  },
+  {
+   "id": "ep_296e8884c2aee6c28e6f7a7d",
+   "source_id": "talk-python-to-me",
+   "published_at": "2026-05-30T15:43:47+00:00"
+  },
+  {
+   "id": "ep_464d83a2b364a4500c0d8580",
+   "source_id": "talk-python-to-me",
+   "published_at": "2024-12-27T08:00:00+00:00"
+  },
+  {
+   "id": "ep_a47c142ad6f7631f9b878692",
+   "source_id": "talk-python-to-me",
+   "published_at": "2024-12-24T08:00:00+00:00"
+  },
+  {
+   "id": "ep_c5202b9e376b638539f663db",
+   "source_id": "talk-python-to-me",
+   "published_at": "2024-12-20T08:00:00+00:00"
+  },
+  {
+   "id": "ep_9ba9c28f1cfbe9024eab3c55",
+   "source_id": "talk-python-to-me",
+   "published_at": "2024-12-12T08:00:00+00:00"
+  },
+  {
+   "id": "ep_f431e4e14e393982f8a2504b",
+   "source_id": "talk-python-to-me",
+   "published_at": "2024-12-01T08:00:00+00:00"
+  },
+  {
+   "id": "ep_5d3843759f1bde28a096cff9",
+   "source_id": "talk-python-to-me",
+   "published_at": "2024-11-22T08:00:00+00:00"
+  },
+  {
+   "id": "ep_b1fdfbca777a783ec14e3a6a",
+   "source_id": "talk-python-to-me",
+   "published_at": "2024-11-15T08:00:00+00:00"
+  },
+  {
+   "id": "ep_a17c1f9a831c8f653fd6a384",
+   "source_id": "talk-python-to-me",
+   "published_at": "2024-11-05T08:00:00+00:00"
+  },
+  {
+   "id": "ep_61e2f77b011444011d8af52b",
+   "source_id": "the-changelog",
+   "published_at": "2026-06-05T19:00:00+00:00"
+  },
+  {
+   "id": "ep_054a4e88f38bf321014ccca2",
+   "source_id": "the-changelog",
+   "published_at": "2025-11-14T17:45:00+00:00"
+  },
+  {
+   "id": "ep_00f174930eae75a0f8bb8ff9",
+   "source_id": "the-changelog",
+   "published_at": "2025-06-05T12:30:00+00:00"
+  },
+  {
+   "id": "ep_006ea813134c54da7decce68",
+   "source_id": "the-changelog",
+   "published_at": "2025-01-17T20:30:00+00:00"
+  },
+  {
+   "id": "ep_03097e7e6805e6e477bff45b",
+   "source_id": "the-changelog",
+   "published_at": "2024-12-20T20:00:00+00:00"
+  },
+  {
+   "id": "ep_6c368a2553a545756e11fddb",
+   "source_id": "the-changelog",
+   "published_at": "2024-12-16T20:30:00+00:00"
+  },
+  {
+   "id": "ep_230061b5ae4725c7e1cdd362",
+   "source_id": "the-changelog",
+   "published_at": "2024-12-13T20:00:00+00:00"
+  },
+  {
+   "id": "ep_62818ad0ee46aa834a275f02",
+   "source_id": "the-changelog",
+   "published_at": "2024-12-09T20:00:00+00:00"
+  },
+  {
+   "id": "ep_1710f61739f91c4294d81688",
+   "source_id": "the-changelog",
+   "published_at": "2024-12-04T20:45:00+00:00"
+  },
+  {
+   "id": "ep_c147fee2442a94bdbff60808",
+   "source_id": "the-changelog",
+   "published_at": "2024-12-02T20:00:00+00:00"
+  }
+ ]
+}

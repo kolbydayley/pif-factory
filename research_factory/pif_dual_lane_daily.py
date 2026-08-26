@@ -175,7 +175,10 @@ def roll_lane(lane: str, date: str) -> Dict[str, Any]:
     if state.get("frozen"):
         return {"lane": lane, "skipped": "frozen"}
     cap = state.get("daily_cap")
-    count = cap if cap else 400  # uncapped tier still rolls in bounded chunks
+    # Uncapped tier still rolls in bounded chunks, but never SMALLER than
+    # the top capped tier -- promoting 1600 -> uncapped must not drop the
+    # daily roll to 400 (observed planning bug, fixed 2026-08-25).
+    count = cap if cap else 1600
     started = dt.datetime.now().timestamp()
     try:
         proc = subprocess.run(
