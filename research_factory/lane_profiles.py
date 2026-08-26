@@ -60,6 +60,10 @@ LANE_PROFILES: Dict[str, Dict[str, Any]] = {
         # the roll's 80% green gate; 10 is a viable burst setting when a
         # thin green margin is acceptable.
         "model": "zai-coding-plan/glm-5.2",
+        # HTTP transport gated 2026-08-26 (run bulk-glm-zai-20260826T175251):
+        # 1,160/hr observed, audit pass 0.917, support 0.972 vs the 0.9/0.95
+        # bars. Direct coding-plan endpoint, thinking disabled (17-21s/call).
+        "transport": "http",
         "concurrency": 12,
         "omission_passes": 0,
         "window_chars": 6000,
