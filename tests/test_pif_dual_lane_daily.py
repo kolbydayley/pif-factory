@@ -106,3 +106,13 @@ def test_provider_quota_exhaustion_detected():
         {"drafted": 0, "calls_made": 0, "failure_counts": {}}) is False
     assert _provider_quota_exhausted(
         {"drafted": 0, "calls_made": 10, "failure_counts": {"timeout": 10}}) is False
+
+
+def test_lane_partitions_are_disjoint_and_cover():
+    from research_factory.pif_bulk_draft_runner import (
+        LANE_PARTITIONS, N_PARTITIONS, segment_partition)
+    all_parts = [p for parts in LANE_PARTITIONS.values() for p in parts]
+    assert len(all_parts) == len(set(all_parts)) == N_PARTITIONS
+    for seg in ("seg_a", "seg_b", "seg_1234", "seg_cbe1f0bdf1da18d2f4542da4"):
+        assert segment_partition(seg) == segment_partition(seg)  # stable
+        assert 0 <= segment_partition(seg) < N_PARTITIONS

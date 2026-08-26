@@ -77,7 +77,7 @@ def load_prompt_template() -> str:
 
 def init_shadow_db() -> None:
     SHADOW_ROOT.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(SHADOW_DB) as conn:
+    with _shadow_conn() as conn:
         conn.execute(
             """CREATE TABLE IF NOT EXISTS draft_labels (
                    segment_id TEXT NOT NULL,
@@ -90,19 +90,40 @@ def init_shadow_db() -> None:
                )""")
 
 
+def _shadow_conn() -> sqlite3.Connection:
+    """Shadow DB connection safe for concurrent per-lane writers."""
+    conn = sqlite3.connect(SHADOW_DB, timeout=60)
+    conn.execute("PRAGMA busy_timeout=60000")
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+
+# Deterministic hash partitions so lanes can run CONCURRENTLY without ever
+# selecting the same segment (selection-time exclusion alone races when two
+# lanes start together). 8 slices weighted by lane throughput; rebalance by
+# editing this table when a lane exhausts its slice.
+N_PARTITIONS = 8
+LANE_PARTITIONS = {"glm-zai": (0, 1, 2, 3, 4), "grok": (5,), "codex": (6,),
+                   "glm": (7,)}
+
+
+def segment_partition(segment_id: str) -> int:
+    import hashlib as _hashlib
+    return int(_hashlib.md5(segment_id.encode()).hexdigest(), 16) % N_PARTITIONS
+
+
 def select_unlabeled_segments(count: int, *, exclude_drafted_lane: str,
                               order: str = "newest") -> List[Dict[str, Any]]:
-    """Unlabeled segments not already drafted by ANY lane. Read-only.
+    """Unlabeled segments not already drafted by ANY lane, restricted to the
+    requesting lane's hash partitions. Read-only.
 
-    Lanes partition the backlog: a segment drafted by one lane is not
-    re-drafted by another (fleet throughput sums instead of overlapping).
     Cross-lane quality checking comes from the Codex audit sample, not
-    duplicate drafting. ``exclude_drafted_lane`` is kept for signature
-    stability; the exclusion is global.
+    duplicate drafting. ``exclude_drafted_lane`` names the requesting lane
+    and selects its partition slice.
     """
     drafted: set = set()
     if SHADOW_DB.exists():
-        with sqlite3.connect(SHADOW_DB) as conn:
+        with _shadow_conn() as conn:
             drafted = {row[0] for row in conn.execute(
                 "SELECT DISTINCT segment_id FROM draft_labels")}
     order_sql = {"newest": "s.created_at DESC",
@@ -114,10 +135,20 @@ def select_unlabeled_segments(count: int, *, exclude_drafted_lane: str,
            FROM segments s
            LEFT JOIN labels l ON l.segment_id = s.id
            WHERE l.id IS NULL
-           ORDER BY {order_sql}
-           LIMIT ?""", (count + len(drafted),)).fetchall()
+           ORDER BY {order_sql}""").fetchall()
     conn.close()
-    return [dict(r) for r in rows if r["segment_id"] not in drafted][:count]
+    partitions = LANE_PARTITIONS.get(exclude_drafted_lane)
+    picked: List[Dict[str, Any]] = []
+    for row in rows:
+        if row["segment_id"] in drafted:
+            continue
+        if partitions is not None and \
+                segment_partition(row["segment_id"]) not in partitions:
+            continue
+        picked.append(dict(row))
+        if len(picked) >= count:
+            break
+    return picked
 
 
 def judge_candidate(segment_text: str, label_json: str) -> Dict[str, Any]:
@@ -144,9 +175,23 @@ def main() -> None:
     parser.add_argument("--concurrency", type=int, default=None)
     args = parser.parse_args()
 
-    # single-writer lock: a stale or concurrent run must not share the shadow DB
+    # Per-lane single-writer lock: one run per LANE. Lanes are safe to run
+    # concurrently because hash partitioning makes their selections disjoint
+    # and SQLite (busy_timeout) serializes row inserts. The legacy global
+    # runner.lock is still honored while any old-code run holds it.
     SHADOW_ROOT.mkdir(parents=True, exist_ok=True)
-    lock_path = SHADOW_ROOT / "runner.lock"
+    legacy = SHADOW_ROOT / "runner.lock"
+    if legacy.exists():
+        holder = legacy.read_text().strip()
+        try:
+            legacy_alive = holder.isdigit() and (os.kill(int(holder), 0) is None)
+        except (ProcessLookupError, PermissionError, ValueError):
+            legacy_alive = False
+        if legacy_alive:
+            print(json.dumps({"aborted": "runner_lock_held",
+                              "holder_pid": holder, "legacy": True}))
+            return
+    lock_path = SHADOW_ROOT / f"runner-{args.lane}.lock"
     try:
         lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.write(lock_fd, str(os.getpid()).encode())
@@ -251,7 +296,7 @@ def _run(args) -> None:
                       "label": validation["label"],
                       "segment_text": res["segment_text"],
                       "validation": {"dropped": validation["dropped"]}}
-            with sqlite3.connect(SHADOW_DB) as conn:
+            with _shadow_conn() as conn:
                 conn.execute(
                     "INSERT OR REPLACE INTO draft_labels"
                     " (segment_id, lane, label_json, validation_json) VALUES (?, ?, ?, ?)",
@@ -284,7 +329,7 @@ def _run(args) -> None:
             rec = futures[future]
             verdict = future.result()
             audits.append({"segment_id": rec["segment_id"], **verdict})
-            with sqlite3.connect(SHADOW_DB) as conn:
+            with _shadow_conn() as conn:
                 conn.execute(
                     "UPDATE draft_labels SET audit_json = ? WHERE segment_id = ? AND lane = ?",
                     (json.dumps(verdict), rec["segment_id"], args.lane))

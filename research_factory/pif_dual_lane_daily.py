@@ -253,15 +253,29 @@ def main() -> None:
     day: Dict[str, Any] = json.loads(day_path.read_text()) if day_path.exists() else {
         "date": args.date, "lanes": {}}
 
-    for lane in [l.strip() for l in args.lanes.split(",") if l.strip()]:
-        if lane in day["lanes"] and not day["lanes"][lane].get("skipped"):
-            print(f"[{lane}] already rolled on {args.date}; skipping", flush=True)
-            continue
+    # Lanes roll CONCURRENTLY: the bulk runner holds per-lane locks and hash
+    # partitioning keeps selections disjoint (2026-08-26 scale-up). Day-file
+    # writes are serialized under a thread lock.
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    day_lock = threading.Lock()
+
+    def _roll(lane: str) -> None:
         print(f"[{lane}] rolling...", flush=True)
         result = roll_lane(lane, args.date)
-        day["lanes"][lane] = result
-        day_path.write_text(json.dumps(day, indent=1))
+        with day_lock:
+            day["lanes"][lane] = result
+            day_path.write_text(json.dumps(day, indent=1))
         print(json.dumps(result, indent=1), flush=True)
+
+    todo = [lane for lane in
+            (l.strip() for l in args.lanes.split(",")) if lane
+            and not (lane in day["lanes"] and not day["lanes"][lane].get("skipped"))]
+    for lane in (l.strip() for l in args.lanes.split(",")):
+        if lane and lane not in todo:
+            print(f"[{lane}] already rolled on {args.date}; skipping", flush=True)
+    with ThreadPoolExecutor(max_workers=max(1, len(todo))) as pool:
+        list(pool.map(_roll, todo))
 
     red = [l for l, r in day["lanes"].items() if not r.get("skipped") and not r.get("green")]
     print(json.dumps({"date": args.date, "red_lanes": red}, indent=1))
