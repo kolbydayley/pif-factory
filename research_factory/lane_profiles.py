@@ -49,7 +49,9 @@ LANE_PROFILES: Dict[str, Dict[str, Any]] = {
         # Second GLM lane: identical model + contract as "glm", billed to the
         # z.ai coding plan instead of OpenCode Go so both subscriptions drain
         # in parallel. Route gate: work/loadtest-20260813/glm_tune/zai52.
-        # Concurrency 5 -> 8 (probe 2026-08-18, work/maxtest-20260817/
+        # Concurrency 5 -> 8 (probe 2026-08-18) -> 12 (post-Max-upgrade ladder
+        # 2026-08-26: 223/hr clean @12; @16 hits 19%% timeouts and the 80%%
+        # drafted gate -- Max raised quota, not the request ceiling). (probe 2026-08-18, work/maxtest-20260817/
         # zai_concurrency_probe.log): the plan rejects nothing up to 10
         # workers, but scaling is sub-linear (135/hr @5, 170/hr @8,
         # 217/hr @10) because server-side queueing stretches per-call
@@ -58,7 +60,7 @@ LANE_PROFILES: Dict[str, Dict[str, Any]] = {
         # the roll's 80% green gate; 10 is a viable burst setting when a
         # thin green margin is acceptable.
         "model": "zai-coding-plan/glm-5.2",
-        "concurrency": 8,
+        "concurrency": 12,
         "omission_passes": 0,
         "window_chars": 6000,
         "reasoning_effort": None,
