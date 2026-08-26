@@ -371,7 +371,7 @@ def draft_codex(prompt: str, *, timeout: int = 300,
 
 
 ZAI_CODING_ENDPOINT = "https://api.z.ai/api/coding/paas/v4/chat/completions"
-ZAI_HTTP_MAX_TOKENS = 12000  # glm-5.2 spends reasoning tokens first; leave room
+ZAI_HTTP_MAX_TOKENS = 8000
 
 
 def draft_glm_http(prompt: str, *, timeout: int = 600,
@@ -400,6 +400,12 @@ def draft_glm_http(prompt: str, *, timeout: int = 600,
     body = json.dumps({
         "model": model,
         "max_tokens": ZAI_HTTP_MAX_TOKENS,
+        # Thinking DISABLED: with it on, glm-5.2 burns ~11k reasoning tokens
+        # (~140s) per extraction and truncates the JSON at any sane
+        # max_tokens. Off: 17-21s/call, finish_reason=stop, schema-valid
+        # labels (measured 2026-08-26). Different config than the CLI route
+        # qualified with, so the HTTP transport carries its own judged gate.
+        "thinking": {"type": "disabled"},
         "messages": [{"role": "user", "content": prompt}],
     }).encode()
     started = time.monotonic()
