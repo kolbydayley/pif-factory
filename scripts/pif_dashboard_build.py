@@ -183,15 +183,26 @@ function spark(series,w=210,h=34,color="var(--pos)"){
     <polyline points="${pts.join(" ")}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/></svg>`;}
 
 /* ---------- signal cards */
+const breadthNote=t=>t.episodes?` — across ${t.episodes} episodes on ${t.shows} shows`:"";
 const SIG_META={
-  emerging:{color:"var(--accent)",blurb:t=>`${t.pulse_vol} mentions in the last ${DATA.pulse_weeks} weeks — near-zero baseline before that.`,label:"Emerging"},
+  discussed:{color:"var(--pos)",blurb:t=>`${t.pulse_vol} mentions across ${t.shows} shows (${t.episodes} episodes) in the last ${DATA.pulse_weeks} weeks.`,label:"Most discussed"},
+  emerging:{color:"var(--accent)",blurb:t=>`${t.pulse_vol} mentions in the last ${DATA.pulse_weeks} weeks — near-zero baseline before${breadthNote(t)}.`,label:"Emerging"},
   shifting:{color:"var(--violet)",blurb:t=>`stance mix moved ${Math.round(t.divergence*100)}% vs the prior quarter.`,label:"Opinion shift"},
-  contested:{color:"var(--gold)",blurb:t=>`${t.positive} voices for, ${t.negative} against — a live fight.`,label:"Contested"},
+  contested:{color:"var(--gold)",blurb:t=>`${t.positive} voices for, ${t.negative} against${breadthNote(t)} — a live fight.`,label:"Contested"},
   fading:{color:"var(--neg)",blurb:t=>`peaked at ${t.peak_week_vol}/week, now ${t.pulse_vol} mentions in ${DATA.pulse_weeks} weeks.`,label:"Fading"}};
 (function(){
   const box=$("#signals");let n=0;
-  for(const kind of ["emerging","shifting","contested","fading"]){
-    for(const item of (DATA.detectors[kind]||[]).slice(0,3)){
+  // Fill the strip: detector hits first, then broadest live topics.
+  const detectorTopics=new Set();
+  const cards=[];
+  for(const kind of ["emerging","shifting","contested","fading"])
+    for(const item of (DATA.detectors[kind]||[]).slice(0,3)){cards.push([kind,item]);detectorTopics.add(item.topic);}
+  const broad=Object.entries(DATA.topics)
+    .filter(([t,d])=>!detectorTopics.has(t)&&t!=="other"&&(d.pulse_shows||0)>=3)
+    .sort((a,b)=>(b[1].pulse_shows||0)-(a[1].pulse_shows||0)||(b[1].pulse_vol||0)-(a[1].pulse_vol||0))
+    .slice(0,Math.max(0,8-cards.length));
+  for(const [t,d] of broad)cards.push(["discussed",{topic:t,pulse_vol:d.pulse_vol,shows:d.pulse_shows,episodes:d.pulse_episodes}]);
+  for(const [kind,item] of cards){
       const t=DATA.topics[item.topic];const m=SIG_META[kind];
       const el=document.createElement("div");
       el.className="sig reveal";el.style.animationDelay=(n++*60)+"ms";
@@ -199,7 +210,6 @@ const SIG_META={
         <h3>${esc(item.topic)}</h3><p>${m.blurb(item)}</p>${t?spark(t.series,210,34,m.color):""}`;
       el.onclick=()=>selectTopic(item.topic);
       box.appendChild(el);
-    }
   }
   if(!box.children.length)box.innerHTML='<div class="sig"><p>No active signals — detectors run nightly.</p></div>';
 })();

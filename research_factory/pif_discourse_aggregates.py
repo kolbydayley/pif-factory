@@ -127,9 +127,21 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
     # ---- topic series from labels (all packs; open vocabulary)
     topic_weekly: Dict[str, Dict[int, Dict[str, Any]]] = defaultdict(dict)
     topic_total: Counter = Counter()
+    # Breadth = the anti-noise gate. A topic mentioned 11 times inside ONE
+    # episode is that episode's turn of phrase, not a discourse trend
+    # (audited 2026-08-26: nearly every ungated signal was single-episode).
+    breadth: Dict[str, Dict[str, set]] = defaultdict(
+        lambda: {"pulse_eps": set(), "pulse_shows": set(),
+                 "base_eps": set(), "base_shows": set()})
+
+    def note_breadth(topic: str, wk_i: int, episode_id: str, show: str) -> None:
+        zone = "pulse" if wk_i >= RECENT_WEEKS - PULSE_WEEKS else "base"
+        breadth[topic][f"{zone}_eps"].add(episode_id)
+        breadth[topic][f"{zone}_shows"].add(show)
     rows = conn.execute(
         """
-        SELECT t.value AS topic_json, e.published_at
+        SELECT t.value AS topic_json, e.published_at,
+               e.id AS episode_id, e.source_id
         FROM labels l
         JOIN segments s ON s.id = l.segment_id
         JOIN episodes e ON e.id = s.episode_id,
@@ -155,6 +167,7 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         except (TypeError, ValueError):
             pass
         topic_total[topic] += 1
+        note_breadth(topic, widx[wk], r["episode_id"], r["source_id"])
 
     # ---- concept-level positions also feed the topic series (deeper history)
     pos_rows = conn.execute(
@@ -179,6 +192,7 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             cell["vol"] += 1
             cell[stance_group(r["stance"])] += 1
             topic_total[topic] += 1
+            note_breadth(topic, widx[wk], r["segment_id"][:24], r["source_id"])
         name = (r["actor_name"] or "").strip()
         if not name or r["actor_type"] not in ("guest", "host", "person"):
             continue
@@ -300,32 +314,47 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
                     sum(r["neg"] for r in rows_) / tot,
                     sum(r["neu"] for r in rows_) / tot]
 
-        if pulse_vol >= 8 and base_rate < 0.5:
+        br = breadth.get(topic, {})
+        p_eps = len(br.get("pulse_eps", ()))
+        p_shows = len(br.get("pulse_shows", ()))
+        b_eps = len(br.get("base_eps", ()))
+        info["pulse_episodes"] = p_eps
+        info["pulse_shows"] = p_shows
+        if pulse_vol >= 8 and base_rate < 0.5 and p_eps >= 3 and p_shows >= 2:
             detectors["emerging"].append(
                 {"topic": topic, "pulse_vol": pulse_vol,
-                 "base_rate": round(base_rate, 2)})
+                 "base_rate": round(base_rate, 2),
+                 "episodes": p_eps, "shows": p_shows})
         dp, db = stance_dist(pulse), stance_dist(base)
         if dp and db and sum(s["vol"] for s in base) >= 10 and pulse_vol >= 8:
             div = sum(abs(a - b) for a, b in zip(dp, db)) / 2
-            if div >= 0.3:
+            if div >= 0.3 and p_eps >= 3 and p_shows >= 2 and b_eps >= 3:
                 detectors["shifting"].append(
                     {"topic": topic, "divergence": round(div, 2),
                      "now": [round(x, 2) for x in dp],
-                     "before": [round(x, 2) for x in db]})
+                     "before": [round(x, 2) for x in db],
+                     "episodes": p_eps, "shows": p_shows})
         field = concept_field.get(topic)
         if field and sum(field.values()) >= 8:
             p = field.get("positive", 0)
             n = field.get("negative", 0)
-            if p and n and min(p, n) / max(p, n) >= 0.5:
+            if p and n and min(p, n) / max(p, n) >= 0.5 \
+                    and p_eps >= 3 and p_shows >= 2:
                 detectors["contested"].append(
                     {"topic": topic, "positive": p, "negative": n,
-                     "neutral": field.get("neutral", 0)})
+                     "neutral": field.get("neutral", 0),
+                     "episodes": p_eps, "shows": p_shows})
         peak = max((s["vol"] for s in base), default=0)
-        if peak >= 8 and pulse_rate <= 0.25 * peak / 1.0 and pulse_vol <= 2:
+        if peak >= 8 and pulse_rate <= 0.25 * peak and pulse_vol <= 2 \
+                and b_eps >= 5 and len(br.get("base_shows", ())) >= 2:
             detectors["fading"].append(
                 {"topic": topic, "peak_week_vol": peak,
-                 "pulse_vol": pulse_vol})
+                 "pulse_vol": pulse_vol, "base_episodes": b_eps})
     for key in detectors:
+        detectors[key].sort(key=lambda x: (x.get("shows", 0),
+                                           x.get("episodes",
+                                                 x.get("base_episodes", 0))),
+                            reverse=True)
         detectors[key] = detectors[key][:15]
 
     counts = conn.execute(
