@@ -370,6 +370,80 @@ def draft_codex(prompt: str, *, timeout: int = 300,
                 "error": "timeout", "error_class": "timeout", "calls": 1}
 
 
+ZAI_CODING_ENDPOINT = "https://api.z.ai/api/coding/paas/v4/chat/completions"
+ZAI_HTTP_MAX_TOKENS = 12000  # glm-5.2 spends reasoning tokens first; leave room
+
+
+def draft_glm_http(prompt: str, *, timeout: int = 600,
+                   model: str = "glm-5.2",
+                   max_429_retries: int = 3) -> Dict[str, Any]:
+    """One GLM drafting call DIRECTLY against the z.ai coding-plan endpoint.
+
+    Same subscription billing as the opencode CLI route (the CLI wraps this
+    exact endpoint with the same auth.json key) but without spawning a
+    ~500MB CLI process per call — the local-host cost that capped fleet
+    concurrency. 429 means the account's in-flight slot cap is momentarily
+    full: back off and retry rather than failing the segment.
+    """
+    import urllib.error
+    import urllib.request
+    auth_source = Path.home() / ".local" / "share" / "opencode" / "auth.json"
+    try:
+        key = json.loads(auth_source.read_text()).get(
+            "zai-coding-plan", {}).get("key")
+    except (OSError, json.JSONDecodeError):
+        key = None
+    if not key:
+        return {"ok": False, "label": None, "elapsed": 0.0,
+                "error": "zai coding-plan key unavailable",
+                "error_class": "provider", "calls": 0}
+    body = json.dumps({
+        "model": model,
+        "max_tokens": ZAI_HTTP_MAX_TOKENS,
+        "messages": [{"role": "user", "content": prompt}],
+    }).encode()
+    started = time.monotonic()
+    calls = 0
+    for attempt in range(max_429_retries + 1):
+        deadline_left = timeout - (time.monotonic() - started)
+        if deadline_left <= 5:
+            return {"ok": False, "label": None,
+                    "elapsed": time.monotonic() - started,
+                    "error": "timeout", "error_class": "timeout",
+                    "calls": calls}
+        req = urllib.request.Request(ZAI_CODING_ENDPOINT, data=body, headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json"})
+        calls += 1
+        try:
+            with urllib.request.urlopen(req, timeout=deadline_left) as resp:
+                data = json.loads(resp.read().decode())
+            content = ((data.get("choices") or [{}])[0]
+                       .get("message", {}).get("content") or "")
+            elapsed = time.monotonic() - started
+            try:
+                return {"ok": True, "label": extract_json_lenient(content),
+                        "elapsed": elapsed, "error": None, "calls": calls}
+            except (json.JSONDecodeError, ValueError) as exc:
+                return {"ok": False, "label": None, "elapsed": elapsed,
+                        "error": f"parse: {exc}", "error_class": "parse",
+                        "calls": calls}
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429 and attempt < max_429_retries:
+                time.sleep(min(30, 10 * (attempt + 1)))
+                continue
+            return {"ok": False, "label": None,
+                    "elapsed": time.monotonic() - started,
+                    "error": f"http_{exc.code}", "error_class": "provider",
+                    "calls": calls}
+        except Exception as exc:  # noqa: BLE001 - socket timeouts et al.
+            err = str(exc)[:200]
+            klass = "timeout" if "timed out" in err else "provider"
+            return {"ok": False, "label": None,
+                    "elapsed": time.monotonic() - started,
+                    "error": err, "error_class": klass, "calls": calls}
+
+
 def draft_glm(prompt: str, state_root: Path, *, timeout: int = 300,
               model: str = GLM_MODEL) -> Dict[str, Any]:
     """One OpenCode GLM drafting call in an isolated ephemeral data dir.

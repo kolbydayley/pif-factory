@@ -30,6 +30,7 @@ from .cheap_lane_adapters import (
     GLM_JSON_INSTRUCTION,
     draft_codex,
     draft_glm,
+    draft_glm_http,
     draft_grok,
     draft_with_omission,
     merge_window_labels,
@@ -173,6 +174,8 @@ def main() -> None:
     parser.add_argument("--count", type=int, default=100)
     parser.add_argument("--audit-rate", type=float, default=0.10)
     parser.add_argument("--concurrency", type=int, default=None)
+    parser.add_argument("--transport", choices=["cli", "http"], default=None,
+                        help="Override the GLM transport (default: profile).")
     parser.add_argument("--call-timeout", type=int, default=300,
                         help="Per-call GLM timeout seconds. Under heavy worker"
                              " counts z.ai queues requests; a longer timeout"
@@ -248,6 +251,9 @@ def _run(args) -> None:
             return draft_grok(prompt, reasoning_effort=profile["reasoning_effort"])
         if is_codex_lane:
             return draft_codex(prompt + GLM_JSON_INSTRUCTION, model=profile["model"])
+        if (args.transport or profile.get("transport")) == "http":
+            return draft_glm_http(prompt + GLM_JSON_INSTRUCTION,
+                                  timeout=args.call_timeout)
         return draft_glm(prompt + GLM_JSON_INSTRUCTION, glm_state,
                          model=profile.get("model", "opencode-go/glm-5.2"),
                          timeout=args.call_timeout)
