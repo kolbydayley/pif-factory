@@ -173,6 +173,11 @@ def main() -> None:
     parser.add_argument("--count", type=int, default=100)
     parser.add_argument("--audit-rate", type=float, default=0.10)
     parser.add_argument("--concurrency", type=int, default=None)
+    parser.add_argument("--call-timeout", type=int, default=300,
+                        help="Per-call GLM timeout seconds. Under heavy worker"
+                             " counts z.ai queues requests; a longer timeout"
+                             " converts queued-but-successful calls from"
+                             " discarded timeouts into drafts.")
     args = parser.parse_args()
 
     # Per-lane single-writer lock: one run per LANE. Lanes are safe to run
@@ -244,7 +249,8 @@ def _run(args) -> None:
         if is_codex_lane:
             return draft_codex(prompt + GLM_JSON_INSTRUCTION, model=profile["model"])
         return draft_glm(prompt + GLM_JSON_INSTRUCTION, glm_state,
-                         model=profile.get("model", "opencode-go/glm-5.2"))
+                         model=profile.get("model", "opencode-go/glm-5.2"),
+                         timeout=args.call_timeout)
 
     def draft_window(window: str) -> Dict[str, Any]:
         """Draft one window, plus the profile's omission-audit passes."""
