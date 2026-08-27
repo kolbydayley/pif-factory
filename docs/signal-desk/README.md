@@ -89,6 +89,8 @@ The self-contained renderer uses hash routes, so every research layer has a
 stable browser-history state without needing a server-side router:
 
 - `#home/shifts`, `#home/people`, `#home/topics`
+- `#funnel` for the enrolled-show roster, episode processing funnel, and
+  private show-enrollment intake
 - `#topic/<topic>` and topic slices for `stance/<group>` or `week/<week>`
 - `#person/<person>` for recurring claims, meaningful cross-episode position
   changes, disagreements with the field, and evidence
@@ -97,6 +99,13 @@ stable browser-history state without needing a server-side router:
 On mobile, topic pages put major issues and trusted-voice status before the
 long trend and evidence record. Person pages put biggest recurring claims
 first. Desktop retains the two-column research layout.
+
+The Podcast Funnel separates catalogued feed inventory from transcript
+attempts, segmented episodes, and intelligence-ready episodes. Because the
+published desk is intentionally public and static, its add-show form opens a
+prefilled issue in the private repository; an operator must still verify the
+RSS feed, check aliases, and run a bounded ingestion dry run before a source
+enters production.
 
 ## Statistical layer (V4, 2026-08-27)
 

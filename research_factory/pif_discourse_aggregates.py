@@ -269,6 +269,150 @@ def data_frontier(conn: sqlite3.Connection) -> Optional[dt.date]:
         return None
 
 
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table,),
+    ).fetchone() is not None
+
+
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    if not _table_exists(conn, table):
+        return False
+    return any(row[1] == column for row in conn.execute(
+        f"PRAGMA table_info({table})"
+    ).fetchall())
+
+
+def collect_funnel(conn: sqlite3.Connection) -> Dict[str, Any]:
+    """Return the operational podcast funnel and complete source roster.
+
+    These stages deliberately distinguish feed inventory from intelligence-
+    ready episodes. A transcript record includes both ready and quarantined
+    acquisition attempts; the next segmented stage shows what actually made
+    it into prepared source text.
+    """
+    conn.row_factory = sqlite3.Row
+    if _table_exists(conn, "sources"):
+        source_rows = conn.execute(
+            """SELECT id, name, category, rss_url, enabled
+               FROM sources ORDER BY lower(name), id"""
+        ).fetchall()
+    else:
+        source_rows = conn.execute(
+            """SELECT DISTINCT source_id AS id, source_id AS name,
+                      NULL AS category, NULL AS rss_url, 1 AS enabled
+               FROM episodes ORDER BY source_id"""
+        ).fetchall()
+
+    shows = {
+        row["id"]: {
+            "id": row["id"],
+            "name": row["name"],
+            "category": row["category"],
+            "rss_url": row["rss_url"],
+            "enabled": bool(row["enabled"]),
+            "catalogued": 0,
+            "transcript_attempted": 0,
+            "transcript_quarantined": 0,
+            "segmented": 0,
+            "intelligence_ready": 0,
+        }
+        for row in source_rows
+    }
+
+    def assign(sql: str, key: str) -> None:
+        for row in conn.execute(sql):
+            source_id = row["source_id"]
+            if source_id not in shows:
+                shows[source_id] = {
+                    "id": source_id, "name": source_id, "category": None,
+                    "rss_url": None, "enabled": True, "catalogued": 0,
+                    "transcript_attempted": 0,
+                    "transcript_quarantined": 0, "segmented": 0,
+                    "intelligence_ready": 0,
+                }
+            shows[source_id][key] = int(row["n"] or 0)
+
+    assign(
+        "SELECT source_id, COUNT(DISTINCT id) n FROM episodes GROUP BY source_id",
+        "catalogued",
+    )
+    if _table_exists(conn, "transcripts"):
+        assign(
+            """SELECT e.source_id, COUNT(DISTINCT e.id) n
+               FROM episodes e JOIN transcripts t ON t.episode_id = e.id
+               GROUP BY e.source_id""",
+            "transcript_attempted",
+        )
+        if _column_exists(conn, "transcripts", "status"):
+            assign(
+                """SELECT e.source_id, COUNT(DISTINCT e.id) n
+                   FROM episodes e JOIN transcripts t ON t.episode_id = e.id
+                   WHERE lower(t.status) LIKE 'quarantined%'
+                   GROUP BY e.source_id""",
+                "transcript_quarantined",
+            )
+    if _table_exists(conn, "segments"):
+        assign(
+            """SELECT e.source_id, COUNT(DISTINCT e.id) n
+               FROM episodes e JOIN segments s ON s.episode_id = e.id
+               GROUP BY e.source_id""",
+            "segmented",
+        )
+    if _table_exists(conn, "labels") and _table_exists(conn, "segments"):
+        ready_clause = "WHERE lower(l.status) = 'ready'" \
+            if _column_exists(conn, "labels", "status") else ""
+        assign(
+            f"""SELECT e.source_id, COUNT(DISTINCT e.id) n
+                FROM episodes e
+                JOIN segments s ON s.episode_id = e.id
+                JOIN labels l ON l.segment_id = s.id
+                {ready_clause}
+                GROUP BY e.source_id""",
+            "intelligence_ready",
+        )
+
+    ordered = sorted(
+        shows.values(),
+        key=lambda item: (str(item["name"]).lower(), item["id"]),
+    )
+    for item in ordered:
+        if item["intelligence_ready"]:
+            item["stage"] = "intelligence_ready"
+        elif item["segmented"]:
+            item["stage"] = "segmented"
+        elif item["transcript_attempted"]:
+            item["stage"] = "transcript_attempted"
+        elif item["catalogued"]:
+            item["stage"] = "catalogued"
+        else:
+            item["stage"] = "enrolled"
+
+    stage_defs = (
+        ("catalogued", "Enrolled + catalogued"),
+        ("transcript_attempted", "Transcript attempted"),
+        ("segmented", "Segmented"),
+        ("intelligence_ready", "Intelligence-ready"),
+    )
+    stages = []
+    for key, label in stage_defs:
+        stages.append({
+            "key": key,
+            "label": label,
+            "episodes": sum(item[key] for item in ordered),
+            "shows": sum(1 for item in ordered if item[key] > 0),
+        })
+    return {
+        "stages": stages,
+        "shows": ordered,
+        "enrolled_shows": sum(1 for item in ordered if item["enabled"]),
+        "quarantined_transcript_episodes": sum(
+            item["transcript_quarantined"] for item in ordered
+        ),
+    }
+
+
 def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str, Any]:
     conn.row_factory = sqlite3.Row
     if now is None:
@@ -843,6 +987,7 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         "topics": topics_out,
         "people": people,
         "network": people_network,
+        "funnel": collect_funnel(conn),
         "detectors": detectors,
     }
 
