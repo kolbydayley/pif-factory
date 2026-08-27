@@ -53,7 +53,8 @@ def stance_group(stance: Optional[str]) -> str:
 
 def short_excerpt(value: Optional[str], limit: int = 240) -> Optional[str]:
     """Return a compact excerpt without ending on a cut-off word."""
-    cleaned = " ".join((value or "").split())
+    cleaned = re.sub(r"\s*Speaker \d+:\s*", " ", value or "")
+    cleaned = " ".join(cleaned.split())
     if not cleaned:
         return None
     if len(cleaned) <= limit:
@@ -93,6 +94,52 @@ def recent_weeks_list(now: Optional[dt.date] = None) -> List[str]:
         iso = d.isocalendar()
         out.append(f"{iso[0]}-W{iso[1]:02d}")
     return out
+
+
+JUNK_TOPICS = {"other", "misc", "miscellaneous", "unknown", "none", "n a",
+               "general"}
+_STOP = {"the", "of", "and", "vs", "a", "an", "in", "on", "for", "to", "as"}
+
+
+def _stem(tok: str) -> str:
+    for suf in ("ical", "ally", "ing", "ity", "ic", "s"):
+        if len(tok) > 4 and tok.endswith(suf):
+            return tok[: -len(suf)]
+    return tok
+
+
+def _topic_tokens(topic: str) -> frozenset:
+    return frozenset(_stem(w) for w in topic.split() if w not in _STOP)
+
+
+def build_topic_canon(counts: Counter) -> Dict[str, str]:
+    """Cluster near-duplicate open-vocabulary topics (quality audit item 3).
+
+    Merge rule: stemmed-token containment or Jaccard >= 0.6; the
+    highest-volume member names the cluster. BOUNDED: only the top
+    MAX_HEADS topics may found clusters and everything else matches
+    against those heads — the all-pairs version is quadratic over the
+    10k+ raw vocabulary and took minutes (measured 2026-08-26).
+    """
+    MAX_HEADS = 400
+    names = [n for n, _ in counts.most_common() if n not in JUNK_TOPICS]
+    toks = {n: _topic_tokens(n) for n in names}
+    heads: list = []
+    canon: Dict[str, str] = {}
+    for name in names:
+        a = toks[name]
+        merged = None
+        if a:
+            for head in heads:
+                b = toks[head]
+                if b and (a <= b or b <= a
+                          or len(a & b) / len(a | b) >= 0.6):
+                    merged = head
+                    break
+        if merged is None and len(heads) < MAX_HEADS:
+            heads.append(name)
+        canon[name] = merged or name
+    return canon
 
 
 def data_frontier(conn: sqlite3.Connection) -> Optional[dt.date]:
@@ -152,6 +199,35 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         zone = "pulse" if wk_i >= RECENT_WEEKS - PULSE_WEEKS else "base"
         breadth[topic][f"{zone}_eps"].add(episode_id)
         breadth[topic][f"{zone}_shows"].add(show)
+    # ---- pre-pass: raw topic frequencies -> canonical cluster map
+    raw_counts: Counter = Counter()
+    for r in conn.execute(
+            """SELECT t.value AS tj FROM labels l
+               JOIN segments s ON s.id = l.segment_id
+               JOIN episodes e ON e.id = s.episode_id,
+               json_each(l.output_json, '$.topics') t
+               WHERE e.published_at >= ?""", (cutoff_iso,)):
+        try:
+            nt = norm_topic(json.loads(r["tj"]).get("topic"))
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if nt:
+            raw_counts[nt] += 1
+    for r in conn.execute(
+            """SELECT ap.concept_name AS c FROM actor_positions ap
+               JOIN segments s ON s.id = ap.segment_id
+               JOIN episodes e ON e.id = s.episode_id
+               WHERE e.published_at >= ?""", (cutoff_iso,)):
+        nt = norm_topic(r["c"])
+        if nt:
+            raw_counts[nt] += 1
+    topic_canon = build_topic_canon(raw_counts)
+
+    def canon(topic: Optional[str]) -> Optional[str]:
+        if not topic or topic in JUNK_TOPICS:
+            return None
+        return topic_canon.get(topic, topic)
+
     rows = conn.execute(
         """
         SELECT t.value AS topic_json, e.published_at,
@@ -167,7 +243,7 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             item = json.loads(r["topic_json"])
         except (json.JSONDecodeError, TypeError):
             continue
-        topic = norm_topic(item.get("topic"))
+        topic = canon(norm_topic(item.get("topic")))
         wk = week_of(r["published_at"])
         if not topic or wk not in widx:
             continue
@@ -201,7 +277,7 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
     people_positions: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     concept_field: Dict[str, Counter] = defaultdict(Counter)
     for r in pos_rows:
-        topic = norm_topic(r["concept_name"])
+        topic = canon(norm_topic(r["concept_name"]))
         wk = week_of(r["published_at"])
         if topic and wk in widx:
             cell = topic_weekly[topic].setdefault(
@@ -271,8 +347,17 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             if not e["topic"] or e["group"] == "neutral":
                 continue
             prev = last_by_topic.get(e["topic"])
+            days_apart = 0
+            if prev:
+                try:
+                    days_apart = abs((dt.date.fromisoformat(e["date"])
+                                      - dt.date.fromisoformat(prev["date"])
+                                      ).days)
+                except ValueError:
+                    days_apart = 0
             if (prev and prev["group"] != e["group"]
-                    and prev["episode_id"] != e["episode_id"]):
+                    and prev["episode_id"] != e["episode_id"]
+                    and days_apart >= 14):
                 moves.append({"topic": e["topic"], "from": prev["group"],
                               "to": e["group"], "from_date": prev["date"],
                               "to_date": e["date"],
@@ -319,6 +404,8 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
                 "neutral": counts_by_group.get("neutral", 0),
             })
         people.append({
+            "n_episodes": len({e["episode_id"] for e in entries}),
+            "n_recent_episodes": len({e["episode_id"] for e in recent}),
             "name": name,
             "roles": sorted({e["role"] for e in entries}),
             "shows": sorted({e["show"] for e in entries if e["show"]}),
@@ -332,7 +419,11 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             "authority": authority.get(name),
             "last_seen": entries[-1]["date"] if entries else None,
         })
-    people.sort(key=lambda p: (len(p["moves"]) > 0, p["n_recent"],
+    # Rank by breadth of presence (audit item 2): a one-interview guest
+    # with 500 positions is not a tracked voice.
+    people = [p for p in people if p["n_episodes"] >= 2]
+    people.sort(key=lambda p: (len(p["moves"]) > 0, p["n_episodes"],
+                               p["n_recent_episodes"],
                                p["authority"] or 0), reverse=True)
     people = people[:TOP_PEOPLE]
 
