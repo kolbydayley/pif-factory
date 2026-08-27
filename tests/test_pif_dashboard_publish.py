@@ -57,6 +57,8 @@ class PublishGuardTest(unittest.TestCase):
                          "pif-signal-desk-funnel.json")
         self.assertEqual(pub.FUNNEL_JSON.name,
                          "pif-signal-desk-funnel.json")
+        dockerfile = (pub.SITE_FILE.parent / "Dockerfile").read_text()
+        self.assertIn("COPY pif-signal-desk-funnel.json", dockerfile)
 
 
 if __name__ == "__main__":
