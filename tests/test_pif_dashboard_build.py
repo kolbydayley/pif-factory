@@ -87,6 +87,22 @@ class EvidenceContextPageTest(unittest.TestCase):
         self.assertIn("What the shift signal compares", build.TEMPLATE)
 
 
+class ReviewPolishTest(unittest.TestCase):
+    def test_context_has_expand_toggle(self):
+        self.assertIn("ctx-toggle", build.TEMPLATE)
+        self.assertIn("function toggleCtx", build.TEMPLATE)
+
+    def test_inflection_markers_deep_link_to_week(self):
+        # markers carry a week deep-link like the trend bars do
+        self.assertIn('data-tail="week/', build.TEMPLATE.replace(
+            "data-tail=\"week/${esc(s.week)}\"", "", 1))
+
+    def test_topic_titles_uppercase_acronyms(self):
+        self.assertIn("function tTitle", build.TEMPLATE)
+        for tok in ('"ai"', '"agi"', '"llm"'):
+            self.assertIn(tok, build.TEMPLATE)
+
+
 class NetworkMapTest(unittest.TestCase):
     def test_network_route_and_renderer_exist(self):
         self.assertIn('r.kind==="network"', build.TEMPLATE)

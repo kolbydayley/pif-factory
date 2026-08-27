@@ -146,8 +146,10 @@ def build_topic_canon(counts: Counter) -> Dict[str, str]:
     return canon
 
 
-CTX_RAW_SPAN = 500     # transcript chars read on each side of the quote
-CTX_DISPLAY_CAP = 300  # public display cap per side (excerpt policy)
+CTX_RAW_SPAN = 900     # transcript chars read on each side of the quote
+CTX_DISPLAY_CAP = 700  # payload cap per side; renderer collapses to ~280
+                       # by default with a show-more toggle (excerpt policy:
+                       # bounded window, never a transcript dump)
 
 
 def _clean_context(raw: str, keep_end: bool) -> Optional[str]:
