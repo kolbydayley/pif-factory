@@ -146,6 +146,55 @@ def build_topic_canon(counts: Counter) -> Dict[str, str]:
     return canon
 
 
+def find_inflections(series: List[Dict[str, Any]],
+                     week_totals: List[int]) -> List[Dict[str, Any]]:
+    """Weeks where a topic's discourse crossed a significance boundary.
+
+    Slides the 4-week pulse window across the frame and records the FIRST
+    week each kind of change (surge / fade / stance shift) becomes
+    significant — the renderer draws these as inflection markers, which is
+    the literal answer to "show me how the narratives are shifting"
+    (Kolby 2026-08-27). Same tests and floors as the live detectors.
+    """
+    out: List[Dict[str, Any]] = []
+    prev_kinds: set = set()
+    for o in range(PULSE_WEEKS * 2, len(series) + 1):
+        pulse, base = series[o - PULSE_WEEKS:o], series[:o - PULSE_WEEKS]
+        pv = sum(s["vol"] for s in pulse)
+        bv = sum(s["vol"] for s in base)
+        pe = sum(week_totals[o - PULSE_WEEKS:o])
+        be = sum(week_totals[:o - PULSE_WEEKS])
+        kinds: Dict[str, str] = {}
+        if pe > 0 and be > 0 and pv + bv >= 8:
+            rt = ds.poisson_rate_test(pv, pe, bv, be)
+            if rt["p_value"] < ds.ALPHA_MODERATE \
+                    and rt["rate_ratio"] >= ds.EMERGING_RATE_RATIO_FLOOR:
+                kinds["surge"] = ("strong" if rt["p_value"] < ds.ALPHA_STRONG
+                                  else "moderate")
+            ft = ds.fading_test(pv, pe, bv, be)
+            if bv >= 8 and ft["p_value"] < ds.ALPHA_MODERATE \
+                    and ft["rate_ratio"] <= ds.FADING_RATE_RATIO_CEIL:
+                kinds["fade"] = ("strong" if ft["p_value"] < ds.ALPHA_STRONG
+                                 else "moderate")
+        if pv >= 8 and bv >= 10:
+            sh = ds.stance_shift_test(
+                [sum(s["pos"] for s in pulse), sum(s["neg"] for s in pulse),
+                 sum(s["neu"] for s in pulse)],
+                [sum(s["pos"] for s in base), sum(s["neg"] for s in base),
+                 sum(s["neu"] for s in base)],
+                n_permutations=300, n_bootstrap=0)
+            if sh["p_value"] < ds.ALPHA_MODERATE \
+                    and sh["tv_distance"] >= ds.SHIFT_TV_FLOOR:
+                kinds["shift"] = ("strong" if sh["p_value"] < ds.ALPHA_STRONG
+                                  else "moderate")
+        for kind, tier in kinds.items():
+            if kind not in prev_kinds:  # record the crossing, not the run
+                out.append({"week": series[o - 1]["week"], "kind": kind,
+                            "tier": tier})
+        prev_kinds = set(kinds)
+    return out[-6:]
+
+
 def data_frontier(conn: sqlite3.Connection) -> Optional[dt.date]:
     """Latest week with meaningful labeled volume. Anchoring the pulse here
     (instead of today) keeps detectors honest when ingestion lags: an
@@ -531,6 +580,7 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
                 "pulse_rate": round(pulse_rate, 2),
                 "base_rate": round(base_rate, 2)}
         if len(topics_out) < TOP_TOPICS or pulse_vol > 0:
+            info["inflections"] = find_inflections(series, week_totals)
             topics_out[topic] = info
 
         def stance_dist(rows_):
@@ -723,6 +773,18 @@ def main() -> None:
     data = collect(conn)
     conn.close()
     args.out.parent.mkdir(parents=True, exist_ok=True)
+    # Rotate the prior build so the renderer can show a "since last build"
+    # narrative diff. Same-day re-runs overwrite data.json but keep the
+    # older prev, which is the intent: diff against the previous session.
+    prev_path = args.out.with_name("data_prev.json")
+    if args.out.exists():
+        try:
+            old = json.loads(args.out.read_text())
+            if old.get("generated_at", "")[:10] != \
+                    data["generated_at"][:10] or not prev_path.exists():
+                prev_path.write_text(json.dumps(old))
+        except (json.JSONDecodeError, OSError):
+            pass
     args.out.write_text(json.dumps(data))
     print(json.dumps({
         "out": str(args.out),

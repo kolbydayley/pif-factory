@@ -141,7 +141,8 @@ def _chi2_sf(x: float, df: int) -> float:
 def stance_shift_test(pulse_counts: Sequence[int],
                       base_counts: Sequence[int],
                       n_permutations: int = 2000,
-                      seed: int = PERMUTATION_SEED) -> Dict:
+                      seed: int = PERMUTATION_SEED,
+                      n_bootstrap: int = 500) -> Dict:
     """Test whether the pulse stance distribution differs from baseline.
 
     Statistic is total-variation distance (matches the legacy detector's
@@ -192,10 +193,12 @@ def stance_shift_test(pulse_counts: Sequence[int],
         p_value = (1 + at_least) / (n_permutations + 1)
 
     # Bootstrap CI on the observed TV distance (multinomial resamples).
+    if n_bootstrap <= 0:
+        return {"p_value": p_value, "tv_distance": tv, "tv_ci": (0.0, 1.0)}
     resamples = []
     p_hat = [x / n_p for x in kp]
     q_hat = [x / n_b for x in kb]
-    for _ in range(500):
+    for _ in range(n_bootstrap):
         rp = _multinomial(rng, n_p, p_hat)
         rb = _multinomial(rng, n_b, q_hat)
         resamples.append(_tv_distance(rp, rb))

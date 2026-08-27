@@ -45,5 +45,54 @@ class RendererTierTest(unittest.TestCase):
         self.assertIn("tier-badge", html)
 
 
+def _payload(detectors=None, topics=None, people=None):
+    return {
+        "generated_at": "2026-08-27T21:30:00",
+        "detectors": detectors or {"emerging": [], "shifting": [],
+                                   "contested": [], "fading": []},
+        "topics": topics or {},
+        "people": people or [],
+    }
+
+
+class ComputeDiffTest(unittest.TestCase):
+    def test_no_prev_returns_none(self):
+        self.assertIsNone(build.compute_diff(_payload(), None))
+
+    def test_new_upgraded_and_gone_detectors(self):
+        prev = _payload(detectors={
+            "emerging": [{"topic": "old news", "tier": "moderate"},
+                         {"topic": "steady", "tier": "moderate"}],
+            "shifting": [], "contested": [], "fading": []})
+        cur = _payload(detectors={
+            "emerging": [{"topic": "fresh", "tier": "strong"},
+                         {"topic": "steady", "tier": "strong"}],
+            "shifting": [], "contested": [], "fading": []})
+        diff = build.compute_diff(cur, prev)
+        changes = {(c["topic"], c["change"]) for c in diff["detectors"]}
+        self.assertIn(("fresh", "new"), changes)
+        self.assertIn(("old news", "gone"), changes)
+        upgraded = next(c for c in diff["detectors"]
+                        if c["topic"] == "steady")
+        self.assertEqual((upgraded["from"], upgraded["to"]),
+                         ("moderate", "strong"))
+
+    def test_top_movers_by_share_delta(self):
+        def topic(share):
+            return {"series": [{"week": "2026-W26", "vol": 10,
+                                "share_smooth": share}]}
+        prev = _payload(topics={"a": topic(0.10), "b": topic(0.10)})
+        cur = _payload(topics={"a": topic(0.30), "b": topic(0.11)})
+        diff = build.compute_diff(cur, prev)
+        self.assertEqual(diff["movers"][0]["topic"], "a")
+        self.assertAlmostEqual(diff["movers"][0]["delta"], 0.20, places=6)
+
+    def test_new_people_listed(self):
+        prev = _payload(people=[{"name": "Old Hand"}])
+        cur = _payload(people=[{"name": "Old Hand"}, {"name": "Newcomer"}])
+        diff = build.compute_diff(cur, prev)
+        self.assertEqual(diff["new_people"], ["Newcomer"])
+
+
 if __name__ == "__main__":
     unittest.main()

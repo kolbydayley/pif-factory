@@ -328,6 +328,25 @@ class DiscourseDetectorSignificanceTest(unittest.TestCase):
         thin_week = next(s for s in series if s["week_total"] == 2)
         self.assertTrue(thin_week["low_sample"])
 
+    def test_inflections_mark_significant_rate_surges(self) -> None:
+        # Flat coverage, topic goes 0 -> 30 in the pulse window: the series
+        # must carry a surge inflection inside the pulse weeks, and the
+        # steady background topic must carry none.
+        self._fill_background(per_base_week=40, per_pulse_week=40)
+        for i, day in enumerate(_PULSE_MONDAYS[:3]):
+            self._add_labeled(day, "brand new thing", 10,
+                              source_id=f"show_{'abc'[i]}")
+        payload = collect(self.conn, now=_NOW)
+        inflections = payload["topics"]["brand new thing"]["inflections"]
+        self.assertTrue(inflections)
+        self.assertEqual(inflections[0]["kind"], "surge")
+        self.assertIn(inflections[0]["week"],
+                      [s["week"] for s in
+                       payload["topics"]["brand new thing"]["series"][-4:]])
+        background = payload["topics"]["corpus filler noise"]
+        self.assertEqual([i for i in background.get("inflections", [])
+                          if i["kind"] == "surge"], [])
+
     def test_payload_reports_latest_episode_for_freshness_gap(self) -> None:
         self._fill_background(per_base_week=5, per_pulse_week=5)
         payload = collect(self.conn, now=_NOW)
