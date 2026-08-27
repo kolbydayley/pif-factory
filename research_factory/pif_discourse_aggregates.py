@@ -427,6 +427,11 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
                                p["authority"] or 0), reverse=True)
     people = people[:TOP_PEOPLE]
 
+    week_totals = [0] * RECENT_WEEKS
+    for cells in topic_weekly.values():
+        for i, c in cells.items():
+            week_totals[i] += c["vol"]
+
     # ---- topic table + detectors
     topics_out = {}
     detectors = {"emerging": [], "shifting": [], "contested": [], "fading": []}
@@ -444,6 +449,19 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
                 "intensity": round(c["intensity_sum"] / c["vol"], 2)
                 if c and c["vol"] else 0,
             })
+        # Share-of-discourse per week: raw counts inherit the corpus's 10x
+        # weekly coverage swings (81..923 labeled mentions/wk measured
+        # 2026-08-26), which makes evergreen topics look spiky. share is the
+        # honest trend line; low_sample flags weeks too thin to trust.
+        for i, s in enumerate(series):
+            wk_total = week_totals[i]
+            s["share"] = round(s["vol"] / wk_total, 4) if wk_total else 0
+            s["week_total"] = wk_total
+            s["low_sample"] = wk_total < 150
+        for i, s in enumerate(series):
+            lo, hi = max(0, i - 1), min(len(series), i + 2)
+            window = [series[j]["share"] for j in range(lo, hi)]
+            s["share_smooth"] = round(sum(window) / len(window), 4)
         pulse = series[pulse_lo:]
         base = series[:pulse_lo]
         pulse_vol = sum(s["vol"] for s in pulse)
@@ -576,6 +594,7 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         "window_weeks": RECENT_WEEKS,
         "pulse_weeks": PULSE_WEEKS,
         "weeks": weeks,
+        "week_totals": week_totals,
         "corpus": {"episodes": counts["ep"], "labels": counts["lab"],
                    "shows": counts["shows"],
                    "coverage": {k: dict(v) for k, v in coverage.items()}},
