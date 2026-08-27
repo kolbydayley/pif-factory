@@ -334,6 +334,57 @@ class DiscourseDetectorSignificanceTest(unittest.TestCase):
         self.assertEqual(payload["latest_episode"],
                          _PULSE_MONDAYS[-1].isoformat())
 
+    def _add_position(self, episode_id: str, day: dt.date, source_id: str,
+                      person: str, topic: str = "shared topic") -> None:
+        self._n += 1
+        if not self.conn.execute("SELECT 1 FROM episodes WHERE id = ?",
+                                 (episode_id,)).fetchone():
+            self.conn.execute(
+                "INSERT INTO episodes (id, source_id, title, published_at, url)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (episode_id, source_id, episode_id, day.isoformat(),
+                 f"https://example.com/{episode_id}"))
+        sid = f"pseg_{self._n}"
+        self.conn.execute(
+            "INSERT INTO segments (id, episode_id) VALUES (?, ?)",
+            (sid, episode_id))
+        self.conn.execute(
+            "INSERT INTO actor_positions (id, segment_id, actor_name,"
+            " actor_type, concept_name, stance, claim_type, confidence,"
+            " evidence_json) VALUES (?, ?, ?, 'guest', ?, 'supportive',"
+            " 'observation', 0.8, '{\"evidence\":\"quote\"}')",
+            (f"pp_{self._n}", sid, person, topic))
+
+    def test_trust_is_pagerank_over_coappearance_network(self) -> None:
+        d1, d2, d3 = (dt.date(2026, 6, 8), dt.date(2026, 6, 15),
+                      dt.date(2026, 6, 22))
+        # Connector co-appears with two fans across three episodes.
+        for eid, day, src in (("net_e1", d1, "show_a"),
+                              ("net_e2", d2, "show_b"),
+                              ("net_e3", d3, "show_c")):
+            self._add_position(eid, day, src, "Connector")
+        for eid, day, src in (("net_e1", d1, "show_a"),
+                              ("net_e2", d2, "show_b")):
+            self._add_position(eid, day, src, "Fan One")
+        for eid, day, src in (("net_e2", d2, "show_b"),
+                              ("net_e3", d3, "show_c")):
+            self._add_position(eid, day, src, "Fan Two")
+        # Isolated pair only ever appears together.
+        for eid, day in (("net_e4", d1), ("net_e5", d2)):
+            self._add_position(eid, day, "show_d", "Pair A")
+            self._add_position(eid, day, "show_d", "Pair B")
+
+        payload = collect(self.conn, now=_NOW)
+        by_name = {p["name"]: p for p in payload["people"]}
+        for name in ("Connector", "Fan One", "Pair A"):
+            trust = by_name[name]["trust"]
+            for key in ("score", "tier", "n_links", "basis"):
+                self.assertIn(key, trust, name)
+        self.assertGreater(by_name["Connector"]["trust"]["score"],
+                           by_name["Pair A"]["trust"]["score"])
+        self.assertEqual(by_name["Connector"]["trust"]["n_links"], 2)
+        self.assertIn("pagerank", by_name["Connector"]["trust"]["basis"])
+
     def test_every_detector_hit_carries_p_value_and_tier(self) -> None:
         self._fill_background(per_base_week=40, per_pulse_week=40)
         for i, day in enumerate(_PULSE_MONDAYS[:3]):

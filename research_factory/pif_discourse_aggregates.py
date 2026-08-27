@@ -19,6 +19,7 @@ Usage: python3 -m research_factory.pif_discourse_aggregates [--out PATH]
 from __future__ import annotations
 
 import argparse
+import bisect
 import datetime as dt
 import json
 import math
@@ -430,6 +431,43 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
                                p["authority"] or 0,
                                p["n_recent_episodes"]), reverse=True)
     people = people[:TOP_PEOPLE]
+
+    # ---- network trust: PageRank over the co-appearance graph.
+    # Early-Google style (Kolby 2026-08-27): trust grows with the number of
+    # relationships AND the trust of the people on the other end. Edge
+    # weight = shared episodes; subject-blind by construction.
+    ep_people: Dict[str, set] = defaultdict(set)
+    for p in people:
+        for e in people_positions[p["name"]]:
+            ep_people[e["episode_id"]].add(p["name"])
+    co_edges: Dict[str, Dict[str, float]] = defaultdict(dict)
+    for names in ep_people.values():
+        for a in names:
+            for b in names:
+                if a != b:
+                    co_edges[a][b] = co_edges[a].get(b, 0.0) + 1.0
+    net_rank = ds.pagerank(dict(co_edges))
+    if net_rank:
+        top_rank = max(net_rank.values())
+        ranked_scores = sorted(net_rank.values())
+        for p in people:
+            r = net_rank.get(p["name"])
+            if r is None:
+                p["trust"] = {"score": 0.0, "tier": "peripheral",
+                              "n_links": 0,
+                              "basis": "co-appearance pagerank (d=0.85)"}
+                continue
+            pct = bisect.bisect_left(ranked_scores, r) / len(ranked_scores)
+            tier = ("hub" if pct >= 0.75 else
+                    "connected" if pct >= 0.25 else "peripheral")
+            p["trust"] = {"score": round(r / top_rank * 100, 1),
+                          "tier": tier,
+                          "n_links": len(co_edges.get(p["name"], {})),
+                          "basis": "co-appearance pagerank (d=0.85)"}
+    else:
+        for p in people:
+            p["trust"] = {"score": 0.0, "tier": "peripheral", "n_links": 0,
+                          "basis": "co-appearance pagerank (d=0.85)"}
 
     week_totals = [0] * RECENT_WEEKS
     for cells in topic_weekly.values():

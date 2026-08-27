@@ -255,6 +255,39 @@ def confidence_tier(p_value: float, effect_ok: bool, shows: int) -> str:
     return "weak"
 
 
+def pagerank(edges: Dict[str, Dict[str, float]], damping: float = 0.85,
+             max_iter: int = 100, tol: float = 1e-10) -> Dict[str, float]:
+    """Classic PageRank (Brin & Page 1998) over a weighted graph.
+
+    PR(p) = (1-d)/N + d * sum_q PR(q) * w(q,p) / W(q), solved by power
+    iteration with d=0.85. A node's score grows with the number of
+    relationships AND the scores of the nodes on the other end — the
+    early-Google trust recursion Kolby asked for (2026-08-27). Dangling
+    nodes redistribute uniformly. Scores sum to 1.
+    """
+    nodes = sorted(set(edges) | {v for nb in edges.values() for v in nb})
+    n = len(nodes)
+    if n == 0:
+        return {}
+    out_weight = {u: sum(edges.get(u, {}).values()) for u in nodes}
+    rank = {u: 1.0 / n for u in nodes}
+    for _ in range(max_iter):
+        dangling = sum(rank[u] for u in nodes if out_weight[u] <= 0)
+        nxt = {u: (1.0 - damping) / n + damping * dangling / n
+               for u in nodes}
+        for u in nodes:
+            if out_weight[u] <= 0:
+                continue
+            share = damping * rank[u] / out_weight[u]
+            for v, w in edges[u].items():
+                nxt[v] += share * w
+        delta = sum(abs(nxt[u] - rank[u]) for u in nodes)
+        rank = nxt
+        if delta < tol:
+            break
+    return rank
+
+
 def benjamini_hochberg(pvalues: Sequence[float],
                        alpha: float = FDR_ALPHA) -> List[bool]:
     """BH step-up FDR gate. Returns pass/fail per input position."""

@@ -11,6 +11,7 @@ from research_factory.discourse_stats import (
     confidence_tier,
     contested_test,
     fading_test,
+    pagerank,
     poisson_rate_test,
     stance_shift_test,
     wilson_interval,
@@ -129,6 +130,51 @@ class ConfidenceTierTest(unittest.TestCase):
         self.assertEqual(confidence_tier(0.005, True, 2), "moderate")
         self.assertEqual(confidence_tier(0.005, False, 3), "weak")
         self.assertEqual(confidence_tier(0.2, True, 5), "weak")
+
+
+class PageRankTest(unittest.TestCase):
+    def test_star_hub_outranks_leaves(self):
+        edges = {"hub": {"a": 1, "b": 1, "c": 1, "d": 1},
+                 "a": {"hub": 1}, "b": {"hub": 1},
+                 "c": {"hub": 1}, "d": {"hub": 1}}
+        pr = pagerank(edges)
+        self.assertGreater(pr["hub"], pr["a"])
+        self.assertAlmostEqual(pr["a"], pr["d"], places=9)
+
+    def test_strength_of_neighbors_matters(self):
+        # x and y each have ONE relationship, to endorsers with identical
+        # out-degree. x's endorser is itself endorsed by four returning
+        # fans; y's endorser points at dead ends. x must rank higher —
+        # the strength of the node related to you carries through.
+        edges = {"e1": {"f1": 1, "f2": 1, "f3": 1, "f4": 1, "x": 1},
+                 "f1": {"e1": 1}, "f2": {"e1": 1},
+                 "f3": {"e1": 1}, "f4": {"e1": 1}, "x": {"e1": 1},
+                 "e2": {"d1": 1, "d2": 1, "d3": 1, "d4": 1, "y": 1},
+                 "d1": {}, "d2": {}, "d3": {}, "d4": {},
+                 "y": {"e2": 1}}
+        pr = pagerank(edges)
+        self.assertGreater(pr["e1"], pr["e2"])
+        self.assertGreater(pr["x"], 2 * pr["y"])
+
+    def test_edge_weight_matters(self):
+        edges = {"a": {"b": 3, "c": 1},
+                 "b": {"a": 3}, "c": {"a": 1}}
+        pr = pagerank(edges)
+        self.assertGreater(pr["b"], pr["c"])
+
+    def test_scores_sum_to_one_and_deterministic(self):
+        edges = {"a": {"b": 1}, "b": {"a": 1, "c": 2}, "c": {"b": 2}}
+        pr1, pr2 = pagerank(edges), pagerank(edges)
+        self.assertAlmostEqual(sum(pr1.values()), 1.0, places=6)
+        self.assertEqual(pr1, pr2)
+
+    def test_empty_graph(self):
+        self.assertEqual(pagerank({}), {})
+
+    def test_isolated_node_gets_teleport_floor(self):
+        pr = pagerank({"a": {"b": 1}, "b": {"a": 1}, "loner": {}})
+        self.assertGreater(pr["loner"], 0.0)
+        self.assertLess(pr["loner"], pr["a"])
 
 
 class BenjaminiHochbergTest(unittest.TestCase):
