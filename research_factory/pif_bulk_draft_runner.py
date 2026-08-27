@@ -104,8 +104,8 @@ def _shadow_conn() -> sqlite3.Connection:
 # lanes start together). 8 slices weighted by lane throughput; rebalance by
 # editing this table when a lane exhausts its slice.
 N_PARTITIONS = 8
-LANE_PARTITIONS = {"glm-zai": (0, 1, 2, 3, 4), "grok": (5,), "codex": (6,),
-                   "glm": (7,)}
+LANE_PARTITIONS = {"glm-zai": (0, 1, 2), "glm-zai-flash": (3, 4),
+                   "grok": (5,), "codex": (6,), "glm": (7,)}
 
 
 def segment_partition(segment_id: str) -> int:
@@ -265,7 +265,9 @@ def _run(args) -> None:
             return draft_codex(prompt + GLM_JSON_INSTRUCTION, model=profile["model"])
         if (args.transport or profile.get("transport")) == "http":
             return draft_glm_http(prompt + GLM_JSON_INSTRUCTION,
-                                  timeout=args.call_timeout)
+                                  timeout=args.call_timeout,
+                                  model=profile.get("model", "glm-5.2")
+                                  .split("/")[-1])
         return draft_glm(prompt + GLM_JSON_INSTRUCTION, glm_state,
                          model=profile.get("model", "opencode-go/glm-5.2"),
                          timeout=args.call_timeout)

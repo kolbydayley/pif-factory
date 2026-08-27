@@ -70,6 +70,22 @@ LANE_PROFILES: Dict[str, Dict[str, Any]] = {
         "reasoning_effort": None,
         "prompt_addendum": "",
     },
+    "glm-zai-flash": {
+        # Second z.ai pipe on the SAME subscription: z.ai concurrency slots
+        # are PER-MODEL (measured 2026-08-27: 8/8 concurrent glm-5.3-flash
+        # extractions, zero 429s, while glm-5.2's 12 slots were saturated).
+        # 19-30s/call thinking-off. Qualification gate required before
+        # continuous duty like every lane.
+        "model": "glm-5.3-flash",
+        "transport": "http",
+        # 12 workers drew 17/25 429s (flash pool has fewer slots than
+        # glm-5.2's ~12); 8 measured clean.
+        "concurrency": 8,
+        "omission_passes": 0,
+        "window_chars": 6000,
+        "reasoning_effort": None,
+        "prompt_addendum": "",
+    },
     "codex": {
         # Quality lane: the reference model drafting the HARDEST backlog
         # segments (longest-first selection), inside a dedicated 10-point
