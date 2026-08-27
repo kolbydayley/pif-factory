@@ -27,8 +27,11 @@ with zero configuration (explicit Kolby requirement).
 Production URL: <https://dashboards-production-dcba.up.railway.app/d/pif-signal-desk.html>
 
 The Railway `keystone-dashboards` host serves the current published artifact.
-The nightly job regenerates the local artifact only; publishing a new snapshot
-is still a separate, explicit step.
+Kolby authorized automated publishing on 2026-08-27 (Signal Desk 10x
+project): `scripts/pif_dashboard_publish.py` guard-checks the fresh build
+(schema `signal_desk_v4`, non-empty topics, <=2 days old), PUTs it to the
+host, and verifies the public GET is byte-identical. Append it as the third
+step of the `pif-dashboard-refresh` codex-cron job.
 
 Regenerate manually:
 
@@ -83,6 +86,20 @@ stable browser-history state without needing a server-side router:
 On mobile, topic pages put major issues and trusted-voice status before the
 long trend and evidence record. Person pages put biggest recurring claims
 first. Desktop retains the two-column research layout.
+
+## Statistical layer (V4, 2026-08-27)
+
+`research_factory/discourse_stats.py` (pure stdlib) backs every detector:
+exact conditional binomial rate tests for emerging/fading (exposure =
+weekly labeled-mention totals, so corpus-coverage swings never read as
+surges), permutation/chi-square stance-shift tests, a lopsided-null
+contested test, Wilson CIs on weekly stance shares (`pos_ci`/`neg_ci` in
+each series cell), and Benjamini-Hochberg FDR gating. Every detector hit
+carries `p_value`, an effect size with CI, and a `tier`
+(strong/moderate/weak). Weak = passes the legacy raw-count rule but fails
+significance; the front page never shows weak. `low_sample` is now derived
+from the corpus (week_total < 0.25 x median) instead of the inert fixed
+150. Effect floors are provisional pending the Phase-2 backtest sweep.
 
 ## Detectors (subject-blind statistics, in the aggregator)
 

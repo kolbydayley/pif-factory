@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import sqlite3
 import unittest
 from collections import Counter
@@ -186,6 +187,163 @@ class DiscourseAggregateBreadthTest(unittest.TestCase):
             short_excerpt("Speaker 1: First line.\nSpeaker 2: Second line."),
             "First line. Second line.",
         )
+
+
+_SCHEMA = """
+CREATE TABLE episodes (
+  id TEXT PRIMARY KEY, source_id TEXT NOT NULL, title TEXT NOT NULL,
+  published_at TEXT, url TEXT, audio_url TEXT
+);
+CREATE TABLE segments (id TEXT PRIMARY KEY, episode_id TEXT NOT NULL);
+CREATE TABLE labels (segment_id TEXT NOT NULL, output_json TEXT NOT NULL);
+CREATE TABLE actor_positions (
+  id TEXT PRIMARY KEY, segment_id TEXT NOT NULL, actor_name TEXT,
+  actor_type TEXT, concept_name TEXT, stance TEXT, claim_type TEXT,
+  confidence REAL, evidence_json TEXT NOT NULL
+);
+CREATE TABLE canonical_people (id TEXT PRIMARY KEY, display_name TEXT);
+CREATE TABLE expert_authority_scores (
+  canonical_person_id TEXT, score REAL, status TEXT
+);
+"""
+
+# now=2026-07-01 -> 26-week frame W02..W27; Mondays Jan 5 .. Jun 29.
+_NOW = dt.date(2026, 7, 1)
+_BASE_MONDAYS = [dt.date(2026, 1, 5) + dt.timedelta(weeks=k)
+                 for k in range(22)]
+_PULSE_MONDAYS = [dt.date(2026, 6, 8) + dt.timedelta(weeks=k)
+                  for k in range(4)]
+
+
+class DiscourseDetectorSignificanceTest(unittest.TestCase):
+    """Detectors must carry p-values/tiers and ignore coverage artifacts."""
+
+    def setUp(self) -> None:
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(_SCHEMA)
+        self._n = 0
+
+    def tearDown(self) -> None:
+        self.conn.close()
+
+    def _add_labeled(self, day: dt.date, topic: str, count: int,
+                     stance: str = "neutral", source_id: str = "show_bg",
+                     episode_id: str | None = None) -> None:
+        self._n += 1
+        eid = episode_id or f"ep_{self._n}"
+        row = self.conn.execute(
+            "SELECT 1 FROM episodes WHERE id = ?", (eid,)).fetchone()
+        if not row:
+            self.conn.execute(
+                "INSERT INTO episodes (id, source_id, title, published_at, url)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (eid, source_id, eid, day.isoformat(),
+                 f"https://example.com/{eid}"))
+        sid = f"seg_{self._n}"
+        self.conn.execute(
+            "INSERT INTO segments (id, episode_id) VALUES (?, ?)", (sid, eid))
+        topics = [{"topic": topic, "stance": stance, "intensity": 1}] * count
+        self.conn.execute(
+            "INSERT INTO labels (segment_id, output_json) VALUES (?, ?)",
+            (sid, json.dumps({"topics": topics})))
+
+    def _fill_background(self, per_base_week: int, per_pulse_week: int,
+                         topic: str = "corpus filler noise") -> None:
+        for day in _BASE_MONDAYS:
+            self._add_labeled(day, topic, per_base_week)
+        for day in _PULSE_MONDAYS:
+            self._add_labeled(day, topic, per_pulse_week)
+
+    def test_coverage_driven_jump_fires_at_most_weak(self) -> None:
+        # Corpus coverage jumps 3->40 mentions/week in the pulse window.
+        # The target topic's raw count jumps with it, but its RATE does not.
+        self._fill_background(per_base_week=3, per_pulse_week=40)
+        self._add_labeled(dt.date(2026, 3, 9), "spiky term", 1,
+                          source_id="show_a")
+        self._add_labeled(dt.date(2026, 4, 13), "spiky term", 1,
+                          source_id="show_b")
+        for i, day in enumerate(_PULSE_MONDAYS[:3]):
+            self._add_labeled(day, "spiky term", 4,
+                              source_id=f"show_{'abc'[i]}")
+
+        payload = collect(self.conn, now=_NOW)
+        hits = [d for d in payload["detectors"]["emerging"]
+                if d["topic"] == "spiky term"]
+        self.assertTrue(hits, "legacy rule should still surface it as weak")
+        self.assertEqual(hits[0]["tier"], "weak")
+        self.assertIn("p_value", hits[0])
+
+    def test_genuine_rate_surge_fires_strong(self) -> None:
+        # Coverage is FLAT (40/week throughout); the topic goes 0 -> 30.
+        self._fill_background(per_base_week=40, per_pulse_week=40)
+        for i, day in enumerate(_PULSE_MONDAYS[:3]):
+            self._add_labeled(day, "brand new thing", 10,
+                              source_id=f"show_{'abc'[i]}")
+
+        payload = collect(self.conn, now=_NOW)
+        hits = [d for d in payload["detectors"]["emerging"]
+                if d["topic"] == "brand new thing"]
+        self.assertTrue(hits)
+        self.assertEqual(hits[0]["tier"], "strong")
+        self.assertLess(hits[0]["p_value"], 0.01)
+
+    def test_tiny_stance_flip_fires_at_most_weak_shifting(self) -> None:
+        # 10 baseline vs 8 pulse observations with TV ~0.33 — the legacy
+        # 0.3 threshold fired on this; it must now be weak at best.
+        self._fill_background(per_base_week=5, per_pulse_week=5)
+        base_days = [dt.date(2026, 2, 9), dt.date(2026, 3, 9),
+                     dt.date(2026, 4, 13)]
+        for i, day in enumerate(base_days):
+            self._add_labeled(day, "flip topic", 1, stance="supportive",
+                              source_id=f"show_{'abc'[i]}")
+        for i, day in enumerate(base_days):
+            self._add_labeled(day, "flip topic", 2 if i < 2 else 3,
+                              stance="skeptical", source_id=f"show_{'abc'[i]}")
+        for i, day in enumerate(_PULSE_MONDAYS[:3]):
+            self._add_labeled(day, "flip topic",
+                              2 if i < 2 else 1, stance="supportive",
+                              source_id=f"show_{'abc'[i]}")
+        self._add_labeled(_PULSE_MONDAYS[0], "flip topic", 3,
+                          stance="skeptical", source_id="show_a")
+
+        payload = collect(self.conn, now=_NOW)
+        hits = [d for d in payload["detectors"]["shifting"]
+                if d["topic"] == "flip topic"]
+        if hits:  # may legitimately fire under the legacy rule
+            self.assertEqual(hits[0]["tier"], "weak")
+
+    def test_low_sample_flag_fires_on_thin_weeks(self) -> None:
+        # 20 mentions/week everywhere except one pulse week with 2.
+        for day in _BASE_MONDAYS:
+            self._add_labeled(day, "corpus filler noise", 20)
+        for day in _PULSE_MONDAYS[:3]:
+            self._add_labeled(day, "corpus filler noise", 20)
+        self._add_labeled(_PULSE_MONDAYS[3], "corpus filler noise", 2)
+
+        payload = collect(self.conn, now=_NOW)
+        series = payload["topics"]["corpus filler noise"]["series"]
+        flags = [s["low_sample"] for s in series if s["week_total"] > 0]
+        self.assertEqual(sum(flags), 1)
+        thin_week = next(s for s in series if s["week_total"] == 2)
+        self.assertTrue(thin_week["low_sample"])
+
+    def test_payload_reports_latest_episode_for_freshness_gap(self) -> None:
+        self._fill_background(per_base_week=5, per_pulse_week=5)
+        payload = collect(self.conn, now=_NOW)
+        self.assertEqual(payload["latest_episode"],
+                         _PULSE_MONDAYS[-1].isoformat())
+
+    def test_every_detector_hit_carries_p_value_and_tier(self) -> None:
+        self._fill_background(per_base_week=40, per_pulse_week=40)
+        for i, day in enumerate(_PULSE_MONDAYS[:3]):
+            self._add_labeled(day, "brand new thing", 10,
+                              source_id=f"show_{'abc'[i]}")
+        payload = collect(self.conn, now=_NOW)
+        for family, entries in payload["detectors"].items():
+            for entry in entries:
+                self.assertIn("p_value", entry, f"{family}: {entry}")
+                self.assertIn("tier", entry, f"{family}: {entry}")
 
 
 if __name__ == "__main__":

@@ -24,6 +24,9 @@ import json
 import math
 import re
 import sqlite3
+import statistics
+
+from research_factory import discourse_stats as ds
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -437,6 +440,16 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
     topics_out = {}
     detectors = {"emerging": [], "shifting": [], "contested": [], "fading": []}
     pulse_lo = RECENT_WEEKS - PULSE_WEEKS
+    # Exposure = total labeled mentions per window. Rate tests condition on
+    # it, so a week where the corpus simply covered 3x the ground does not
+    # read as a topic surge (Kolby 2026-08-27: the spikes were coverage
+    # artifacts, not trends).
+    pulse_exposure = sum(week_totals[pulse_lo:])
+    base_exposure = sum(week_totals[:pulse_lo])
+    # The fixed low_sample cutoff of 150 never fired on live data (weekly
+    # totals 544-4634 measured 2026-08-27); derive it from the corpus.
+    week_median = statistics.median(week_totals) if week_totals else 0
+    low_sample_floor = 0.25 * week_median
     for topic, _n in topic_total.most_common(TOP_TOPICS * 3):
         cells = topic_weekly[topic]
         series = []
@@ -458,7 +471,13 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             wk_total = week_totals[i]
             s["share"] = round(s["vol"] / wk_total, 4) if wk_total else 0
             s["week_total"] = wk_total
-            s["low_sample"] = wk_total < 150
+            s["low_sample"] = bool(wk_total < low_sample_floor)
+            s["thin"] = s["vol"] < 3
+            if s["vol"]:
+                s["pos_ci"] = [round(x, 3)
+                               for x in ds.wilson_interval(s["pos"], s["vol"])]
+                s["neg_ci"] = [round(x, 3)
+                               for x in ds.wilson_interval(s["neg"], s["vol"])]
         for i, s in enumerate(series):
             lo, hi = max(0, i - 1), min(len(series), i + 2)
             window = [series[j]["share"] for j in range(lo, hi)]
@@ -466,7 +485,8 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         pulse = series[pulse_lo:]
         base = series[:pulse_lo]
         pulse_vol = sum(s["vol"] for s in pulse)
-        base_rate = sum(s["vol"] for s in base) / max(1, BASELINE_WEEKS)
+        base_vol = sum(s["vol"] for s in base)
+        base_rate = base_vol / max(1, BASELINE_WEEKS)
         pulse_rate = pulse_vol / PULSE_WEEKS
         info = {"series": series, "total": topic_total[topic],
                 "pulse_vol": pulse_vol,
@@ -490,41 +510,90 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         info["pulse_episodes"] = p_eps
         info["pulse_shows"] = p_shows
         if pulse_vol >= 8 and base_rate < 0.5 and p_eps >= 3 and p_shows >= 2:
+            rt = ds.poisson_rate_test(pulse_vol, pulse_exposure,
+                                      base_vol, base_exposure)
+            effect_ok = rt["rate_ratio"] >= ds.EMERGING_RATE_RATIO_FLOOR
             detectors["emerging"].append(
                 {"topic": topic, "pulse_vol": pulse_vol,
                  "base_rate": round(base_rate, 2),
-                 "episodes": p_eps, "shows": p_shows})
+                 "episodes": p_eps, "shows": p_shows,
+                 "p_value": round(rt["p_value"], 5),
+                 "rate_ratio": round(rt["rate_ratio"], 2),
+                 "rate_ratio_ci": [round(x, 2) for x in rt["rate_ratio_ci"]],
+                 "effect": round(rt["rate_ratio"], 2),
+                 "tier": ds.confidence_tier(rt["p_value"], effect_ok,
+                                            p_shows)})
         dp, db = stance_dist(pulse), stance_dist(base)
-        if dp and db and sum(s["vol"] for s in base) >= 10 and pulse_vol >= 8:
+        if dp and db and base_vol >= 10 and pulse_vol >= 8:
             div = sum(abs(a - b) for a, b in zip(dp, db)) / 2
             if div >= 0.3 and p_eps >= 3 and p_shows >= 2 and b_eps >= 3:
+                sh = ds.stance_shift_test(
+                    [sum(s["pos"] for s in pulse),
+                     sum(s["neg"] for s in pulse),
+                     sum(s["neu"] for s in pulse)],
+                    [sum(s["pos"] for s in base),
+                     sum(s["neg"] for s in base),
+                     sum(s["neu"] for s in base)])
+                effect_ok = div >= ds.SHIFT_TV_FLOOR
                 detectors["shifting"].append(
                     {"topic": topic, "divergence": round(div, 2),
                      "now": [round(x, 2) for x in dp],
                      "before": [round(x, 2) for x in db],
-                     "episodes": p_eps, "shows": p_shows})
+                     "episodes": p_eps, "shows": p_shows,
+                     "p_value": round(sh["p_value"], 5),
+                     "tv_ci": list(sh["tv_ci"]),
+                     "effect": round(div, 2),
+                     "tier": ds.confidence_tier(sh["p_value"], effect_ok,
+                                                p_shows)})
         field = concept_field.get(topic)
         if field and sum(field.values()) >= 8:
             p = field.get("positive", 0)
             n = field.get("negative", 0)
             if p and n and min(p, n) / max(p, n) >= 0.5 \
                     and p_eps >= 3 and p_shows >= 2:
+                ct = ds.contested_test(p, n, field.get("neutral", 0))
+                effect_ok = ct["balance"] >= ds.CONTESTED_BALANCE_FLOOR
                 detectors["contested"].append(
                     {"topic": topic, "positive": p, "negative": n,
                      "neutral": field.get("neutral", 0),
-                     "episodes": p_eps, "shows": p_shows})
+                     "episodes": p_eps, "shows": p_shows,
+                     "p_value": round(ct["p_value"], 5),
+                     "pos_share_ci": [round(x, 3)
+                                      for x in ct["pos_share_ci"]],
+                     "effect": round(ct["balance"], 2),
+                     "tier": ds.confidence_tier(ct["p_value"], effect_ok,
+                                                p_shows)})
         peak = max((s["vol"] for s in base), default=0)
+        b_shows = len(br.get("base_shows", ()))
         if peak >= 8 and pulse_rate <= 0.25 * peak and pulse_vol <= 2 \
-                and b_eps >= 5 and len(br.get("base_shows", ())) >= 2:
+                and b_eps >= 5 and b_shows >= 2:
+            ft = ds.fading_test(pulse_vol, pulse_exposure,
+                                base_vol, base_exposure)
+            effect_ok = ft["rate_ratio"] <= ds.FADING_RATE_RATIO_CEIL
             detectors["fading"].append(
                 {"topic": topic, "peak_week_vol": peak,
-                 "pulse_vol": pulse_vol, "base_episodes": b_eps})
+                 "pulse_vol": pulse_vol, "base_episodes": b_eps,
+                 "shows": b_shows,
+                 "p_value": round(ft["p_value"], 5),
+                 "rate_ratio": round(ft["rate_ratio"], 3),
+                 "effect": round(1.0 / max(ft["rate_ratio"], 1e-6), 2),
+                 "tier": ds.confidence_tier(ft["p_value"], effect_ok,
+                                            b_shows)})
+    # One test ran per candidate topic per family; without FDR control a
+    # weekly crop of false "strong" firings is guaranteed. BH demotes
+    # strong hits that don't survive the family-wise gate.
+    _tier_rank = {"strong": 2, "moderate": 1, "weak": 0}
     for key in detectors:
-        detectors[key].sort(key=lambda x: (x.get("shows", 0),
-                                           x.get("episodes",
-                                                 x.get("base_episodes", 0))),
-                            reverse=True)
-        detectors[key] = detectors[key][:15]
+        entries = detectors[key]
+        survives = ds.benjamini_hochberg([e["p_value"] for e in entries])
+        for e, ok in zip(entries, survives):
+            if e["tier"] == "strong" and not ok:
+                e["tier"] = "moderate"
+        entries.sort(key=lambda x: (_tier_rank[x["tier"]],
+                                    x.get("effect", 0),
+                                    x.get("shows", 0)),
+                     reverse=True)
+        detectors[key] = entries[:15]
 
     # ---- progressive-disclosure research layers
     related_counts: Dict[str, Counter] = defaultdict(Counter)
@@ -588,8 +657,11 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
     counts = conn.execute(
         "SELECT (SELECT COUNT(*) FROM episodes) ep,"
         " (SELECT COUNT(*) FROM labels) lab,"
-        " (SELECT COUNT(DISTINCT source_id) FROM episodes) shows").fetchone()
+        " (SELECT COUNT(DISTINCT source_id) FROM episodes) shows,"
+        " (SELECT MAX(published_at) FROM episodes) latest").fetchone()
     return {
+        "schema_version": "signal_desk_v4",
+        "latest_episode": (counts["latest"] or "")[:10] or None,
         "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
         "data_through": (now or dt.date.today()).isoformat(),
         "window_weeks": RECENT_WEEKS,
