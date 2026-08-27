@@ -17,7 +17,9 @@ class DiscourseAggregateBreadthTest(unittest.TestCase):
               id TEXT PRIMARY KEY,
               source_id TEXT NOT NULL,
               title TEXT NOT NULL,
-              published_at TEXT
+              published_at TEXT,
+              url TEXT,
+              audio_url TEXT
             );
             CREATE TABLE segments (
               id TEXT PRIMARY KEY,
@@ -28,12 +30,14 @@ class DiscourseAggregateBreadthTest(unittest.TestCase):
               output_json TEXT NOT NULL
             );
             CREATE TABLE actor_positions (
+              id TEXT PRIMARY KEY,
               segment_id TEXT NOT NULL,
               actor_name TEXT,
               actor_type TEXT,
               concept_name TEXT,
               stance TEXT,
               claim_type TEXT,
+              confidence REAL,
               evidence_json TEXT NOT NULL
             );
             CREATE TABLE canonical_people (
@@ -49,12 +53,15 @@ class DiscourseAggregateBreadthTest(unittest.TestCase):
         )
         self.conn.executemany(
             """
-            INSERT INTO episodes (id, source_id, title, published_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO episodes
+              (id, source_id, title, published_at, url, audio_url)
+            VALUES (?, ?, ?, ?, ?, NULL)
             """,
             (
-                ("ep_one", "show_one", "Episode One", "2026-06-15"),
-                ("ep_two", "show_two", "Episode Two", "2026-06-22"),
+                ("ep_one", "show_one", "Episode One", "2026-06-15",
+                 "https://example.com/episode-one"),
+                ("ep_two", "show_two", "Episode Two", "2026-06-22",
+                 "https://example.com/episode-two"),
             ),
         )
         self.conn.executemany(
@@ -71,21 +78,23 @@ class DiscourseAggregateBreadthTest(unittest.TestCase):
             for occurrence in range(2):
                 positions.append(
                     (
+                        f"pos_{segment_id}_{occurrence}",
                         segment_id,
                         f"Speaker {segment_id} {occurrence}",
                         "guest",
                         "single_episode_phrase",
                         "supportive",
                         "observation",
-                        "{}",
+                        0.8,
+                        '{"evidence":"A short exact quote."}',
                     )
                 )
         self.conn.executemany(
             """
             INSERT INTO actor_positions
-              (segment_id, actor_name, actor_type, concept_name, stance,
-               claim_type, evidence_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+              (id, segment_id, actor_name, actor_type, concept_name, stance,
+               claim_type, confidence, evidence_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             positions,
         )
@@ -101,6 +110,32 @@ class DiscourseAggregateBreadthTest(unittest.TestCase):
         self.assertEqual(topic["pulse_episodes"], 2)
         self.assertEqual(topic["pulse_shows"], 2)
         self.assertEqual(payload["detectors"]["emerging"], [])
+        self.assertEqual(len(topic["evidence"]), 8)
+        self.assertEqual(
+            {item["source_url"] for item in topic["evidence"]},
+            {"https://example.com/episode-one",
+             "https://example.com/episode-two"},
+        )
+
+    def test_topic_related_issues_are_episode_breadth_ranked(self) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO actor_positions
+              (id, segment_id, actor_name, actor_type, concept_name, stance,
+               claim_type, confidence, evidence_json)
+            VALUES ('pos_related', 'seg_one_a', 'Related Speaker', 'guest',
+                    'adjacent_issue', 'skeptical', 'observation', 0.7,
+                    '{"evidence":"A related issue quote."}')
+            """
+        )
+
+        payload = collect(self.conn, now=dt.date(2026, 7, 1))
+
+        self.assertEqual(
+            payload["topics"]["single episode phrase"]["related"][0],
+            {"topic": "adjacent issue", "shared_episodes": 1,
+             "shared_shows": 1},
+        )
 
 
 if __name__ == "__main__":

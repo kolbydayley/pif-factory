@@ -1,340 +1,53 @@
 #!/usr/bin/env python3
-"""Render the discourse dashboard: single self-contained HTML file.
+"""Render Signal Desk as a self-contained, deep-linkable research app."""
 
-Reads work/pif-ops/dashboard/data.json (produced by
-research_factory.pif_discourse_aggregates) and writes dashboard.html beside
-it. No server, no network dependencies beyond Google Fonts (graceful
-fallbacks); all data embedded.
-
-Usage: python3 scripts/pif_dashboard_build.py
-"""
 import json
 from pathlib import Path
+
 
 PIF_ROOT = Path.home() / "pif-factory"
 DATA = PIF_ROOT / "work" / "pif-ops" / "dashboard" / "data.json"
 OUT = PIF_ROOT / "work" / "pif-ops" / "dashboard" / "dashboard.html"
 
+
 TEMPLATE = r"""<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#faf8f3">
 <title>Signal Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-:root{
-  --paper:#faf8f3; --panel:#ffffff; --ink:#171614; --ink-2:#57544d;
-  --ink-3:#8b877c; --rule:#e4e0d5; --rule-2:#d3cec0;
-  --pos:#2a78d6; --neg:#e34948; --neu:#c9c5ba; --accent:#1baf7a;
-  --gold:#eda100; --violet:#4a3aa7;
-  --serif:"Fraunces",Georgia,serif; --sans:"IBM Plex Sans",-apple-system,sans-serif;
-  --mono:"IBM Plex Mono",ui-monospace,monospace;
-}
-*{box-sizing:border-box;margin:0}
-html{color-scheme:light}
-body{background:var(--paper);color:var(--ink);font:15px/1.5 var(--sans);
-  background-image:radial-gradient(rgba(23,22,20,.028) 1px,transparent 1px);
-  background-size:26px 26px}
-a{color:inherit}
-.wrap{max-width:1320px;margin:0 auto;padding:0 28px 80px}
-
-/* ---- masthead */
-header{border-bottom:3px double var(--rule-2);padding:34px 0 18px;margin-bottom:10px}
-.mast{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap}
-h1{font:900 clamp(34px,4.6vw,54px)/0.95 var(--serif);letter-spacing:-.02em}
-h1 em{font-style:italic;font-weight:500;color:var(--ink-2)}
-.mast-right{text-align:right;font:12px/1.7 var(--mono);color:var(--ink-2)}
-.mast-right b{color:var(--ink)}
-.chip{display:inline-block;border:1px solid var(--rule-2);border-radius:999px;
-  padding:2px 10px;font:11px var(--mono);color:var(--ink-2);margin-left:6px}
-.chip.warn{border-color:var(--gold);color:#8a5c00;background:#fdf6e3}
-.tagline{font:13px var(--mono);color:var(--ink-3);margin-top:6px;letter-spacing:.06em;text-transform:uppercase}
-
-/* ---- signal strip */
-.signals{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin:26px 0 34px}
-.sig{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:14px 16px;
-  box-shadow:0 1px 0 rgba(23,22,20,.04);cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
-.sig:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(23,22,20,.08)}
-.sig-kind{font:11px var(--mono);letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:7px}
-.sig-kind .dot{width:8px;height:8px;border-radius:2px;flex:none}
-.sig h3{font:700 19px/1.2 var(--serif);margin:7px 0 3px;text-transform:capitalize}
-.sig p{font-size:12.5px;color:var(--ink-2)}
-.sig svg{display:block;margin-top:8px}
-
-/* ---- layout */
-.cols{display:grid;grid-template-columns:minmax(380px,5fr) minmax(420px,7fr);gap:34px;align-items:start}
-@media(max-width:980px){.cols{grid-template-columns:1fr}}
-section>h2{font:700 15px var(--mono);letter-spacing:.16em;text-transform:uppercase;
-  border-bottom:2px solid var(--ink);padding-bottom:8px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:baseline}
-section>h2 span{font:12px var(--mono);color:var(--ink-3);letter-spacing:0;text-transform:none}
-.search{width:100%;border:1px solid var(--rule-2);border-radius:8px;background:var(--panel);
-  padding:9px 13px;font:14px var(--sans);color:var(--ink);margin-bottom:14px}
-.search:focus{outline:2px solid var(--pos);outline-offset:1px;border-color:transparent}
-
-/* ---- people */
-.person{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:13px 16px;margin-bottom:10px;cursor:pointer;
-  transition:border-color .12s}
-.person:hover{border-color:var(--ink-3)}
-.p-top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
-.p-name{font:700 18px/1.15 var(--serif)}
-.p-meta{font:11px var(--mono);color:var(--ink-3);white-space:nowrap}
-.badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
-.badge{font:11px/1 var(--mono);padding:4px 8px;border-radius:5px;border:1px solid}
-.badge.moved{color:#7a3b93;border-color:#d9bfe4;background:#f7effa}
-.badge.against{color:#8a5c00;border-color:#ecd9a1;background:#fdf6e3}
-.badge.auth{color:#12513c;border-color:#bfe0d2;background:#eefaf4}
-.p-shows{font:11.5px var(--mono);color:var(--ink-3);margin-top:6px}
-
-/* ---- topics */
-.topic-row{display:grid;grid-template-columns:1fr 96px 70px;gap:10px;align-items:center;
-  padding:8px 10px;border-bottom:1px solid var(--rule);cursor:pointer;border-radius:6px}
-.topic-row:hover{background:var(--panel)}
-.topic-row.sel{background:var(--panel);outline:1px solid var(--rule-2)}
-.t-name{font:600 14px var(--sans);text-transform:capitalize;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.t-vol{font:12px var(--mono);color:var(--ink-2);text-align:right}
-
-/* ---- detail panel */
-.detail{background:var(--panel);border:1px solid var(--rule-2);border-radius:12px;padding:20px 22px;margin-top:16px;
-  box-shadow:0 10px 30px rgba(23,22,20,.06)}
-.detail h3{font:900 26px/1.05 var(--serif);text-transform:capitalize;margin-bottom:2px}
-.detail .sub{font:12px var(--mono);color:var(--ink-3);margin-bottom:14px}
-.legend{display:flex;gap:16px;font:11.5px var(--mono);color:var(--ink-2);margin:10px 0 2px}
-.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
-.quote{border-left:3px solid var(--rule-2);padding:8px 14px;margin:10px 0;font-size:13.5px}
-.quote .q{font-style:italic;font-family:var(--serif);font-size:15px;line-height:1.45}
-.quote .who{font:11px var(--mono);color:var(--ink-3);margin-top:5px}
-.stance-pos{color:var(--pos)} .stance-neg{color:var(--neg)} .stance-neu{color:var(--ink-3)}
-.move-line{font-size:13px;padding:7px 0;border-bottom:1px dashed var(--rule)}
-.move-line b{text-transform:capitalize}
-.close-x{float:right;border:none;background:none;font:16px var(--mono);color:var(--ink-3);cursor:pointer}
-
-/* ---- footer / coverage */
-footer{margin-top:48px;border-top:3px double var(--rule-2);padding-top:16px}
-footer h2{font:700 12px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2);margin-bottom:10px}
-.foot-note{font:11.5px var(--mono);color:var(--ink-3);margin-top:8px;line-height:1.7}
-
-/* ---- tooltip */
-#tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--paper);
-  font:12px var(--mono);padding:7px 10px;border-radius:6px;opacity:0;transition:opacity .1s;z-index:50;max-width:280px}
-.bar-seg{shape-rendering:crispEdges}
-.reveal{animation:rise .5s ease both}
-@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+:root{--paper:#faf8f3;--panel:#fff;--ink:#171614;--ink2:#57544d;--ink3:#817d73;--rule:#e4e0d5;--rule2:#d3cec0;--blue:#2a78d6;--red:#d84b4a;--green:#178b62;--gold:#a56b00;--violet:#5540a6;--neutral:#b9b4a8;--serif:"Fraunces",Georgia,serif;--sans:"IBM Plex Sans",-apple-system,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace;--shadow:0 12px 32px rgba(23,22,20,.08)}
+*{box-sizing:border-box}html{color-scheme:light;scroll-behavior:smooth}body{margin:0;overflow-x:hidden;background:var(--paper);color:var(--ink);font:15px/1.5 var(--sans);background-image:radial-gradient(rgba(23,22,20,.025) 1px,transparent 1px);background-size:26px 26px}button,input,a{font:inherit}button{color:inherit}a{color:inherit}button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid rgba(42,120,214,.35);outline-offset:3px}#app:focus{outline:none}.shell{max-width:1180px;margin:auto;padding:0 28px 90px}
+.topbar{min-height:70px;display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:1px solid var(--rule2);background:rgba(250,248,243,.96);position:sticky;top:0;z-index:20}.brand{border:0;background:none;padding:8px 0;cursor:pointer;text-align:left}.brand strong{font:900 26px/1 var(--serif)}.brand span{font:11px var(--mono);color:var(--ink3);margin-left:10px}.desktop-nav{display:flex;gap:4px}.nav-link{border:0;background:transparent;border-radius:999px;padding:10px 14px;color:var(--ink2);cursor:pointer;font-weight:600}.nav-link.active{background:var(--ink);color:var(--paper)}.bottom-nav{display:none}.view{padding-top:34px}.eyebrow{font:500 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
+h1,h2,h3,p{margin:0}h1{font:900 clamp(36px,6vw,68px)/.98 var(--serif);letter-spacing:-.025em}h2{font:700 clamp(25px,3vw,36px)/1.08 var(--serif)}h3{font:700 20px/1.15 var(--serif)}.lede{max-width:720px;margin-top:12px;color:var(--ink2);font-size:17px}.title-case{text-transform:capitalize}.home-head{display:grid;grid-template-columns:1fr auto;gap:24px;align-items:end;margin-bottom:26px}.status{border:1px solid #e3c276;background:#fff9e9;color:#775000;border-radius:999px;padding:7px 11px;font:11px var(--mono);max-width:330px}.section-head{display:flex;align-items:end;justify-content:space-between;gap:20px;border-bottom:2px solid var(--ink);padding-bottom:10px;margin:34px 0 16px}.section-head p{font:12px var(--mono);color:var(--ink3)}
+.signal-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.signal-card,.person-card,.topic-card,.issue-card{width:100%;text-align:left;background:var(--panel);border:1px solid var(--rule);border-radius:14px;cursor:pointer;transition:.15s transform,.15s border-color,.15s box-shadow}.signal-card{padding:18px;min-height:182px;display:grid;grid-template-rows:auto auto 1fr auto}.signal-card:hover,.person-card:hover,.topic-card:hover,.issue-card:hover{transform:translateY(-2px);border-color:var(--rule2);box-shadow:var(--shadow)}.signal-kind{font:500 11px var(--mono);letter-spacing:.12em;text-transform:uppercase}.signal-card h3{font-size:24px;margin:9px 0 5px;text-transform:capitalize}.signal-card p{color:var(--ink2)}.card-foot{display:flex;align-items:end;justify-content:space-between;gap:18px;margin-top:16px}.explore{font:600 12px var(--sans);color:var(--blue)}.spark{height:44px;width:150px;display:flex;align-items:flex-end;gap:3px}.spark i{display:block;flex:1;min-width:2px;background:currentColor;border-radius:3px 3px 1px 1px;opacity:.82}
+.browse-grid{display:grid;grid-template-columns:1fr 1fr;gap:30px}.list{display:grid;gap:10px}.person-card,.topic-card{padding:15px 16px}.row-top{display:flex;justify-content:space-between;gap:12px;align-items:start}.row-title{font:700 19px/1.2 var(--serif);text-transform:capitalize}.meta{font:11px var(--mono);color:var(--ink3)}.pill-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.pill{border:1px solid var(--rule2);border-radius:999px;padding:4px 8px;font:11px var(--mono);color:var(--ink2);background:var(--paper)}.pill.trust{border-color:#b9dccf;background:#eef9f4;color:#155c43}.pill.shift{border-color:#d7c7e4;background:#f7f1fb;color:#6e3f88}.search{width:100%;min-height:46px;border:1px solid var(--rule2);border-radius:10px;background:var(--panel);padding:10px 13px;margin-bottom:12px;color:var(--ink)}
+.back{border:0;background:transparent;color:var(--blue);font-weight:600;min-height:44px;padding:0;cursor:pointer}.detail-head{display:grid;grid-template-columns:1fr auto;gap:24px;align-items:end;margin:10px 0 24px}.detail-head h1{font-size:clamp(38px,7vw,72px);text-transform:capitalize}.detail-label{color:var(--green);margin-bottom:8px}.metric-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.metric{background:var(--panel);border:1px solid var(--rule);border-radius:12px;padding:14px}.metric b{font:700 24px var(--serif);display:block}.metric span{font:11px var(--mono);color:var(--ink3)}.research-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(290px,.6fr);gap:24px;align-items:start;margin-top:24px}.research-grid>*{min-width:0}.panel{min-width:0;background:var(--panel);border:1px solid var(--rule);border-radius:16px;padding:20px}.panel+.panel{margin-top:16px}.panel-title{font:700 22px var(--serif);margin-bottom:4px}.panel-sub{color:var(--ink2);font-size:13px;margin-bottom:16px}
+.trend-scroll{overflow-x:auto;padding:6px 2px 10px}.trend{height:150px;min-width:650px;display:flex;align-items:end;gap:5px;border-bottom:1px solid var(--rule2);padding:0 2px}.week-bar{width:100%;height:140px;min-width:18px;border:0;background:transparent;display:flex;flex-direction:column;justify-content:flex-end;padding:0;cursor:pointer}.week-bar .bar{display:flex;flex-direction:column-reverse;width:100%;min-height:2px;border-radius:4px 4px 1px 1px;overflow:hidden}.week-bar .bar i{display:block;width:100%}.week-bar:hover .bar,.week-bar.active .bar{box-shadow:0 0 0 2px var(--ink)}.week-label{font:9px var(--mono);color:var(--ink3);margin-top:5px}.filter-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.filter{min-height:42px;border:1px solid var(--rule2);background:var(--paper);border-radius:999px;padding:7px 11px;cursor:pointer}.filter.active{background:var(--ink);color:var(--paper)}
+.issue-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.issue-card{padding:12px}.issue-card b{display:block;text-transform:capitalize}.issue-card span{font:11px var(--mono);color:var(--ink3)}.callout{border-left:4px solid var(--gold);background:#fff9e9;padding:12px 14px;border-radius:8px;color:#6f4c08;font-size:13px}.evidence-list{display:grid;gap:12px}.evidence{border:1px solid var(--rule);border-radius:14px;background:var(--panel);padding:16px}.evidence-top{display:flex;justify-content:space-between;gap:12px;align-items:start}.person-link{border:0;background:none;padding:0;cursor:pointer;text-align:left;font-weight:700}.quote{font:500 18px/1.42 var(--serif);margin:13px 0;color:#292722}.source-line{display:flex;justify-content:space-between;gap:16px;align-items:end;color:var(--ink3);font:11px/1.45 var(--mono)}.source-line a{color:var(--blue);font-weight:600;text-decoration:none;min-height:36px;display:inline-flex;align-items:center}.stance{border-radius:999px;padding:4px 8px;font:10px var(--mono);text-transform:uppercase}.stance.positive{background:#eaf3fe;color:#175aab}.stance.negative{background:#fff0ef;color:#a12c2c}.stance.neutral{background:#f0eee8;color:#625e56}
+.claim-list{display:grid;gap:9px}.claim{border:1px solid var(--rule);border-radius:12px;padding:13px;background:var(--panel);cursor:pointer;text-align:left}.claim b{display:block;text-transform:capitalize}.claim .stance-line{display:flex;height:5px;border-radius:999px;overflow:hidden;margin-top:9px;background:var(--rule)}.stance-line i{display:block}.empty{padding:24px;border:1px dashed var(--rule2);border-radius:12px;color:var(--ink2)}.evidence-page{max-width:760px;margin:auto}.evidence-page blockquote{font:500 clamp(28px,5vw,46px)/1.25 var(--serif);margin:22px 0}.source-card{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:18px}.button-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}.primary,.secondary{min-height:46px;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600}.primary{border:1px solid var(--ink);background:var(--ink);color:var(--paper)}.secondary{border:1px solid var(--rule2);background:var(--panel)}.coverage{margin-top:42px;padding-top:16px;border-top:3px double var(--rule2);color:var(--ink3);font:11px/1.7 var(--mono)}
+@media(max-width:820px){.shell{padding:0 16px calc(92px + env(safe-area-inset-bottom))}.topbar{min-height:58px}.brand strong{font-size:22px}.brand span{display:none}.desktop-nav{display:none}.bottom-nav{display:grid;grid-template-columns:repeat(3,1fr);position:fixed;left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:30;background:rgba(255,255,255,.96);border:1px solid var(--rule2);border-radius:16px;padding:5px;box-shadow:0 12px 38px rgba(23,22,20,.18)}.bottom-nav .nav-link{min-height:48px;padding:7px 5px;font-size:12px}.view{padding-top:22px}.home-head{display:block;margin-bottom:18px}.home-head h1{font-size:42px}.lede{font-size:15px}.status{margin-top:14px;max-width:none}.signal-grid{grid-template-columns:1fr}.signal-card{min-height:156px;padding:16px}.signal-card h3{font-size:23px}.spark{width:120px}.browse-grid{grid-template-columns:1fr}.section-head{margin-top:28px}.section-head p{display:none}.detail-head{display:block}.detail-head h1{font-size:42px}.metric-grid{grid-template-columns:repeat(3,1fr)}.metric{padding:10px}.metric b{font-size:20px}.research-grid{grid-template-columns:minmax(0,1fr)}.topic-layout>aside{order:-1}.panel{padding:16px}.issue-grid{grid-template-columns:1fr}.source-line{display:block}.source-line a{margin-top:6px}.evidence-page blockquote{font-size:30px}.quote{font-size:17px}}
+@media(max-width:420px){.detail-head h1{font-size:38px}.metric-grid{grid-template-columns:1fr}.metric{display:flex;justify-content:space-between;align-items:center}.metric b{order:2}.card-foot{align-items:center}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 </style></head><body>
-<div class="wrap">
-<header>
-  <div class="mast">
-    <div>
-      <h1>Signal Desk <em>— technical podcast discourse</em></h1>
-      <div class="tagline" id="tagline"></div>
-    </div>
-    <div class="mast-right" id="mast-stats"></div>
-  </div>
-</header>
-
-<div class="signals" id="signals"></div>
-
-<div class="cols">
-  <section id="people-col">
-    <h2>The People Board <span>who moved · who dissents</span></h2>
-    <input class="search" id="psearch" placeholder="Search people, shows…">
-    <div id="people"></div>
-  </section>
-  <section id="topics-col">
-    <h2>Topics <span>open vocabulary — grown from the corpus</span></h2>
-    <input class="search" id="tsearch" placeholder="Search topics…">
-    <div id="detail-slot"></div>
-    <div id="topics" style="margin-top:12px"></div>
-  </section>
-</div>
-
-<footer>
-  <h2>Corpus coverage — read trends against this</h2>
-  <div id="coverage"></div>
-  <div class="foot-note" id="foot-note"></div>
-</footer>
-</div>
-<div id="tip"></div>
+<div class="shell"><header class="topbar"><button class="brand" data-route="home" data-id="shifts"><strong>Signal Desk</strong><span>podcast discourse</span></button><nav class="desktop-nav" aria-label="Primary"><button class="nav-link" data-route="home" data-id="shifts">Shifts</button><button class="nav-link" data-route="home" data-id="people">People</button><button class="nav-link" data-route="home" data-id="topics">Topics</button></nav></header><main id="app" tabindex="-1"></main><nav class="bottom-nav" aria-label="Mobile primary"><button class="nav-link" data-route="home" data-id="shifts">Shifts</button><button class="nav-link" data-route="home" data-id="people">People</button><button class="nav-link" data-route="home" data-id="topics">Topics</button></nav></div>
 <script>
-const DATA = __DATA__;
-const $ = s => document.querySelector(s);
-const esc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const cap = s => String(s??"").replace(/\b\w/g,c=>c.toUpperCase());
-const tip = $("#tip");
-function showTip(e,html){tip.innerHTML=html;tip.style.opacity=1;
-  tip.style.left=Math.min(e.clientX+14,innerWidth-300)+"px";tip.style.top=(e.clientY+14)+"px";}
-function hideTip(){tip.style.opacity=0;}
-
-/* ---------- masthead */
-$("#tagline").textContent =
-  `${Object.keys(DATA.topics).length} live topics · ${DATA.people.length} tracked voices · data through ${DATA.data_through}`;
-$("#mast-stats").innerHTML =
-  `<b>${DATA.corpus.labels.toLocaleString()}</b> labeled segments · <b>${DATA.corpus.episodes.toLocaleString()}</b> episodes · <b>${DATA.corpus.shows}</b> shows<br>`+
-  `generated ${esc(DATA.generated_at)}`+
-  (freshnessLagDays()>21?`<br><span class="chip warn">ingestion lag: newest well-covered week is ${esc(DATA.data_through)}</span>`:"");
-function freshnessLagDays(){
-  return Math.round((Date.now()-new Date(DATA.data_through))/864e5);}
-
-/* ---------- sparkline */
-function spark(series,w=210,h=34,color="var(--pos)"){
-  const vols=series.map(s=>s.vol),mx=Math.max(...vols,1);
-  const pts=vols.map((v,i)=>`${(i/(vols.length-1)*w).toFixed(1)},${(h-3-(v/mx)*(h-8)).toFixed(1)}`);
-  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
-    <polyline points="${pts.join(" ")}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/></svg>`;}
-
-/* ---------- signal cards */
-const breadthNote=t=>t.episodes?` — across ${t.episodes} episodes on ${t.shows} shows`:"";
-const SIG_META={
-  discussed:{color:"var(--pos)",blurb:t=>`${t.pulse_vol} mentions across ${t.shows} shows (${t.episodes} episodes) in the last ${DATA.pulse_weeks} weeks.`,label:"Most discussed"},
-  emerging:{color:"var(--accent)",blurb:t=>`${t.pulse_vol} mentions in the last ${DATA.pulse_weeks} weeks — near-zero baseline before${breadthNote(t)}.`,label:"Emerging"},
-  shifting:{color:"var(--violet)",blurb:t=>`stance mix moved ${Math.round(t.divergence*100)}% vs the prior quarter.`,label:"Opinion shift"},
-  contested:{color:"var(--gold)",blurb:t=>`${t.positive} voices for, ${t.negative} against${breadthNote(t)} — a live fight.`,label:"Contested"},
-  fading:{color:"var(--neg)",blurb:t=>`peaked at ${t.peak_week_vol}/week, now ${t.pulse_vol} mentions in ${DATA.pulse_weeks} weeks.`,label:"Fading"}};
-(function(){
-  const box=$("#signals");let n=0;
-  // Fill the strip: detector hits first, then broadest live topics.
-  const detectorTopics=new Set();
-  const cards=[];
-  for(const kind of ["emerging","shifting","contested","fading"])
-    for(const item of (DATA.detectors[kind]||[]).slice(0,3)){cards.push([kind,item]);detectorTopics.add(item.topic);}
-  const broad=Object.entries(DATA.topics)
-    .filter(([t,d])=>!detectorTopics.has(t)&&t!=="other"&&(d.pulse_shows||0)>=3)
-    .sort((a,b)=>(b[1].pulse_shows||0)-(a[1].pulse_shows||0)||(b[1].pulse_vol||0)-(a[1].pulse_vol||0))
-    .slice(0,Math.max(0,8-cards.length));
-  for(const [t,d] of broad)cards.push(["discussed",{topic:t,pulse_vol:d.pulse_vol,shows:d.pulse_shows,episodes:d.pulse_episodes}]);
-  for(const [kind,item] of cards){
-      const t=DATA.topics[item.topic];const m=SIG_META[kind];
-      const el=document.createElement("div");
-      el.className="sig reveal";el.style.animationDelay=(n++*60)+"ms";
-      el.innerHTML=`<div class="sig-kind" style="color:${m.color}"><span class="dot" style="background:${m.color}"></span>${m.label}</div>
-        <h3>${esc(item.topic)}</h3><p>${m.blurb(item)}</p>${t?spark(t.series,210,34,m.color):""}`;
-      el.onclick=()=>selectTopic(item.topic);
-      box.appendChild(el);
-  }
-  if(!box.children.length)box.innerHTML='<div class="sig"><p>No active signals — detectors run nightly.</p></div>';
-})();
-
-/* ---------- people board */
-function personCard(p){
-  const badges=[];
-  if(p.moves.length)badges.push(`<span class="badge moved">⇄ moved on ${esc(p.moves[p.moves.length-1].topic)}</span>`);
-  if(p.against_field.length)badges.push(`<span class="badge against">⚑ against the field: ${esc(p.against_field[0].topic)}</span>`);
-  if(p.authority)badges.push(`<span class="badge auth">◈ authority ${p.authority.toFixed(2)}</span>`);
-  return `<div class="person reveal" data-name="${esc(p.name)}">
-    <div class="p-top"><span class="p-name">${esc(p.name)}</span>
-      <span class="p-meta">${p.n_recent} recent · ${p.n_positions} total</span></div>
-    <div class="badges">${badges.join("")}</div>
-    <div class="p-shows">${esc(p.shows.slice(0,4).join(" · "))}${p.last_seen?" — last "+esc(p.last_seen):""}</div></div>`;}
-function renderPeople(filter=""){
-  const q=filter.toLowerCase();
-  $("#people").innerHTML=DATA.people
-    .filter(p=>!q||p.name.toLowerCase().includes(q)||p.shows.join(" ").includes(q))
-    .slice(0,30).map(personCard).join("");
-  document.querySelectorAll(".person").forEach(el=>el.onclick=()=>selectPerson(el.dataset.name));}
-renderPeople();
-$("#psearch").oninput=e=>renderPeople(e.target.value);
-
-/* ---------- topic list */
-const topicNames=Object.keys(DATA.topics).sort((a,b)=>DATA.topics[b].pulse_vol-DATA.topics[a].pulse_vol||DATA.topics[b].total-DATA.topics[a].total);
-function renderTopics(filter=""){
-  const q=filter.toLowerCase();
-  $("#topics").innerHTML=topicNames.filter(t=>!q||t.includes(q)).slice(0,40).map(t=>{
-    const d=DATA.topics[t];
-    return `<div class="topic-row" data-t="${esc(t)}">
-      <span class="t-name">${esc(t)}</span>${spark(d.series,96,26,"var(--ink-3)")}
-      <span class="t-vol">${d.pulse_vol||d.total}</span></div>`;}).join("");
-  document.querySelectorAll(".topic-row").forEach(el=>el.onclick=()=>selectTopic(el.dataset.t));}
-renderTopics();
-$("#tsearch").oninput=e=>renderTopics(e.target.value);
-
-/* ---------- stance-flow chart: weekly diverging stack centered on neutral */
-function stanceChart(series){
-  const w=560,h=190,pad=28,bw=Math.max(4,Math.floor((w-2*pad)/series.length)-2);
-  const mx=Math.max(...series.map(s=>s.pos+s.neg+s.neu),1);
-  const mid=h/2,scale=(h-40)/(2*mx*0.62);
-  let bars="";
-  series.forEach((s,i)=>{
-    const x=pad+i*((w-2*pad)/series.length);
-    const nH=s.neu*scale,pH=s.pos*scale,gH=s.neg*scale;
-    if(s.vol===0)return;
-    bars+=`<g class="bar-seg" data-i="${i}">
-      <rect x="${x}" y="${mid-nH/2}" width="${bw}" height="${Math.max(nH,0.5)}" fill="var(--neu)"/>
-      ${pH?`<rect x="${x}" y="${mid-nH/2-pH-2}" width="${bw}" height="${pH}" rx="2" fill="var(--pos)"/>`:""}
-      ${gH?`<rect x="${x}" y="${mid+nH/2+2}" width="${bw}" height="${gH}" rx="2" fill="var(--neg)"/>`:""}
-      <rect x="${x-1}" y="10" width="${bw+2}" height="${h-20}" fill="transparent" class="hit" data-i="${i}"/></g>`;});
-  const labels=series.map((s,i)=>i%5===0?`<text x="${pad+i*((w-2*pad)/series.length)}" y="${h-4}" font-size="9.5" font-family="var(--mono)" fill="var(--ink-3)">${s.week.slice(5)}</text>`:"").join("");
-  return `<svg width="100%" viewBox="0 0 ${w} ${h}" style="max-width:${w}px" role="img" aria-label="weekly stance flow">
-    <line x1="${pad}" x2="${w-pad}" y1="${mid}" y2="${mid}" stroke="var(--rule-2)" stroke-width="1"/>
-    ${bars}${labels}</svg>`;}
-function wireChartTips(container,series){
-  container.querySelectorAll(".hit").forEach(r=>{
-    r.addEventListener("mousemove",e=>{const s=series[+r.dataset.i];
-      showTip(e,`<b>${s.week}</b><br>${s.vol} mentions<br><span style="color:#8ab4f8">▲ ${s.pos} positive</span> · <span style="color:#f28b82">▼ ${s.neg} negative</span> · ${s.neu} neutral`);});
-    r.addEventListener("mouseleave",hideTip);});}
-
-/* ---------- topic detail */
-function selectTopic(name){
-  const d=DATA.topics[name];if(!d)return;
-  document.querySelectorAll(".topic-row").forEach(el=>el.classList.toggle("sel",el.dataset.t===name));
-  const holders=DATA.people.filter(p=>p.recent.some(r=>r.topic===name)||p.against_field.some(a=>a.topic===name));
-  const voices=holders.slice(0,6).map(p=>{
-    const e=[...p.recent].reverse().find(r=>r.topic===name)||{};
-    return `<div class="quote"><div class="q">“${esc(e.evidence||"(position recorded without quotable evidence)")}”</div>
-      <div class="who"><b>${esc(p.name)}</b> · <span class="stance-${e.group==="positive"?"pos":e.group==="negative"?"neg":"neu"}">${esc(e.stance||"")}</span> · ${esc(e.show||"")} · ${esc(e.date||"")}</div></div>`;}).join("");
-  const el=$("#detail-slot");
-  el.innerHTML=`<div class="detail reveal"><button class="close-x" onclick="this.closest('.detail').remove()">✕</button>
-    <h3>${esc(name)}</h3>
-    <div class="sub">${d.total} mentions in window · pulse ${d.pulse_rate}/wk vs baseline ${d.base_rate}/wk</div>
-    ${stanceChart(d.series)}
-    <div class="legend"><span><i style="background:var(--pos)"></i>positive</span>
-      <span><i style="background:var(--neg)"></i>negative</span>
-      <span><i style="background:var(--neu)"></i>neutral</span></div>
-    ${voices?`<div style="margin-top:12px">${voices}</div>`:""}</div>`;
-  wireChartTips(el,d.series);
-  el.scrollIntoView({behavior:"smooth",block:"nearest"});}
-
-/* ---------- person detail */
-function selectPerson(name){
-  const p=DATA.people.find(x=>x.name===name);if(!p)return;
-  const moves=p.moves.map(m=>`<div class="move-line">On <b>${esc(m.topic)}</b>: was
-    <span class="stance-${m.from==="positive"?"pos":"neg"}">${m.from}</span> (${esc(m.from_date)}) → now
-    <span class="stance-${m.to==="positive"?"pos":"neg"}">${m.to}</span> (${esc(m.to_date)})
-    ${m.to_evidence?`<div class="quote" style="margin:6px 0 0"><div class="q">“${esc(m.to_evidence)}”</div></div>`:""}</div>`).join("");
-  const against=p.against_field.map(a=>`<div class="move-line">On <b>${esc(a.topic)}</b>: holds
-    <span class="stance-${a.stance==="positive"?"pos":"neg"}">${a.stance}</span> while ${Math.round(a.majority_share*100)}% of the field is ${a.field_majority}
-    ${a.evidence?`<div class="quote" style="margin:6px 0 0"><div class="q">“${esc(a.evidence)}”</div></div>`:""}</div>`).join("");
-  const recent=p.recent.slice(-5).reverse().map(r=>`<div class="quote">
-    <div class="q">“${esc(r.evidence||"(no quotable span)")}”</div>
-    <div class="who">${esc(cap(r.topic||r.claim_type||""))} · <span class="stance-${r.group==="positive"?"pos":r.group==="negative"?"neg":"neu"}">${esc(r.stance||"")}</span> · ${esc(r.show)} · ${esc(r.date)}</div></div>`).join("");
-  $("#detail-slot").innerHTML=`<div class="detail reveal"><button class="close-x" onclick="this.closest('.detail').remove()">✕</button>
-    <h3>${esc(p.name)}</h3>
-    <div class="sub">${esc(p.roles.join("/"))} · ${esc(p.shows.join(" · "))}${p.authority?` · authority ${p.authority.toFixed(2)}`:""}</div>
-    ${moves?`<h4 style="font:700 13px var(--mono);letter-spacing:.1em;margin:8px 0 4px">CHANGED THEIR MIND</h4>${moves}`:""}
-    ${against?`<h4 style="font:700 13px var(--mono);letter-spacing:.1em;margin:14px 0 4px">AGAINST THE FIELD</h4>${against}`:""}
-    <h4 style="font:700 13px var(--mono);letter-spacing:.1em;margin:14px 0 4px">RECENT POSITIONS</h4>${recent||"<p>No recent positions in window.</p>"}</div>`;
-  $("#detail-slot").scrollIntoView({behavior:"smooth",block:"nearest"});}
-
-/* ---------- coverage */
-(function(){
-  const months={};
-  for(const src of Object.keys(DATA.corpus.coverage))
-    for(const [m,n] of Object.entries(DATA.corpus.coverage[src]))
-      months[m]=(months[m]||0)+n;
-  const keys=Object.keys(months).sort();
-  const mx=Math.max(...Object.values(months),1);
-  const w=Math.min(1260,keys.length*22),h=64;
-  let bars="";
-  keys.forEach((m,i)=>{const v=months[m],bh=Math.max(2,v/mx*(h-18));
-    bars+=`<rect x="${i*22}" y="${h-14-bh}" width="16" height="${bh}" rx="2" fill="var(--pos)" opacity=".75"
-      onmousemove="showTip(event,'<b>${m}</b><br>${v} episodes')" onmouseleave="hideTip()"/>`;});
-  $("#coverage").innerHTML=`<svg width="100%" viewBox="0 0 ${w} ${h}" style="max-width:${w}px">${bars}</svg>`;
-  $("#foot-note").innerHTML=
-    `Trend windows anchor to the corpus frontier (${esc(DATA.data_through)}), not the calendar — an ingestion gap reads as a coverage gap, never as “everything faded.” `+
-    `Every stance and signal above traces to a verbatim quote; the taxonomy is grown from the data and re-molds itself when sources change.`;
-})();
-</script>
-</body></html>
-"""
+const DATA=__DATA__;const app=document.querySelector("#app");const esc=s=>String(s??"").replace(/[&<>\"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));const cap=s=>String(s??"").replace(/\b\w/g,c=>c.toUpperCase());const enc=s=>encodeURIComponent(String(s));const safeUrl=u=>/^https?:\/\//i.test(u||"")?u:null;const peopleByName=new Map(DATA.people.map(p=>[p.name,p]));const detectorKind=new Map();for(const kind of ["emerging","shifting","contested","fading"])for(const item of DATA.detectors[kind]||[])detectorKind.set(item.topic,{kind,item});const KIND={emerging:{label:"Emerging",color:"var(--green)"},shifting:{label:"Opinion shift",color:"var(--violet)"},contested:{label:"Contested",color:"var(--gold)"},fading:{label:"Fading",color:"var(--red)"},discussed:{label:"Most discussed",color:"var(--blue)"}};
+function route(kind,id="",tail=[]){location.hash=[kind,enc(id),...tail.map(enc)].filter(Boolean).join("/")}function parseRoute(){const p=(location.hash.slice(1)||"home/shifts").split("/").map(decodeURIComponent);return{kind:p[0]||"home",id:p[1]||"",filterType:p[2]||"",filterValue:p[3]||""}}function freshness(){return Math.round((Date.now()-new Date(DATA.data_through))/864e5)}
+function signalCards(){const cards=[],seen=new Set();for(const kind of ["emerging","shifting","contested","fading"])for(const item of (DATA.detectors[kind]||[]).slice(0,3)){cards.push({kind,item});seen.add(item.topic)}const broad=Object.entries(DATA.topics).filter(([t,d])=>t!=="other"&&!seen.has(t)&&(d.pulse_shows||0)>=3).sort((a,b)=>(b[1].pulse_shows||0)-(a[1].pulse_shows||0)||(b[1].pulse_vol||0)-(a[1].pulse_vol||0)).slice(0,Math.max(0,8-cards.length));for(const [topic,d] of broad)cards.push({kind:"discussed",item:{topic,pulse_vol:d.pulse_vol,shows:d.pulse_shows,episodes:d.pulse_episodes}});return cards}
+function signalCopy(kind,item){if(kind==="emerging")return `${item.pulse_vol} mentions across ${item.episodes} episodes and ${item.shows} shows after a near-zero baseline.`;if(kind==="shifting")return `The stance mix moved ${Math.round(item.divergence*100)}% from its prior pattern.`;if(kind==="contested")return `${item.positive} positions for and ${item.negative} against across ${item.shows} shows.`;if(kind==="fading")return `Previously peaked at ${item.peak_week_vol} mentions per week; now ${item.pulse_vol} in four weeks.`;return `${item.pulse_vol} mentions across ${item.shows} shows and ${item.episodes} episodes in four weeks.`}function spark(series,color){const vals=series.slice(-12).map(x=>x.vol),mx=Math.max(...vals,1);return `<span class="spark" style="color:${color}">${vals.map(v=>`<i style="height:${Math.max(3,Math.round(v/mx*42))}px"></i>`).join("")}</span>`}function navState(tab){document.querySelectorAll(".nav-link").forEach(b=>b.classList.toggle("active",b.dataset.id===tab))}function coverageNote(){return `<div class="coverage">Data frontier: ${esc(DATA.data_through)} · ${DATA.corpus.labels.toLocaleString()} labeled segments · ${DATA.corpus.episodes.toLocaleString()} episodes · ${DATA.corpus.shows} shows. Trend windows follow the corpus frontier, not the calendar.</div>`}
+function renderHome(tab){tab=["shifts","people","topics"].includes(tab)?tab:"shifts";navState(tab);const intro=`<div class="home-head"><div><div class="eyebrow">Research the discourse</div><h1>${tab==="shifts"?"What changed?":tab==="people"?"Who is shaping it?":"What is being discussed?"}</h1><p class="lede">${tab==="shifts"?"Start with movements that have real breadth, then open the issues, voices, evidence, and sources behind them.":tab==="people"?"Open a person to see recurring claims, changes of mind, disagreements, and source-grounded evidence.":"Browse the corpus vocabulary, then open any topic for related issues, stance differences, trusted voices, and evidence."}</p></div>${freshness()>21?`<div class="status">Coverage note: newest well-covered week is ${esc(DATA.data_through)}</div>`:""}</div>`;if(tab==="shifts"){app.innerHTML=`<section class="view">${intro}<div class="signal-grid">${signalCards().map(({kind,item})=>{const d=DATA.topics[item.topic],m=KIND[kind];return `<button class="signal-card" data-route="topic" data-id="${esc(item.topic)}"><span class="signal-kind" style="color:${m.color}">${m.label}</span><h3>${esc(item.topic)}</h3><p>${esc(signalCopy(kind,item))}</p><span class="card-foot"><span class="explore">Explore the shift</span>${spark(d.series,m.color)}</span></button>`}).join("")}</div>${coverageNote()}</section>`}else if(tab==="people"){const ranked=[...DATA.people].sort((a,b)=>(b.authority||0)-(a.authority||0)||b.n_recent-a.n_recent);app.innerHTML=`<section class="view">${intro}<input class="search" id="search" aria-label="Search people" placeholder="Search people or shows"><div class="list" id="results">${ranked.slice(0,40).map(personCard).join("")}</div>${coverageNote()}</section>`;wireSearch("people",ranked)}else{const topics=Object.entries(DATA.topics).filter(([t])=>t!=="other").sort((a,b)=>b[1].pulse_vol-a[1].pulse_vol||b[1].total-a[1].total);app.innerHTML=`<section class="view">${intro}<input class="search" id="search" aria-label="Search topics" placeholder="Search topics"><div class="list" id="results">${topics.slice(0,60).map(topicCard).join("")}</div>${coverageNote()}</section>`;wireSearch("topics",topics)}}
+function personCard(p){const top=p.top_topics?.[0];return `<button class="person-card" data-route="person" data-id="${esc(p.name)}"><span class="row-top"><span class="row-title">${esc(p.name)}</span><span class="meta">${p.n_positions} positions</span></span><span class="pill-row">${p.authority?`<span class="pill trust">Authority ${p.authority.toFixed(2)}</span>`:""}${p.moves.length?`<span class="pill shift">Changed position</span>`:""}${top?`<span class="pill">Often on ${esc(top.topic)}</span>`:""}</span><span class="meta">${esc(p.shows.slice(0,4).join(" · "))}</span></button>`}function topicCard([name,d]){return `<button class="topic-card" data-route="topic" data-id="${esc(name)}"><span class="row-top"><span class="row-title">${esc(name)}</span><span class="meta">${d.total} mentions</span></span><span class="pill-row"><span class="pill">${d.pulse_shows||0} recent shows</span><span class="pill">${d.evidence?.length||0} excerpts</span><span class="pill">${d.related?.length||0} related issues</span></span></button>`}
+function wireSearch(kind,data){const input=document.querySelector("#search"),box=document.querySelector("#results");input.oninput=()=>{const q=input.value.toLowerCase();if(kind==="people")box.innerHTML=data.filter(p=>p.name.toLowerCase().includes(q)||p.shows.join(" ").toLowerCase().includes(q)).slice(0,50).map(personCard).join("");else box.innerHTML=data.filter(([n])=>n.includes(q)).slice(0,60).map(topicCard).join("")}}
+function topicSignal(name){const hit=detectorKind.get(name);return hit?{...KIND[hit.kind],kind:hit.kind,item:hit.item}:{...KIND.discussed,kind:"discussed"}}function trend(topic,d,activeWeek){const mx=Math.max(...d.series.map(x=>x.vol),1);return `<div class="trend-scroll"><div class="trend" aria-label="Weekly mentions and stance mix">${d.series.map((s,i)=>{const h=Math.max(2,Math.round(s.vol/mx*124)),den=Math.max(s.vol,1);return `<button class="week-bar ${activeWeek===s.week?"active":""}" data-route="topic" data-id="${esc(topic)}" data-tail="week/${esc(s.week)}" aria-label="${esc(s.week)}: ${s.vol} mentions"><span class="bar" style="height:${h}px"><i style="height:${s.neg/den*100}%;background:var(--red)"></i><i style="height:${s.neu/den*100}%;background:var(--neutral)"></i><i style="height:${s.pos/den*100}%;background:var(--blue)"></i></span>${i%5===0?`<span class="week-label">${s.week.slice(5)}</span>`:""}</button>`}).join("")}</div></div>`}
+function evidenceCard(e,topic,compact=false){const personExists=peopleByName.has(e.person),url=safeUrl(e.source_url);return `<article class="evidence"><div class="evidence-top"><div>${personExists?`<button class="person-link" data-route="person" data-id="${esc(e.person)}">${esc(e.person)}</button>`:`<strong>${esc(e.person)}</strong>`}<div class="meta">${e.authority_scored?`Authority ${e.authority.toFixed(2)} · `:"Unscored voice · "}${esc(e.show)} · ${esc(e.date)}</div></div><span class="stance ${esc(e.group)}">${esc(e.stance||e.group)}</span></div><p class="quote">“${esc(e.evidence)}”</p><div class="source-line"><span>${esc(e.episode)}</span><span>${!compact?`<button class="back" data-route="evidence" data-id="${esc(e.id)}" data-tail="${esc(topic)}">Read context</button>`:""}${url?` <a href="${esc(url)}" target="_blank" rel="noopener">Original source</a>`:""}</span></div></article>`}
+function renderTopic(name,filterType,filterValue){const d=DATA.topics[name];if(!d){renderNotFound();return}navState("");const sig=topicSignal(name);let evidence=d.evidence||[];if(filterType==="stance")evidence=evidence.filter(e=>e.group===filterValue);if(filterType==="week")evidence=evidence.filter(e=>e.week===filterValue);const trusted=(d.evidence||[]).filter(e=>e.authority_scored).slice(0,6),activeLabel=filterType?`${cap(filterType)}: ${filterValue}`:"All evidence";app.innerHTML=`<section class="view"><button class="back" data-route="home" data-id="shifts">Back to shifts</button><div class="detail-head"><div><div class="eyebrow detail-label" style="color:${sig.color}">${sig.label}</div><h1>${esc(name)}</h1><p class="lede">${esc(signalCopy(sig.kind,sig.item||{pulse_vol:d.pulse_vol,shows:d.pulse_shows,episodes:d.pulse_episodes}))}</p></div></div><div class="metric-grid"><div class="metric"><b>${d.total}</b><span>mentions in 26 weeks</span></div><div class="metric"><b>${d.pulse_episodes||0}</b><span>recent episodes</span></div><div class="metric"><b>${d.pulse_shows||0}</b><span>recent shows</span></div></div><div class="research-grid topic-layout"><div><section class="panel"><h2 class="panel-title">How the conversation moved</h2><p class="panel-sub">Tap a week to inspect its evidence. Blue is positive, red is negative, gray is neutral.</p>${trend(name,d,filterType==="week"?filterValue:"")}<div class="filter-row"><button class="filter ${!filterType?"active":""}" data-route="topic" data-id="${esc(name)}">All</button>${["positive","negative","neutral"].map(g=>`<button class="filter ${filterType==="stance"&&filterValue===g?"active":""}" data-route="topic" data-id="${esc(name)}" data-tail="stance/${g}">${cap(g)} ${d.evidence_stances?.[g]||0}</button>`).join("")}</div></section><section class="panel"><h2 class="panel-title">Evidence and sources</h2><p class="panel-sub">${esc(activeLabel)} · short excerpts only, linked to original material.</p><div class="evidence-list">${evidence.length?evidence.map(e=>evidenceCard(e,name)).join(""):`<div class="empty">No quotable evidence is attached to this slice yet. Try another stance or return to all evidence.</div>`}</div></section></div><aside><section class="panel"><h2 class="panel-title">Major issues at play</h2><p class="panel-sub">Topics that repeatedly appear in the same episodes.</p><div class="issue-grid">${d.related?.length?d.related.map(r=>`<button class="issue-card" data-route="topic" data-id="${esc(r.topic)}"><b>${esc(r.topic)}</b><span>${r.shared_episodes} shared episodes · ${r.shared_shows} shows</span></button>`).join(""):`<div class="empty">No related issue cluster yet.</div>`}</div></section><section class="panel"><h2 class="panel-title">Most trusted voices</h2><p class="panel-sub">Authority-scored people with evidence on this topic.</p>${trusted.length?`<div class="evidence-list">${trusted.map(e=>evidenceCard(e,name,true)).join("")}</div>`:`<div class="callout">No authority-scored person is attached to this topic yet. Source-grounded evidence remains available without a trust claim.</div>`}</section></aside></div>${coverageNote()}</section>`}
+function renderPerson(name){const p=peopleByName.get(name);if(!p){renderNotFound();return}navState("");app.innerHTML=`<section class="view"><button class="back" data-route="home" data-id="people">Back to people</button><div class="detail-head"><div><div class="eyebrow detail-label">Person</div><h1>${esc(name)}</h1><p class="lede">${p.authority?`Authority score ${p.authority.toFixed(2)} · `:"No authority score · "}${p.n_positions} recorded positions across ${p.shows.length} shows.</p></div></div><div class="research-grid"><div><section class="panel"><h2 class="panel-title">Biggest recurring claims</h2><p class="panel-sub">Topics ranked by how often this person takes a recorded position.</p><div class="claim-list">${p.top_topics?.length?p.top_topics.map(t=>{const total=Math.max(t.count,1);return `<button class="claim" data-route="topic" data-id="${esc(t.topic)}"><b>${esc(t.topic)}</b><span class="meta">${t.count} positions</span><span class="stance-line"><i style="width:${t.positive/total*100}%;background:var(--blue)"></i><i style="width:${t.neutral/total*100}%;background:var(--neutral)"></i><i style="width:${t.negative/total*100}%;background:var(--red)"></i></span></button>`}).join(""):`<div class="empty">No topic summary yet.</div>`}</div></section><section class="panel"><h2 class="panel-title">Evidence record</h2><p class="panel-sub">Recent source-grounded excerpts. Open any topic or original source for more context.</p><div class="evidence-list">${p.evidence?.length?p.evidence.map(e=>evidenceCard({...e,person:p.name,authority:p.authority,authority_scored:Boolean(p.authority)},e.topic)).join(""):`<div class="empty">No quotable evidence attached.</div>`}</div></section></div><aside>${p.moves.length?`<section class="panel"><h2 class="panel-title">Changed positions</h2><div class="claim-list">${p.moves.slice().reverse().map(m=>`<button class="claim" data-route="topic" data-id="${esc(m.topic)}"><b>${esc(m.topic)}</b><span class="meta">${cap(m.from)} to ${cap(m.to)} · ${m.from_date} to ${m.to_date}</span></button>`).join("")}</div></section>`:""}${p.against_field.length?`<section class="panel"><h2 class="panel-title">Against the field</h2><div class="claim-list">${p.against_field.map(a=>`<button class="claim" data-route="topic" data-id="${esc(a.topic)}"><b>${esc(a.topic)}</b><span class="meta">${cap(a.stance)} while ${Math.round(a.majority_share*100)}% of the field is ${a.field_majority}</span></button>`).join("")}</div></section>`:""}<section class="panel"><h2 class="panel-title">Appears on</h2><p>${esc(p.shows.join(" · "))}</p></section></aside></div>${coverageNote()}</section>`}
+function findEvidence(id){for(const [topic,d] of Object.entries(DATA.topics))for(const e of d.evidence||[])if(e.id===id)return{topic,e};return null}function renderEvidence(id,topicHint){const hit=findEvidence(id);if(!hit){renderNotFound();return}const {topic,e}=hit,url=safeUrl(e.source_url),personExists=peopleByName.has(e.person);navState("");app.innerHTML=`<section class="view evidence-page"><button class="back" data-route="topic" data-id="${esc(topicHint||topic)}">Back to topic</button><div class="eyebrow detail-label">Evidence context</div><h1 class="title-case">${esc(topic)}</h1><blockquote>“${esc(e.evidence)}”</blockquote><div class="source-card"><div class="evidence-top"><div>${personExists?`<button class="person-link" data-route="person" data-id="${esc(e.person)}">${esc(e.person)}</button>`:`<strong>${esc(e.person)}</strong>`}<div class="meta">${e.authority_scored?`Authority ${e.authority.toFixed(2)} · `:"Unscored voice · "}${esc(e.date)}</div></div><span class="stance ${esc(e.group)}">${esc(e.stance||e.group)}</span></div><h3 style="margin-top:18px">${esc(e.episode)}</h3><p class="meta" style="margin-top:5px">${esc(e.show)} · confidence ${Math.round((e.confidence||0)*100)}%</p><div class="button-row"><button class="secondary" data-route="topic" data-id="${esc(topic)}">Explore this topic</button>${personExists?`<button class="secondary" data-route="person" data-id="${esc(e.person)}">View this person</button>`:""}${url?`<a class="primary" href="${esc(url)}" target="_blank" rel="noopener">Open original source</a>`:""}</div></div></section>`}
+function renderNotFound(){app.innerHTML=`<section class="view"><h1>That view is unavailable.</h1><p class="lede">The nightly data may have changed.</p><div class="button-row"><button class="primary" data-route="home" data-id="shifts">Return to shifts</button></div></section>`}function render(){const r=parseRoute();if(r.kind==="home")renderHome(r.id);else if(r.kind==="topic")renderTopic(r.id,r.filterType,r.filterValue);else if(r.kind==="person")renderPerson(r.id);else if(r.kind==="evidence")renderEvidence(r.id,r.filterType);else renderNotFound();app.focus({preventScroll:true});window.scrollTo(0,0)}document.addEventListener("click",e=>{const target=e.target.closest("[data-route]");if(!target)return;const tail=(target.dataset.tail||"").split("/").filter(Boolean);route(target.dataset.route,target.dataset.id||"",tail)});window.addEventListener("hashchange",render);if(!location.hash)location.hash="home/shifts";else render();
+</script></body></html>"""
 
 
 def main() -> None:

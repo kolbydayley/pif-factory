@@ -51,6 +51,17 @@ def stance_group(stance: Optional[str]) -> str:
     return "neutral"
 
 
+def short_excerpt(value: Optional[str], limit: int = 240) -> Optional[str]:
+    """Return a compact excerpt without ending on a cut-off word."""
+    cleaned = " ".join((value or "").split())
+    if not cleaned:
+        return None
+    if len(cleaned) <= limit:
+        return cleaned
+    clipped = cleaned[:limit - 1].rsplit(" ", 1)[0]
+    return f"{clipped}…"
+
+
 def norm_topic(name: Optional[str]) -> Optional[str]:
     if not name:
         return None
@@ -127,6 +138,9 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
     # ---- topic series from labels (all packs; open vocabulary)
     topic_weekly: Dict[str, Dict[int, Dict[str, Any]]] = defaultdict(dict)
     topic_total: Counter = Counter()
+    episode_topics: Dict[str, set] = defaultdict(set)
+    episode_shows: Dict[str, str] = {}
+    topic_evidence_raw: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     # Breadth = the anti-noise gate. A topic mentioned 11 times inside ONE
     # episode is that episode's turn of phrase, not a discourse trend
     # (audited 2026-08-26: nearly every ungated signal was single-episode).
@@ -168,14 +182,17 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             pass
         topic_total[topic] += 1
         note_breadth(topic, widx[wk], r["episode_id"], r["source_id"])
+        episode_topics[r["episode_id"]].add(topic)
+        episode_shows[r["episode_id"]] = r["source_id"]
 
     # ---- concept-level positions also feed the topic series (deeper history)
     pos_rows = conn.execute(
         """
-        SELECT ap.actor_name, ap.actor_type, ap.concept_name, ap.stance,
-               ap.claim_type, ap.evidence_json, ap.segment_id,
+        SELECT ap.id, ap.actor_name, ap.actor_type, ap.concept_name, ap.stance,
+               ap.claim_type, ap.confidence, ap.evidence_json, ap.segment_id,
                s.episode_id, e.published_at, e.source_id,
-               e.title AS episode_title
+               e.title AS episode_title, e.url AS episode_url,
+               e.audio_url AS episode_audio_url
         FROM actor_positions ap
         JOIN segments s ON s.id = ap.segment_id
         JOIN episodes e ON e.id = s.episode_id
@@ -194,22 +211,35 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             cell[stance_group(r["stance"])] += 1
             topic_total[topic] += 1
             note_breadth(topic, widx[wk], r["episode_id"], r["source_id"])
+            episode_topics[r["episode_id"]].add(topic)
+            episode_shows[r["episode_id"]] = r["source_id"]
         name = (r["actor_name"] or "").strip()
-        if not name or r["actor_type"] not in ("guest", "host", "person"):
-            continue
         try:
             evidence = json.loads(r["evidence_json"]).get("evidence")
         except (json.JSONDecodeError, TypeError):
             evidence = None
         entry = {
+            "id": r["id"],
             "topic": topic, "stance": r["stance"],
             "group": stance_group(r["stance"]),
             "claim_type": r["claim_type"], "week": wk,
             "date": (r["published_at"] or "")[:10],
             "show": r["source_id"], "episode": r["episode_title"],
-            "evidence": (evidence or "")[:300] or None,
+            "episode_id": r["episode_id"],
+            "source_url": r["episode_url"] or r["episode_audio_url"],
+            "confidence": round(float(r["confidence"] or 0), 2),
+            "evidence": short_excerpt(evidence),
             "role": r["actor_type"],
         }
+        if topic and entry["evidence"]:
+            display_name = name
+            if not display_name or display_name.lower() in {
+                    "unknown", "none", "n/a"}:
+                display_name = "Unattributed voice"
+            topic_evidence_raw[topic].append(
+                {**entry, "person": display_name})
+        if not name or r["actor_type"] not in ("guest", "host", "person"):
+            continue
         people_positions[name].append(entry)
         if topic and wk in widx and widx[wk] >= RECENT_WEEKS - PULSE_WEEKS:
             concept_field[topic][entry["group"]] += 1
@@ -231,13 +261,18 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
     people = []
     for name, entries in people_positions.items():
         entries.sort(key=lambda x: x["date"])
+        topic_counts: Dict[str, Counter] = defaultdict(Counter)
+        for entry in entries:
+            if entry["topic"]:
+                topic_counts[entry["topic"]][entry["group"]] += 1
         moves = []
         last_by_topic: Dict[str, Dict[str, Any]] = {}
         for e in entries:
             if not e["topic"] or e["group"] == "neutral":
                 continue
             prev = last_by_topic.get(e["topic"])
-            if prev and prev["group"] != e["group"]:
+            if (prev and prev["group"] != e["group"]
+                    and prev["episode_id"] != e["episode_id"]):
                 moves.append({"topic": e["topic"], "from": prev["group"],
                               "to": e["group"], "from_date": prev["date"],
                               "to_date": e["date"],
@@ -262,6 +297,27 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         recent = [e for e in entries
                   if e["week"] in widx
                   and widx[e["week"]] >= RECENT_WEEKS - PULSE_WEEKS * 2]
+        evidence = []
+        seen_evidence = set()
+        for entry in reversed(entries):
+            key = (entry["episode_id"], entry["evidence"])
+            if not entry["evidence"] or key in seen_evidence:
+                continue
+            seen_evidence.add(key)
+            evidence.append(entry)
+            if len(evidence) >= 18:
+                break
+        top_topics = []
+        for topic, counts_by_group in sorted(
+                topic_counts.items(), key=lambda item: sum(item[1].values()),
+                reverse=True)[:8]:
+            top_topics.append({
+                "topic": topic,
+                "count": sum(counts_by_group.values()),
+                "positive": counts_by_group.get("positive", 0),
+                "negative": counts_by_group.get("negative", 0),
+                "neutral": counts_by_group.get("neutral", 0),
+            })
         people.append({
             "name": name,
             "roles": sorted({e["role"] for e in entries}),
@@ -269,6 +325,8 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             "n_positions": len(entries),
             "n_recent": len(recent),
             "recent": recent[-12:],
+            "evidence": evidence,
+            "top_topics": top_topics,
             "moves": moves[-8:],
             "against_field": against[:6],
             "authority": authority.get(name),
@@ -357,6 +415,65 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
                                                  x.get("base_episodes", 0))),
                             reverse=True)
         detectors[key] = detectors[key][:15]
+
+    # ---- progressive-disclosure research layers
+    related_counts: Dict[str, Counter] = defaultdict(Counter)
+    related_shows: Dict[str, Dict[str, set]] = defaultdict(
+        lambda: defaultdict(set))
+    for episode_id, names in episode_topics.items():
+        show = episode_shows.get(episode_id)
+        for topic in names:
+            for other in names:
+                if other == topic:
+                    continue
+                related_counts[topic][other] += 1
+                if show:
+                    related_shows[topic][other].add(show)
+
+    for topic, info in topics_out.items():
+        related = []
+        for other, episode_count in related_counts.get(
+                topic, Counter()).most_common(20):
+            if other not in topics_out or other == "other":
+                continue
+            related.append({
+                "topic": other,
+                "shared_episodes": episode_count,
+                "shared_shows": len(related_shows[topic][other]),
+            })
+        related.sort(
+            key=lambda item: (item["shared_shows"], item["shared_episodes"]),
+            reverse=True,
+        )
+        info["related"] = related[:8]
+
+        evidence = []
+        seen_evidence = set()
+        for entry in topic_evidence_raw.get(topic, []):
+            key = (entry["person"].lower(), entry["episode_id"],
+                   entry["evidence"].lower())
+            if key in seen_evidence:
+                continue
+            seen_evidence.add(key)
+            evidence.append({
+                **entry,
+                "authority": authority.get(entry["person"]),
+                "authority_scored": entry["person"] in authority,
+            })
+        evidence.sort(
+            key=lambda item: (
+                item["authority_scored"], item["authority"] or 0,
+                item["confidence"], item["date"],
+            ),
+            reverse=True,
+        )
+        info["evidence"] = evidence[:16]
+        stance_counts = Counter(item["group"] for item in evidence)
+        info["evidence_stances"] = {
+            "positive": stance_counts.get("positive", 0),
+            "negative": stance_counts.get("negative", 0),
+            "neutral": stance_counts.get("neutral", 0),
+        }
 
     counts = conn.execute(
         "SELECT (SELECT COUNT(*) FROM episodes) ep,"

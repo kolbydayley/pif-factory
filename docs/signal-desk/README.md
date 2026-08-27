@@ -6,10 +6,11 @@ Everything referenced is in this repo unless marked external. Built
 
 ## What it is
 
-A subject-agnostic **technical-podcast discourse dashboard**: people-first
-(who moved, who dissents), open-vocabulary topics grown from the corpus,
-proactive trend detectors, and every data point traceable to a verbatim
-quote. Single self-contained HTML file, regenerated nightly. NOT an AI
+A subject-agnostic **technical-podcast discourse research navigator**:
+mobile-first shifts, open-vocabulary topic research, rich person profiles,
+and every evidence excerpt linked to its original source. It supports both a
+two-minute scan and progressively deeper research without requiring an
+account. Single self-contained HTML file, regenerated nightly. NOT an AI
 dashboard — swap the podcast sources to a new sector and it re-molds itself
 with zero configuration (explicit Kolby requirement).
 
@@ -51,7 +52,28 @@ Regenerate manually:
 - **Sources**: labels (all packs incl. `ai_discourse_bulk_v1`) for topic
   series; `actor_positions` (guest/host/person) for the people board;
   `expert_authority_scores` × `canonical_people` for authority badges;
-  evidence quotes come from `actor_positions.evidence_json.evidence`.
+  evidence excerpts come from `actor_positions.evidence_json.evidence` and
+  are whitespace-normalized and capped at 240 characters for public display.
+- **Related issues**: ranked from topics co-occurring in the same episodes,
+  with shared-show breadth used before shared-episode count.
+- **Trust honesty**: authority-scored voices rank first. When no scored person
+  is attached to a topic, the UI says so and presents evidence without making
+  a trust claim.
+
+## Progressive disclosure routes
+
+The self-contained renderer uses hash routes, so every research layer has a
+stable browser-history state without needing a server-side router:
+
+- `#home/shifts`, `#home/people`, `#home/topics`
+- `#topic/<topic>` and topic slices for `stance/<group>` or `week/<week>`
+- `#person/<person>` for recurring claims, meaningful cross-episode position
+  changes, disagreements with the field, and evidence
+- `#evidence/<position-id>/<topic>` for excerpt context and the original link
+
+On mobile, topic pages put major issues and trusted-voice status before the
+long trend and evidence record. Person pages put biggest recurring claims
+first. Desktop retains the two-column research layout.
 
 ## Detectors (subject-blind statistics, in the aggregator)
 
@@ -70,10 +92,9 @@ Tuning lives in the constants at the top of the aggregator
 
 Editorial "signals desk": Fraunces display serif + IBM Plex Sans/Mono,
 warm paper surface, dataviz-validated palette (positive `#2a78d6`,
-negative `#e34948`, neutral `#c9c5ba`, accent `#1baf7a`). Stance chart is
-a weekly diverging stack centered on neutral (Likert-style), one axis,
-hover tooltips, direct labels + legend. Categorical hues fixed, never
-cycled; colors follow entities.
+negative `#d84b4a`, neutral `#b9b4a8`, accent `#178b62`). Mobile uses a
+persistent three-destination bottom navigation and 44px-or-larger targets.
+Categorical hues are fixed, never cycled; colors follow entities.
 
 ## Known limits / roadmap (in priority order)
 
