@@ -92,6 +92,12 @@ the newly introduced states; no tighter crop was needed.
 3. Post-fix comparison: no actionable P0/P1/P2 findings remain. The source is
    denser above the fold, while the implementation's slightly larger cards and
    persistent navigation are an intentional mobile research tradeoff.
+4. User phone evidence: P1 person-page evidence links could open an unavailable
+   view when that excerpt was outside the topic page's 16-item display cap; P2
+   episode titles and actions collided at narrow widths. Fix: evidence lookup
+   now falls back to the person evidence collection, and title/actions use
+   separate responsive grid rows. The exact Mustafa Suleyman route was retested
+   at 390 x 844 before republishing.
 
 **Findings**
 
