@@ -316,7 +316,9 @@ def collect_funnel(conn: sqlite3.Connection) -> Dict[str, Any]:
             "transcript_attempted": 0,
             "transcript_quarantined": 0,
             "segmented": 0,
+            "segments": 0,
             "intelligence_ready": 0,
+            "intelligence_ready_segments": 0,
         }
         for row in source_rows
     }
@@ -330,7 +332,8 @@ def collect_funnel(conn: sqlite3.Connection) -> Dict[str, Any]:
                     "rss_url": None, "enabled": True, "catalogued": 0,
                     "transcript_attempted": 0,
                     "transcript_quarantined": 0, "segmented": 0,
-                    "intelligence_ready": 0,
+                    "segments": 0, "intelligence_ready": 0,
+                    "intelligence_ready_segments": 0,
                 }
             shows[source_id][key] = int(row["n"] or 0)
 
@@ -360,6 +363,12 @@ def collect_funnel(conn: sqlite3.Connection) -> Dict[str, Any]:
                GROUP BY e.source_id""",
             "segmented",
         )
+        assign(
+            """SELECT e.source_id, COUNT(DISTINCT s.id) n
+               FROM episodes e JOIN segments s ON s.episode_id = e.id
+               GROUP BY e.source_id""",
+            "segments",
+        )
     if _table_exists(conn, "labels") and _table_exists(conn, "segments"):
         ready_clause = "WHERE lower(l.status) = 'ready'" \
             if _column_exists(conn, "labels", "status") else ""
@@ -371,6 +380,15 @@ def collect_funnel(conn: sqlite3.Connection) -> Dict[str, Any]:
                 {ready_clause}
                 GROUP BY e.source_id""",
             "intelligence_ready",
+        )
+        assign(
+            f"""SELECT e.source_id, COUNT(DISTINCT s.id) n
+                FROM episodes e
+                JOIN segments s ON s.episode_id = e.id
+                JOIN labels l ON l.segment_id = s.id
+                {ready_clause}
+                GROUP BY e.source_id""",
+            "intelligence_ready_segments",
         )
 
     ordered = sorted(
@@ -390,18 +408,21 @@ def collect_funnel(conn: sqlite3.Connection) -> Dict[str, Any]:
             item["stage"] = "enrolled"
 
     stage_defs = (
-        ("catalogued", "Enrolled + catalogued"),
-        ("transcript_attempted", "Transcript attempted"),
-        ("segmented", "Segmented"),
-        ("intelligence_ready", "Intelligence-ready"),
+        ("catalogued", "Enrolled + catalogued", None),
+        ("transcript_attempted", "Transcript attempted", None),
+        ("segmented", "Segmented", "segments"),
+        ("intelligence_ready", "Intelligence-ready",
+         "intelligence_ready_segments"),
     )
     stages = []
-    for key, label in stage_defs:
+    for key, label, segments_key in stage_defs:
         stages.append({
             "key": key,
             "label": label,
             "episodes": sum(item[key] for item in ordered),
             "shows": sum(1 for item in ordered if item[key] > 0),
+            "segments": sum(item[segments_key] for item in ordered)
+            if segments_key else 0,
         })
     return {
         "stages": stages,

@@ -54,14 +54,16 @@ class PodcastFunnelAggregateTest(unittest.TestCase):
         self.assertEqual(funnel["enrolled_shows"], 2)
         self.assertEqual(funnel["quarantined_transcript_episodes"], 1)
         self.assertEqual(
-            [(stage["episodes"], stage["shows"])
+            [(stage["shows"], stage["episodes"], stage["segments"])
              for stage in funnel["stages"]],
-            [(4, 2), (3, 2), (2, 2), (2, 2)],
+            [(2, 4, 0), (2, 3, 0), (2, 2, 2), (2, 2, 2)],
         )
         show_a = next(show for show in funnel["shows"]
                       if show["id"] == "show-a")
         self.assertEqual(show_a["stage"], "intelligence_ready")
         self.assertEqual(show_a["transcript_quarantined"], 1)
+        self.assertEqual(show_a["segments"], 1)
+        self.assertEqual(show_a["intelligence_ready_segments"], 1)
 
 
 class PodcastFunnelRendererTest(unittest.TestCase):
@@ -75,6 +77,11 @@ class PodcastFunnelRendererTest(unittest.TestCase):
         self.assertIn('id="enroll-form"', BUILD.TEMPLATE)
         self.assertIn("Open private enrollment request", BUILD.TEMPLATE)
         self.assertIn("github.com/kolbydayley/pif-factory/issues/new", BUILD.TEMPLATE)
+
+    def test_every_funnel_stage_renders_show_episode_and_segment_counts(self) -> None:
+        self.assertIn('class="funnel-stage-metrics"', BUILD.TEMPLATE)
+        for label in ("shows", "episodes", "segments"):
+            self.assertIn(f">{label}</small>", BUILD.TEMPLATE)
 
     def test_public_page_does_not_claim_anonymous_production_write(self) -> None:
         self.assertIn("rather than writing anonymously", BUILD.TEMPLATE)
