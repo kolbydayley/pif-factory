@@ -343,3 +343,37 @@ sources:
     policy: private_analysis_only
     transcript_policy: creator_rss_or_official_public_transcripts
     enabled: true
+  # --- Signal Desk 10x corpus expansion, wave 1 (added 2026-08-27).
+  # Feeds verified live (HTTP 200 + correct <title>) on 2026-08-27.
+  # enabled: false until the current labeling backlog clears; flip to true
+  # and re-run verify-sources + enqueue (12-month window) to activate.
+  - name: Practical AI
+    rss_url: https://changelog.com/practicalai/feed
+    category: applied_ai
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: false
+  - name: The a16z Show
+    rss_url: https://feeds.simplecast.com/JGE3yC0V
+    category: ai_startups
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: false
+  - name: Last Week in AI
+    rss_url: https://lastweekin.ai/feed
+    category: ai_news
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: false
+  - name: The Cognitive Revolution
+    rss_url: https://cognitiverevolution.substack.com/feed
+    category: frontier_ai
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: false
+  - name: NVIDIA AI Podcast
+    rss_url: https://feeds.soundcloud.com/users/soundcloud:users:264034133/sounds.rss
+    category: applied_ai
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: false
