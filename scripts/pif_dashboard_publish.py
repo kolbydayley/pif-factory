@@ -24,6 +24,7 @@ from pathlib import Path
 PIF_ROOT = Path.home() / "pif-factory"
 DATA_JSON = PIF_ROOT / "work" / "pif-ops" / "dashboard" / "data.json"
 DASHBOARD_HTML = PIF_ROOT / "work" / "pif-ops" / "dashboard" / "dashboard.html"
+FUNNEL_JSON = DASHBOARD_HTML.with_name("pif-signal-desk-funnel.json")
 HOST = "https://dashboards-production-dcba.up.railway.app"
 SLUG = "pif-signal-desk"
 EXPECTED_SCHEMA = "signal_desk_v4"
@@ -89,6 +90,7 @@ def publish(dry_run: bool = False) -> int:
 
 
 SITE_FILE = PIF_ROOT / "site" / "pif-signal-desk.html"
+SITE_FUNNEL_FILE = PIF_ROOT / "site" / "pif-signal-desk-funnel.json"
 
 
 def sync_site_and_push() -> int:
@@ -104,14 +106,16 @@ def sync_site_and_push() -> int:
               "(blob PUT already published)")
         return 0
     SITE_FILE.write_bytes(DASHBOARD_HTML.read_bytes())
+    SITE_FUNNEL_FILE.write_bytes(FUNNEL_JSON.read_bytes())
     diff = subprocess.run(
-        ["git", "status", "--porcelain", "--", str(SITE_FILE)],
+        ["git", "status", "--porcelain", "--", str(SITE_FILE),
+         str(SITE_FUNNEL_FILE)],
         capture_output=True, text=True, cwd=PIF_ROOT)
     if not diff.stdout.strip():
         print("site artifact unchanged; no push needed")
         return 0
     for cmd in (
-        ["git", "add", "--", str(SITE_FILE)],
+        ["git", "add", "--", str(SITE_FILE), str(SITE_FUNNEL_FILE)],
         ["git", "commit", "-m", "chore(site): nightly Signal Desk artifact"],
         ["git", "push"],
     ):

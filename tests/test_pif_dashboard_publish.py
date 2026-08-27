@@ -52,6 +52,12 @@ class PublishGuardTest(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("empty", reason)
 
+    def test_funnel_payload_is_published_beside_the_page(self):
+        self.assertEqual(pub.SITE_FUNNEL_FILE.name,
+                         "pif-signal-desk-funnel.json")
+        self.assertEqual(pub.FUNNEL_JSON.name,
+                         "pif-signal-desk-funnel.json")
+
 
 if __name__ == "__main__":
     unittest.main()

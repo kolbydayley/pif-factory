@@ -19,7 +19,7 @@ with zero configuration (explicit Kolby requirement).
 | Piece | Path | Role |
 |---|---|---|
 | Aggregator | `research_factory/pif_discourse_aggregates.py` | Read-only over `data/factory.sqlite` → `work/pif-ops/dashboard/data.json` (~1MB) |
-| Renderer | `scripts/pif_dashboard_build.py` | Embeds data.json into a template → `work/pif-ops/dashboard/dashboard.html` |
+| Renderer | `scripts/pif_dashboard_build.py` | Embeds research data into the HTML and emits a separate live funnel JSON resource beside it |
 | Nightly job (external) | codex-cron `pif-dashboard-refresh`, daily 21:30, cwd this repo | Runs aggregator then renderer; fires after `pif-canonical-promotion` (21:00) so each night's labels are included |
 
 ## Live dashboard
@@ -85,7 +85,14 @@ Regenerate manually:
 
 ## Progressive disclosure routes
 
-The self-contained renderer uses hash routes, so every research layer has a
+The research views remain self-contained, while the Podcast Funnel fetches
+`pif-signal-desk-funnel.json` from the server with caching disabled and
+refreshes it every 60 seconds. The nightly publish stages that JSON beside the
+HTML, so funnel counts and the enrolled-show roster always come from the
+latest published processing snapshot rather than build-time values embedded
+in the page.
+
+The renderer uses hash routes, so every research layer has a
 stable browser-history state without needing a server-side router:
 
 - `#home/shifts`, `#home/people`, `#home/topics`

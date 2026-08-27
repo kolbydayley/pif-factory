@@ -83,6 +83,12 @@ class PodcastFunnelRendererTest(unittest.TestCase):
         for label in ("shows", "episodes", "segments"):
             self.assertIn(f">{label}</small>", BUILD.TEMPLATE)
 
+    def test_funnel_fetches_uncached_server_data(self) -> None:
+        self.assertIn("pif-signal-desk-funnel.json", BUILD.TEMPLATE)
+        self.assertIn('cache:"no-store"', BUILD.TEMPLATE)
+        self.assertIn("setTimeout(()=>refreshFunnel(false),60000)", BUILD.TEMPLATE)
+        self.assertNotIn("DATA.funnel", BUILD.TEMPLATE)
+
     def test_public_page_does_not_claim_anonymous_production_write(self) -> None:
         self.assertIn("rather than writing anonymously", BUILD.TEMPLATE)
         self.assertIn("Feed verification remains the gate", BUILD.TEMPLATE)
