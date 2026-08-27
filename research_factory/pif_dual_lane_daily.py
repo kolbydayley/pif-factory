@@ -228,6 +228,14 @@ def roll_lane(lane: str, date: str) -> Dict[str, Any]:
         # mid-flight (observed 2026-08-17).
         return {"lane": lane, "skipped": "runner_lock_held"}
     receipt = newest_receipt(lane, not_before=started)
+    if receipt and receipt.get("audits_skipped_budget") \
+            and LANE_PROFILES.get(lane, {}).get("audit", True):
+        # Codex governor was empty, so the run drafted without its audit
+        # sample. Real work happened but the green gate cannot be evaluated
+        # honestly — record a retryable skip, never a tick either way.
+        return {"lane": lane, "skipped": "audits_skipped_codex_budget",
+                "drafted": receipt.get("drafted"),
+                "consumption": consumption_summary(lane, receipt)}
     if receipt and _provider_quota_exhausted(receipt):
         # Every call failed provider-side with nothing drafted: the weekly
         # pool is spent (grok 402s at ~650 successful calls/week, measured

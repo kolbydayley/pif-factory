@@ -234,10 +234,22 @@ def _run(args) -> None:
         snapshot, ledger, now=int(time.time()),
         **({"cap_points": profile_early["draft_budget_cap_points"]}
            if is_codex_lane else {}))
+    audits_skipped_budget = False
     if not budget["allowed"]:
-        print(json.dumps({"run_id": run_id, "aborted": "codex_budget",
-                          "budget": budget}))
-        return
+        if is_codex_lane:
+            # The codex lane spends Codex tokens directly — a hard stop is
+            # correct.
+            print(json.dumps({"run_id": run_id, "aborted": "codex_budget",
+                              "budget": budget}))
+            return
+        # Cheap lanes cost zero Codex to DRAFT; only their audit sampling
+        # spends budget. An exhausted governor must not stop free
+        # throughput (2026-08-27: cap hit with 5 days to reset would have
+        # stalled the whole GLM fleet). Draft on, skip audits, and flag the
+        # receipt so the roll records a skip — never a green built on
+        # unaudited work, never a red for a governor artifact.
+        audits_skipped_budget = True
+        args.audit_rate = 0.0
 
     rows = select_unlabeled_segments(
         args.count, exclude_drafted_lane=args.lane,
@@ -351,7 +363,8 @@ def _run(args) -> None:
 
     ok_audits = [a for a in audits if a.get("ok")]
     receipt = {
-        "run_id": run_id, "lane": args.lane,
+        "run_id": run_id,
+        "audits_skipped_budget": audits_skipped_budget, "lane": args.lane,
         "drafted": drafted, "failed": failed,
         "calls_made": calls_made,
         "failure_counts": failure_counts,
