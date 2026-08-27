@@ -24,7 +24,18 @@ with zero configuration (explicit Kolby requirement).
 
 ## Live dashboard
 
-Production URL: <https://dashboards-production-dcba.up.railway.app/d/pif-signal-desk.html>
+Canonical (GitHub auto-deploy):
+<https://signal-desk-production-edf4.up.railway.app/pif-signal-desk.html>
+Legacy blob host (kept in sync by the same publish run):
+<https://dashboards-production-dcba.up.railway.app/d/pif-signal-desk.html>
+
+Publish pipeline (2026-08-27): `scripts/pif_dashboard_publish.py` guards the
+fresh build, PUTs it to the legacy host, copies it to `site/`, commits, and
+pushes to `github.com/kolbydayley/pif-factory` (private). The Railway
+`signal-desk` service (project keystone-dashboards, service
+82d5e774-bb35-4534-b927-bfcd7c5ea572, root `/site`, branch
+`codex/pif-working-system-rebuild-20260720`) auto-deploys on every push —
+git push is the single publish surface.
 
 The Railway `keystone-dashboards` host serves the current published artifact.
 Kolby authorized automated publishing on 2026-08-27 (Signal Desk 10x
