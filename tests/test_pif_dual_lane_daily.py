@@ -116,3 +116,13 @@ def test_lane_partitions_are_disjoint_and_cover():
     for seg in ("seg_a", "seg_b", "seg_1234", "seg_cbe1f0bdf1da18d2f4542da4"):
         assert segment_partition(seg) == segment_partition(seg)  # stable
         assert 0 <= segment_partition(seg) < N_PARTITIONS
+
+
+def test_partial_quota_exhaustion_is_skip_not_red():
+    from research_factory.pif_dual_lane_daily import _provider_quota_exhausted
+    assert _provider_quota_exhausted(
+        {"drafted": 34, "calls_made": 120,
+         "failure_counts": {"provider": 80}}) is True
+    assert _provider_quota_exhausted(
+        {"drafted": 95, "calls_made": 138,
+         "failure_counts": {"provider": 5}}) is False

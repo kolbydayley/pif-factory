@@ -145,11 +145,22 @@ def newest_receipt(lane: str, not_before: float) -> Optional[Dict[str, Any]]:
 
 
 def _provider_quota_exhausted(receipt: Dict[str, Any]) -> bool:
-    """True when a run drafted nothing and every call failed provider-side."""
+    """True when provider-side failures dominated the run.
+
+    Covers full exhaustion (zero drafts, all calls 402) and PARTIAL
+    exhaustion: a lane that drafts a handful before its weekly pool runs
+    dry mid-run (grok on reset morning, 2026-08-27: 34 drafted then 402s
+    -> unfair red tick). Spending the budget on schedule is not a lane
+    failure.
+    """
     calls = receipt.get("calls_made") or 0
     failures = receipt.get("failure_counts") or {}
-    return (calls > 0 and not receipt.get("drafted")
-            and failures.get("provider", 0) >= calls)
+    provider = failures.get("provider", 0)
+    if calls <= 0 or provider <= 0:
+        return False
+    if not receipt.get("drafted"):
+        return provider >= calls
+    return provider >= 0.5 * calls
 
 
 def _runner_lock_held(stdout: Optional[str]) -> bool:
