@@ -46,7 +46,9 @@ Regenerate manually:
 - **Open vocabulary**: topics come from label `topics[].topic` strings and
   `actor_positions.concept_name`, normalized by `norm_topic()`. No enum
   anywhere. The old `ai_discourse_v1` pack's hardcoded topic enum is data,
-  not schema.
+  not schema. V3 removes junk buckets and clusters near-duplicates with a
+  bounded, volume-headed token-containment/Jaccard pass applied to both topic
+  series and people positions.
 - **Stance collapsing**: supportive/promotional/bullish → positive;
   skeptical/warning/bearish → negative; else neutral (`stance_group()`).
 - **Sources**: labels (all packs incl. `ai_discourse_bulk_v1`) for topic
@@ -59,6 +61,9 @@ Regenerate manually:
 - **Trust honesty**: authority-scored voices rank first. When no scored person
   is attached to a topic, the UI says so and presents evidence without making
   a trust claim.
+- **People quality**: a person must appear in at least two distinct episodes.
+  Browse order starts with sustained episode presence; a changed position
+  requires different episodes at least 14 days apart.
 
 ## Progressive disclosure routes
 
@@ -98,17 +103,15 @@ Categorical hues are fixed, never cycled; colors follow entities.
 
 ## Known limits / roadmap (in priority order)
 
-1. **Topic clustering**: person↔topic matching is exact normalized-string;
-   near-duplicate topics ("ai agents" vs "agents") should cluster. This is
-   why some topic pages show no voices.
-2. **"shifting" detector fires rarely** until recent-coverage density rises
-   (transcript acquisition frozen since 2026-07-18 — separate campaign).
-3. **Bulk labels aren't in `actor_positions` yet** — the people board deepens
+1. **Cluster aliases are not yet displayed**: V3 resolves near-duplicates to
+   a volume-headed canonical topic, but the detail page does not yet expose
+   which raw terms were folded into that topic.
+2. **Bulk labels aren't in `actor_positions` yet** — the people board deepens
    automatically when the tier-100 intelligence campaign runs claim/position
    extraction over the `ai_discourse_bulk_v1` pack (8.5k+ labels waiting).
-4. Prediction track records / consensus-formation views once
+3. Prediction track records / consensus-formation views once
    outcome-resolution data matures.
-5. Automate Railway publishing after the nightly local build once continuous
+4. Automate Railway publishing after the nightly local build once continuous
    public publishing is explicitly authorized.
 
 ## Verification habits that caught real bugs during the build

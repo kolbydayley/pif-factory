@@ -49,8 +49,10 @@ with a pre-pass frequency scan, not as a post-pass.
 
 ## Status
 
-- All five fixes were prototyped and the clustering perf trap measured in a
-  Claude session on 2026-08-26 (this doc is the handoff; no code from that
-  session is committed).
-- The renderer needs one small change with (2): the person-card meta line
-  should show episodes, not position counts.
+- V3 was committed in `12db15f` after the shared edits cleared. It implements
+  all five data fixes with the bounded clustering pass.
+- The renderer now shows episode presence instead of raw position counts,
+  preserves the aggregator's breadth-first people order, and caps the quick
+  scan at eight detector cards even though V3 activates more detectors.
+- Canonical rebuild and responsive route verification remain the release gate;
+  a commit alone is not a published dashboard.

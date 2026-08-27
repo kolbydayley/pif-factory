@@ -3,8 +3,13 @@ from __future__ import annotations
 import datetime as dt
 import sqlite3
 import unittest
+from collections import Counter
 
-from research_factory.pif_discourse_aggregates import collect
+from research_factory.pif_discourse_aggregates import (
+    build_topic_canon,
+    collect,
+    short_excerpt,
+)
 
 
 class DiscourseAggregateBreadthTest(unittest.TestCase):
@@ -135,6 +140,47 @@ class DiscourseAggregateBreadthTest(unittest.TestCase):
             payload["topics"]["single episode phrase"]["related"][0],
             {"topic": "adjacent issue", "shared_episodes": 1,
              "shared_shows": 1},
+        )
+
+    def test_moves_require_different_episodes_at_least_14_days_apart(self) -> None:
+        self.conn.executemany(
+            """
+            INSERT INTO actor_positions
+              (id, segment_id, actor_name, actor_type, concept_name, stance,
+               claim_type, confidence, evidence_json)
+            VALUES (?, ?, 'Mover', 'guest', 'forecast', ?, 'prediction', 0.8,
+                    '{"evidence":"A dated forecast."}')
+            """,
+            (("move_one", "seg_one_a", "supportive"),
+             ("move_two", "seg_two_a", "skeptical")),
+        )
+
+        too_close = collect(self.conn, now=dt.date(2026, 7, 1))
+        mover = next(p for p in too_close["people"] if p["name"] == "Mover")
+        self.assertEqual(mover["moves"], [])
+
+        self.conn.execute(
+            "UPDATE episodes SET published_at = '2026-07-01' WHERE id = 'ep_two'"
+        )
+        separated = collect(self.conn, now=dt.date(2026, 7, 15))
+        mover = next(p for p in separated["people"] if p["name"] == "Mover")
+        self.assertEqual(len(mover["moves"]), 1)
+
+    def test_topic_clustering_junk_filter_and_excerpt_cleanup(self) -> None:
+        canon = build_topic_canon(Counter({
+            "other": 999,
+            "agents": 100,
+            "agentic ai systems": 30,
+            "enterprise ai": 80,
+            "enterprise ai adoption": 20,
+        }))
+
+        self.assertNotIn("other", canon)
+        self.assertEqual(canon["agentic ai systems"], "agents")
+        self.assertEqual(canon["enterprise ai adoption"], "enterprise ai")
+        self.assertEqual(
+            short_excerpt("Speaker 1: First line.\nSpeaker 2: Second line."),
+            "First line. Second line.",
         )
 
 

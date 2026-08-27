@@ -422,9 +422,10 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
     # Rank by breadth of presence (audit item 2): a one-interview guest
     # with 500 positions is not a tracked voice.
     people = [p for p in people if p["n_episodes"] >= 2]
-    people.sort(key=lambda p: (len(p["moves"]) > 0, p["n_episodes"],
-                               p["n_recent_episodes"],
-                               p["authority"] or 0), reverse=True)
+    people.sort(key=lambda p: (p["n_episodes"],
+                               len(p["moves"]) > 0,
+                               p["authority"] or 0,
+                               p["n_recent_episodes"]), reverse=True)
     people = people[:TOP_PEOPLE]
 
     week_totals = [0] * RECENT_WEEKS
