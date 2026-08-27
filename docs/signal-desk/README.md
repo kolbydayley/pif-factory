@@ -58,6 +58,10 @@ Regenerate manually:
   are whitespace-normalized and capped at 240 characters for public display.
 - **Related issues**: ranked from topics co-occurring in the same episodes,
   with shared-show breadth used before shared-episode count.
+- **Honest chart magnitude**: weekly chart height is the three-week smoothed
+  share of all discourse mentions, not a raw count that inherits corpus
+  coverage swings. Exact counts remain in week labels; weeks with fewer than
+  150 total mentions are visibly de-emphasized.
 - **Trust honesty**: authority-scored voices rank first. When no scored person
   is attached to a topic, the UI says so and presents evidence without making
   a trust claim.

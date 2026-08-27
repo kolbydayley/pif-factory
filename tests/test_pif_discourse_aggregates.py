@@ -115,6 +115,10 @@ class DiscourseAggregateBreadthTest(unittest.TestCase):
         self.assertEqual(topic["pulse_episodes"], 2)
         self.assertEqual(topic["pulse_shows"], 2)
         self.assertEqual(payload["detectors"]["emerging"], [])
+        active_weeks = [s for s in topic["series"] if s["vol"]]
+        self.assertTrue(active_weeks)
+        self.assertTrue(all("share_smooth" in s for s in topic["series"]))
+        self.assertTrue(all(s["week_total"] >= s["vol"] for s in active_weeks))
         self.assertEqual(len(topic["evidence"]), 8)
         self.assertEqual(
             {item["source_url"] for item in topic["evidence"]},

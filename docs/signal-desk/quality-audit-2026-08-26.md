@@ -54,5 +54,8 @@ with a pre-pass frequency scan, not as a post-pass.
 - The renderer now shows episode presence instead of raw position counts,
   preserves the aggregator's breadth-first people order, and caps the quick
   scan at eight detector cards even though V3 activates more detectors.
+- Weekly charts and card sparklines now render the three-week smoothed
+  share-of-discourse series from `cb15268`, retain exact mention counts in
+  accessible week labels, and dim low-sample weeks.
 - Canonical rebuild and responsive route verification remain the release gate;
   a commit alone is not a published dashboard.
