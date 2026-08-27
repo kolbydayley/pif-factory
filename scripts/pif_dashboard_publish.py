@@ -27,6 +27,16 @@ DASHBOARD_HTML = PIF_ROOT / "work" / "pif-ops" / "dashboard" / "dashboard.html"
 FUNNEL_JSON = DASHBOARD_HTML.with_name("pif-signal-desk-funnel.json")
 HOST = "https://dashboards-production-dcba.up.railway.app"
 SLUG = "pif-signal-desk"
+CANONICAL = "https://signal-desk-production-edf4.up.railway.app/pif-signal-desk.html"
+# The blob host caps uploads (~5MB; the artifact outgrew it 2026-08-27),
+# so the legacy slug now serves a redirect to the canonical GitHub->Railway
+# deploy. Old bookmarks keep working; divergence is impossible.
+REDIRECT_HTML = (
+    "<!doctype html><meta charset=\"utf-8\">"
+    f"<meta http-equiv=\"refresh\" content=\"0; url={CANONICAL}\">"
+    f"<title>Signal Desk</title><a href=\"{CANONICAL}\">"
+    "Signal Desk has moved</a>"
+).encode()
 EXPECTED_SCHEMA = "signal_desk_v4"
 MAX_BUILD_AGE_DAYS = 2  # nightly cadence; anything older is a broken chain
 
@@ -70,22 +80,21 @@ def publish(dry_run: bool = False) -> int:
     if dry_run:
         print("dry run: not publishing")
         return 0
-    key = _railway_api_key()
-    req = urllib.request.Request(
-        f"{HOST}/api/dashboard/{SLUG}", data=body, method="PUT",
-        headers={"content-type": "text/html", "x-api-key": key})
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        print(f"PUT status {resp.status}")
-    with urllib.request.urlopen(f"{HOST}/d/{SLUG}.html", timeout=60) as resp:
-        remote_sha = hashlib.sha256(resp.read()).hexdigest()
-    if remote_sha != local_sha:
-        print(f"VERIFY FAILED: remote sha {remote_sha[:16]}… != local",
-              file=sys.stderr)
-        return 3
-    print(f"verified live: {HOST}/d/{SLUG}.html matches local artifact")
     rc = sync_site_and_push()
     if rc:
         return rc
+    key = _railway_api_key()
+    req = urllib.request.Request(
+        f"{HOST}/api/dashboard/{SLUG}", data=REDIRECT_HTML, method="PUT",
+        headers={"content-type": "text/html", "x-api-key": key})
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        print(f"legacy redirect PUT status {resp.status}")
+    with urllib.request.urlopen(f"{HOST}/d/{SLUG}.html", timeout=60) as resp:
+        if CANONICAL.encode() not in resp.read():
+            print("VERIFY FAILED: legacy slug does not redirect to canonical",
+                  file=sys.stderr)
+            return 3
+    print(f"legacy {HOST}/d/{SLUG}.html now redirects to canonical")
     return 0
 
 
