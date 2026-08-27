@@ -82,6 +82,39 @@ def publish(dry_run: bool = False) -> int:
               file=sys.stderr)
         return 3
     print(f"verified live: {HOST}/d/{SLUG}.html matches local artifact")
+    rc = sync_site_and_push()
+    if rc:
+        return rc
+    return 0
+
+
+SITE_FILE = PIF_ROOT / "site" / "pif-signal-desk.html"
+
+
+def sync_site_and_push() -> int:
+    """Copy the artifact into site/ and push, which triggers the Railway
+    GitHub auto-deploy (Kolby 2026-08-27: git push is the one publish
+    surface). Stages ONLY the site artifact — this is a shared checkout."""
+    if not SITE_FILE.parent.exists():
+        return 0
+    SITE_FILE.write_bytes(DASHBOARD_HTML.read_bytes())
+    diff = subprocess.run(
+        ["git", "status", "--porcelain", "--", str(SITE_FILE)],
+        capture_output=True, text=True, cwd=PIF_ROOT)
+    if not diff.stdout.strip():
+        print("site artifact unchanged; no push needed")
+        return 0
+    for cmd in (
+        ["git", "add", "--", str(SITE_FILE)],
+        ["git", "commit", "-m", "chore(site): nightly Signal Desk artifact"],
+        ["git", "push"],
+    ):
+        r = subprocess.run(cmd, capture_output=True, text=True, cwd=PIF_ROOT)
+        if r.returncode != 0:
+            print(f"site publish step failed ({' '.join(cmd[:2])}): "
+                  f"{r.stderr.strip()[:300]}", file=sys.stderr)
+            return 4
+    print("site artifact committed and pushed (Railway auto-deploys)")
     return 0
 
 
