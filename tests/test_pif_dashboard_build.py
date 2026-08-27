@@ -55,6 +55,24 @@ def _payload(detectors=None, topics=None, people=None):
     }
 
 
+class AskLayerTest(unittest.TestCase):
+    def test_ask_route_is_wired(self):
+        self.assertIn('r.kind==="ask"', build.TEMPLATE)
+        self.assertIn("function renderAsk", build.TEMPLATE)
+
+    def test_ask_box_present_on_home(self):
+        self.assertIn('id="ask-input"', build.TEMPLATE)
+
+    def test_answers_are_extractive_with_honest_empty_state(self):
+        # The ask layer must reuse the existing extractive cards and say
+        # plainly when the corpus cannot answer.
+        self.assertIn("cannot answer", build.TEMPLATE)
+        self.assertIn("function askSearch", build.TEMPLATE)
+
+    def test_copy_prompt_button_exists(self):
+        self.assertIn("copyAskPrompt", build.TEMPLATE)
+
+
 class ComputeDiffTest(unittest.TestCase):
     def test_no_prev_returns_none(self):
         self.assertIsNone(build.compute_diff(_payload(), None))
