@@ -979,7 +979,23 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             ),
             reverse=True,
         )
-        info["evidence"] = evidence[:16]
+        # Round-robin across episodes: quality-sorted within each episode,
+        # but every episode gets a slot before any episode gets a second
+        # (site review 2026-08-27: one episode was filling entire evidence
+        # lists — median topic spanned only 27% unique episodes).
+        by_episode: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        for item in evidence:
+            by_episode[item["episode_id"]].append(item)
+        diversified: List[Dict[str, Any]] = []
+        rnd = 0
+        while len(diversified) < len(evidence):
+            layer = [items[rnd] for items in by_episode.values()
+                     if rnd < len(items)]
+            if not layer:
+                break
+            diversified.extend(layer)
+            rnd += 1
+        info["evidence"] = diversified[:16]
         attach_context(info["evidence"], ctx_map, _ctx_cache)
         stance_counts = Counter(item["group"] for item in evidence)
         info["evidence_stances"] = {

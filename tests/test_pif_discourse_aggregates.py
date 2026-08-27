@@ -461,6 +461,21 @@ class DiscourseDetectorSignificanceTest(unittest.TestCase):
         pairs = [frozenset((e["a"], e["b"])) for e in net["edges"]]
         self.assertEqual(len(pairs), len(set(pairs)))
 
+    def test_topic_evidence_spans_episodes_before_repeating_one(self) -> None:
+        # Five quotes from one episode and one from another: the list must
+        # lead with both episodes represented, not five slots of episode A.
+        d1, d2 = dt.date(2026, 6, 15), dt.date(2026, 6, 8)
+        for k in range(5):
+            self._add_position("div_e1", d1, "show_a", f"Voice {k}",
+                              topic="diverse topic")
+        self._add_position("div_e2", d2, "show_b", "Other Voice",
+                          topic="diverse topic")
+        payload = collect(self.conn, now=_NOW)
+        evidence = payload["topics"]["diverse topic"]["evidence"]
+        self.assertEqual(len(evidence), 6)  # reordered, nothing dropped
+        first_two_eps = {e["episode_id"] for e in evidence[:2]}
+        self.assertEqual(first_two_eps, {"div_e1", "div_e2"})
+
     def test_every_detector_hit_carries_p_value_and_tier(self) -> None:
         self._fill_background(per_base_week=40, per_pulse_week=40)
         for i, day in enumerate(_PULSE_MONDAYS[:3]):
