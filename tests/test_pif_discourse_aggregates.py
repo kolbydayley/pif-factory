@@ -438,6 +438,29 @@ class DiscourseDetectorSignificanceTest(unittest.TestCase):
         # local filesystem paths must never leak into the public payload
         self.assertNotIn(tmp.name, json.dumps(payload))
 
+    def test_payload_carries_people_network_graph(self) -> None:
+        d1, d2 = dt.date(2026, 6, 8), dt.date(2026, 6, 15)
+        for eid, day, src in (("net_e1", d1, "show_a"),
+                              ("net_e2", d2, "show_b")):
+            self._add_position(eid, day, src, "Connector")
+            self._add_position(eid, day, src, "Fan One")
+        self._add_position("net_e1", d1, "show_a", "Fan Two")
+        self._add_position("net_e2", d2, "show_b", "Fan Two")
+
+        payload = collect(self.conn, now=_NOW)
+        net = payload["network"]
+        names = {n["name"] for n in net["nodes"]}
+        self.assertIn("Connector", names)
+        for n in net["nodes"]:
+            for key in ("name", "score", "tier", "n_links"):
+                self.assertIn(key, n)
+        edge = next(e for e in net["edges"]
+                    if {e["a"], e["b"]} == {"Connector", "Fan One"})
+        self.assertEqual(edge["w"], 2)  # two shared episodes
+        # undirected: each pair appears once
+        pairs = [frozenset((e["a"], e["b"])) for e in net["edges"]]
+        self.assertEqual(len(pairs), len(set(pairs)))
+
     def test_every_detector_hit_carries_p_value_and_tier(self) -> None:
         self._fill_background(per_base_week=40, per_pulse_week=40)
         for i, day in enumerate(_PULSE_MONDAYS[:3]):

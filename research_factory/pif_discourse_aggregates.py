@@ -580,6 +580,21 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             p["trust"] = {"score": 0.0, "tier": "peripheral", "n_links": 0,
                           "basis": "co-appearance pagerank (d=0.85)"}
 
+    # ---- people network graph for the map view (Kolby 2026-08-27)
+    node_names = {p["name"] for p in people}
+    people_network = {
+        "nodes": [{"name": p["name"], "score": p["trust"]["score"],
+                   "tier": p["trust"]["tier"],
+                   "n_links": p["trust"]["n_links"],
+                   "n_episodes": p["n_episodes"],
+                   "shows": len(p["shows"])} for p in people],
+        "edges": sorted(
+            ({"a": a, "b": b, "w": w}
+             for a, nbrs in co_edges.items() if a in node_names
+             for b, w in nbrs.items() if b in node_names and a < b),
+            key=lambda e: -e["w"])[:400],
+    }
+
     week_totals = [0] * RECENT_WEEKS
     for cells in topic_weekly.values():
         for i, c in cells.items():
@@ -827,6 +842,7 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
                    "coverage": {k: dict(v) for k, v in coverage.items()}},
         "topics": topics_out,
         "people": people,
+        "network": people_network,
         "detectors": detectors,
     }
 

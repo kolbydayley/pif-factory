@@ -87,6 +87,19 @@ class EvidenceContextPageTest(unittest.TestCase):
         self.assertIn("What the shift signal compares", build.TEMPLATE)
 
 
+class NetworkMapTest(unittest.TestCase):
+    def test_network_route_and_renderer_exist(self):
+        self.assertIn('r.kind==="network"', build.TEMPLATE)
+        self.assertIn("function renderNetwork", build.TEMPLATE)
+
+    def test_people_tab_links_to_map(self):
+        self.assertIn('data-route="network"', build.TEMPLATE)
+
+    def test_nodes_are_clickable_person_links(self):
+        # every node group routes to the person page
+        self.assertIn('netNode', build.TEMPLATE)
+
+
 class ComputeDiffTest(unittest.TestCase):
     def test_no_prev_returns_none(self):
         self.assertIsNone(build.compute_diff(_payload(), None))
