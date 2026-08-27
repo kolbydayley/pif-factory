@@ -97,6 +97,12 @@ def sync_site_and_push() -> int:
     surface). Stages ONLY the site artifact — this is a shared checkout."""
     if not SITE_FILE.parent.exists():
         return 0
+    remotes = subprocess.run(["git", "remote"], capture_output=True,
+                             text=True, cwd=PIF_ROOT).stdout.strip()
+    if not remotes:
+        print("no git remote configured; skipping site push "
+              "(blob PUT already published)")
+        return 0
     SITE_FILE.write_bytes(DASHBOARD_HTML.read_bytes())
     diff = subprocess.run(
         ["git", "status", "--porcelain", "--", str(SITE_FILE)],

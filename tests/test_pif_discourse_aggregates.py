@@ -29,7 +29,8 @@ class DiscourseAggregateBreadthTest(unittest.TestCase):
             );
             CREATE TABLE segments (
               id TEXT PRIMARY KEY,
-              episode_id TEXT NOT NULL
+              episode_id TEXT NOT NULL,
+              text_path TEXT
             );
             CREATE TABLE labels (
               segment_id TEXT NOT NULL,
@@ -194,7 +195,7 @@ CREATE TABLE episodes (
   id TEXT PRIMARY KEY, source_id TEXT NOT NULL, title TEXT NOT NULL,
   published_at TEXT, url TEXT, audio_url TEXT
 );
-CREATE TABLE segments (id TEXT PRIMARY KEY, episode_id TEXT NOT NULL);
+CREATE TABLE segments (id TEXT PRIMARY KEY, episode_id TEXT NOT NULL, text_path TEXT);
 CREATE TABLE labels (segment_id TEXT NOT NULL, output_json TEXT NOT NULL);
 CREATE TABLE actor_positions (
   id TEXT PRIMARY KEY, segment_id TEXT NOT NULL, actor_name TEXT,
@@ -403,6 +404,39 @@ class DiscourseDetectorSignificanceTest(unittest.TestCase):
                            by_name["Pair A"]["trust"]["score"])
         self.assertEqual(by_name["Connector"]["trust"]["n_links"], 2)
         self.assertIn("pagerank", by_name["Connector"]["trust"]["basis"])
+
+    def test_evidence_carries_surrounding_transcript_context(self) -> None:
+        import tempfile
+        text = ("Earlier discussion setting the scene for the claim. "
+                "The quoted sentence lives here in the middle. "
+                "And afterwards the host pushes back on the framing.")
+        start = text.index("The quoted")
+        end = text.index(" And afterwards")
+        tmp = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False)
+        tmp.write(text)
+        tmp.close()
+        day = dt.date(2026, 6, 15)
+        self.conn.execute(
+            "INSERT INTO episodes (id, source_id, title, published_at, url)"
+            " VALUES ('ctx_ep', 'show_ctx', 'Context Episode', ?,"
+            " 'https://example.com/ctx')", (day.isoformat(),))
+        self.conn.execute(
+            "INSERT INTO segments (id, episode_id, text_path)"
+            " VALUES ('ctx_seg', 'ctx_ep', ?)", (tmp.name,))
+        self.conn.execute(
+            "INSERT INTO actor_positions (id, segment_id, actor_name,"
+            " actor_type, concept_name, stance, claim_type, confidence,"
+            " evidence_json) VALUES ('ctx_pos', 'ctx_seg', 'Quoted Guest',"
+            " 'guest', 'context topic', 'supportive', 'observation', 0.9, ?)",
+            (json.dumps({"evidence": text[start:end],
+                         "start": start, "end": end}),))
+
+        payload = collect(self.conn, now=_NOW)
+        ev = payload["topics"]["context topic"]["evidence"][0]
+        self.assertIn("Earlier discussion", ev["context_before"])
+        self.assertIn("host pushes back", ev["context_after"])
+        # local filesystem paths must never leak into the public payload
+        self.assertNotIn(tmp.name, json.dumps(payload))
 
     def test_every_detector_hit_carries_p_value_and_tier(self) -> None:
         self._fill_background(per_base_week=40, per_pulse_week=40)

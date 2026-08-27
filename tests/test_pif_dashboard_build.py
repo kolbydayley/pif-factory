@@ -73,6 +73,20 @@ class AskLayerTest(unittest.TestCase):
         self.assertIn("copyAskPrompt", build.TEMPLATE)
 
 
+class EvidenceContextPageTest(unittest.TestCase):
+    def test_evidence_page_shows_surrounding_transcript(self):
+        self.assertIn("context_before", build.TEMPLATE)
+        self.assertIn("context_after", build.TEMPLATE)
+
+    def test_evidence_page_lists_same_episode_evidence(self):
+        self.assertIn("Also from this episode", build.TEMPLATE)
+        self.assertIn("function episodeSiblings", build.TEMPLATE)
+
+    def test_shift_signal_gets_pooled_comparison(self):
+        self.assertIn("function shiftCompare", build.TEMPLATE)
+        self.assertIn("What the shift signal compares", build.TEMPLATE)
+
+
 class ComputeDiffTest(unittest.TestCase):
     def test_no_prev_returns_none(self):
         self.assertIsNone(build.compute_diff(_payload(), None))

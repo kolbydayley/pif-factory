@@ -146,6 +146,57 @@ def build_topic_canon(counts: Counter) -> Dict[str, str]:
     return canon
 
 
+CTX_RAW_SPAN = 500     # transcript chars read on each side of the quote
+CTX_DISPLAY_CAP = 300  # public display cap per side (excerpt policy)
+
+
+def _clean_context(raw: str, keep_end: bool) -> Optional[str]:
+    """Clean a transcript window like short_excerpt, capped per side.
+    keep_end keeps the tail (for text BEFORE the quote)."""
+    cleaned = re.sub(r"\s*Speaker \d+:\s*", " ", raw or "")
+    cleaned = re.sub(r">>\s*\[?[a-z ]*\]?", " ", cleaned)
+    cleaned = " ".join(cleaned.split())
+    if not cleaned:
+        return None
+    if len(cleaned) <= CTX_DISPLAY_CAP:
+        return cleaned
+    if keep_end:
+        clipped = cleaned[-CTX_DISPLAY_CAP:]
+        sp = clipped.find(" ")
+        return clipped[sp + 1:] if 0 <= sp < 40 else clipped
+    clipped = cleaned[:CTX_DISPLAY_CAP]
+    sp = clipped.rfind(" ")
+    return clipped[:sp] if sp > CTX_DISPLAY_CAP - 40 else clipped
+
+
+def attach_context(entries: List[Dict[str, Any]],
+                   ctx_map: Dict[str, tuple],
+                   cache: Dict[str, Optional[str]]) -> None:
+    """Attach bounded surrounding-transcript windows to evidence entries.
+    Reads segment text lazily (only for entries that survived into the
+    payload) and never exposes the file path."""
+    for e in entries:
+        ctx = ctx_map.get(e.get("id"))
+        if not ctx or "context_before" in e:
+            continue
+        path, start, end = ctx
+        if path not in cache:
+            try:
+                cache[path] = Path(path).read_text(errors="replace")
+            except OSError:
+                cache[path] = None
+        text = cache[path]
+        if text is None or not (0 <= start <= end <= len(text)):
+            continue
+        before = _clean_context(text[max(0, start - CTX_RAW_SPAN):start],
+                                keep_end=True)
+        after = _clean_context(text[end:end + CTX_RAW_SPAN], keep_end=False)
+        if before:
+            e["context_before"] = before
+        if after:
+            e["context_after"] = after
+
+
 def find_inflections(series: List[Dict[str, Any]],
                      week_totals: List[int]) -> List[Dict[str, Any]]:
     """Weeks where a topic's discourse crossed a significance boundary.
@@ -319,7 +370,7 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         """
         SELECT ap.id, ap.actor_name, ap.actor_type, ap.concept_name, ap.stance,
                ap.claim_type, ap.confidence, ap.evidence_json, ap.segment_id,
-               s.episode_id, e.published_at, e.source_id,
+               s.episode_id, s.text_path, e.published_at, e.source_id,
                e.title AS episode_title, e.url AS episode_url,
                e.audio_url AS episode_audio_url
         FROM actor_positions ap
@@ -329,6 +380,7 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         """, (cutoff_iso,)).fetchall()
     people_positions: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     concept_field: Dict[str, Counter] = defaultdict(Counter)
+    ctx_map: Dict[str, tuple] = {}
     for r in pos_rows:
         topic = canon(norm_topic(r["concept_name"]))
         wk = week_of(r["published_at"])
@@ -344,7 +396,17 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             episode_shows[r["episode_id"]] = r["source_id"]
         name = (r["actor_name"] or "").strip()
         try:
-            evidence = json.loads(r["evidence_json"]).get("evidence")
+            ej = json.loads(r["evidence_json"])
+            evidence = ej.get("evidence")
+            # Segment-relative offsets let the evidence page show the
+            # surrounding transcript window (Kolby 2026-08-27: "read
+            # context" must give where / what was said / what surrounded
+            # it). Kept in a side map so filesystem paths never enter the
+            # public payload.
+            if r["text_path"] is not None and \
+                    isinstance(ej.get("start"), int) and \
+                    isinstance(ej.get("end"), int):
+                ctx_map[r["id"]] = (r["text_path"], ej["start"], ej["end"])
         except (json.JSONDecodeError, TypeError):
             evidence = None
         entry = {
@@ -524,6 +586,9 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             week_totals[i] += c["vol"]
 
     # ---- topic table + detectors
+    _ctx_cache: Dict[str, Optional[str]] = {}
+    for p in people:
+        attach_context(p["evidence"], ctx_map, _ctx_cache)
     topics_out = {}
     detectors = {"emerging": [], "shifting": [], "contested": [], "fading": []}
     pulse_lo = RECENT_WEEKS - PULSE_WEEKS
@@ -735,6 +800,7 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             reverse=True,
         )
         info["evidence"] = evidence[:16]
+        attach_context(info["evidence"], ctx_map, _ctx_cache)
         stance_counts = Counter(item["group"] for item in evidence)
         info["evidence_stances"] = {
             "positive": stance_counts.get("positive", 0),
