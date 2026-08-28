@@ -104,7 +104,12 @@ def _shadow_conn() -> sqlite3.Connection:
 # lanes start together). 8 slices weighted by lane throughput; rebalance by
 # editing this table when a lane exhausts its slice.
 N_PARTITIONS = 8
-LANE_PARTITIONS = {"glm-zai": (0, 1, 2), "glm-zai-flash": (3, 4),
+# Rebalanced 2026-08-28 06:30: the z.ai lanes exhausted slices 0-4 (74
+# segments left) while ~23.5k sat in the bounded lanes' slices — and grok's
+# pool and codex's budget are both spent until their resets. The z.ai lanes
+# take over those slices; grok/codex share 5/6 with them (their brief daily
+# runs may rarely double-draft a segment; canonical promotion dedups).
+LANE_PARTITIONS = {"glm-zai": (0, 1, 2, 5), "glm-zai-flash": (3, 4, 6),
                    "grok": (5,), "codex": (6,), "glm": (7,)}
 
 
