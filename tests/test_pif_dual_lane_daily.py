@@ -117,7 +117,7 @@ def test_lane_partitions_cover_and_continuous_lanes_disjoint():
     # The CONTINUOUS lanes must never share a slice (they select
     # concurrently); episodic lanes (grok/codex daily runs) may share —
     # canonical promotion dedups the rare double-draft.
-    continuous = ("glm-zai", "glm-zai-flash", "glm")
+    continuous = ("glm-zai", "glm-zai-flash")
     seen = []
     for lane in continuous:
         seen.extend(LANE_PARTITIONS[lane])

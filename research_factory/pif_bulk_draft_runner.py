@@ -109,7 +109,11 @@ N_PARTITIONS = 8
 # pool and codex's budget are both spent until their resets. The z.ai lanes
 # take over those slices; grok/codex share 5/6 with them (their brief daily
 # runs may rarely double-draft a segment; canonical promotion dedups).
-LANE_PARTITIONS = {"glm-zai": (0, 1, 2, 5), "glm-zai-flash": (3, 4, 6),
+# 2026-08-28 15:20 endgame: slices 0-6 are drafted out except flash's
+# tail; slice 7 (8k) would take the Go route a month. glm-zai takes it;
+# the Go lane becomes episodic on the shared slice (its continuous job is
+# retired — 50/hr vs glm-zai's 1,500/hr on identical segments).
+LANE_PARTITIONS = {"glm-zai": (0, 1, 2, 5, 7), "glm-zai-flash": (3, 4, 6),
                    "grok": (5,), "codex": (6,), "glm": (7,)}
 
 
