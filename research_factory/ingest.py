@@ -116,7 +116,21 @@ def _youtube_video_id(url: str) -> str:
     raise ValueError(f"Unsupported YouTube URL: {url}")
 
 
+# Browser-harvested caption cache (Kolby authorized the authenticated-
+# browser transcript path 2026-08-28 after YouTube IP-blocked the caption
+# API). Files are <video_id>.txt written by the paced Chrome harvest; when
+# present they short-circuit the youtube-transcript-api call entirely.
+CAPTION_CACHE_DIR = Path.home() / "pif-factory" / "work" / "pif-ops" / "youtube-captions"
+
+
 def fetch_transcript_source(url: str, *, source_kind: str, transcript_type: str | None) -> tuple[str, str | None]:
+    if source_kind == "youtube_captions":
+        try:
+            cached = CAPTION_CACHE_DIR / f"{_youtube_video_id(url)}.txt"
+        except ValueError:
+            cached = None
+        if cached is not None and cached.exists():
+            return cached.read_text(), transcript_type or "text/plain"
     if source_kind != "youtube_captions":
         if _is_simplecast_transcript_url(url):
             return _fetch_simplecast_transcription(url)
