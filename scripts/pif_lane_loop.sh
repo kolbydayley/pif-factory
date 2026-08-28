@@ -17,7 +17,24 @@ echo "$(date '+%F %T') loop start lane=$LANE count=$COUNT audit=$AUDIT pid=$$" >
 while [ ! -f "$STOP" ]; do
   /usr/bin/python3 -B -m research_factory.pif_bulk_draft_runner \
     --lane "$LANE" --count "$COUNT" --audit-rate "$AUDIT" \
-    >> "$LOG" 2>&1
+    >> "$LOG" 2>&1 &
+  RPID=$!
+  # Stall watchdog: the runner has twice hung alive-but-idle (0 CPU, no
+  # drafts, threads stuck past their socket timeouts). If no draft lands
+  # for 15 minutes while the runner lives, kill and let the loop restart.
+  while kill -0 "$RPID" 2>/dev/null; do
+    sleep 300
+    LAST=$(/usr/bin/sqlite3 work/bulk-drafts/drafts.sqlite \
+      "SELECT CAST((julianday('now')-julianday(MAX(created_at)))*1440 AS INT) \
+       FROM draft_labels WHERE lane='$LANE'" 2>/dev/null)
+    if [ -n "$LAST" ] && [ "$LAST" -ge 15 ]; then
+      echo "$(date '+%F %T') watchdog: no $LANE draft for ${LAST}m; killing $RPID" >> "$LOG"
+      kill "$RPID" 2>/dev/null
+      sleep 5
+      break
+    fi
+  done
+  wait "$RPID" 2>/dev/null
   sleep 60
 done
 echo "$(date '+%F %T') loop stopped by $STOP" >> "$LOG"
