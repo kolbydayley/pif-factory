@@ -50,11 +50,11 @@ def fetch_stats(conn) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--batch", type=int, default=5)
+    ap.add_argument("--batch", type=int, default=3)
     ap.add_argument("--max-batches", type=int, default=300)
     ap.add_argument("--since", default="2025-01-01")
     ap.add_argument("--abort-fail-rate", type=float, default=0.5)
-    ap.add_argument("--sleep", type=float, default=150.0,
+    ap.add_argument("--sleep", type=float, default=240.0,
                     help="pause between batches (be polite to YouTube)")
     ap.add_argument("--block-cooldown", type=float, default=900.0)
     args = ap.parse_args()
@@ -125,7 +125,9 @@ def main() -> int:
                   "signature — inspect before re-running.", flush=True)
             return 2
         else:
-            time.sleep(args.sleep)
+            # jitter derived from batch number keeps the cadence
+            # deterministic yet non-metronomic
+            time.sleep(args.sleep + (batch_no * 37) % 60)
     print(json.dumps({"fetched_ok": total_ok, "failed": total_fail}))
     return 0
 
