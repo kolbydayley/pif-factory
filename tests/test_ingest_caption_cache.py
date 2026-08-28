@@ -27,6 +27,24 @@ class CaptionCacheTest(unittest.TestCase):
             finally:
                 ingest.CAPTION_CACHE_DIR = old
 
+    def test_timedtext_url_form_hits_cache(self):
+        # verified_transcript_url is often the timedtext form
+        # (youtube.com/api/timedtext?v=<id>&...); the cache lookup must
+        # extract the id from the v= param rather than rejecting the URL.
+        with tempfile.TemporaryDirectory() as td:
+            old = ingest.CAPTION_CACHE_DIR
+            ingest.CAPTION_CACHE_DIR = Path(td)
+            try:
+                (Path(td) / "yGi_nXdQRJc.txt").write_text(
+                    "cached transcript reached via timedtext url form ok")
+                text, _ = ingest.fetch_transcript_source(
+                    "https://www.youtube.com/api/timedtext?v=yGi_nXdQRJc"
+                    "&ei=abc&caps=asr",
+                    source_kind="youtube_captions", transcript_type=None)
+                self.assertIn("timedtext url form ok", text)
+            finally:
+                ingest.CAPTION_CACHE_DIR = old
+
     def test_no_cache_still_uses_api_path(self):
         with tempfile.TemporaryDirectory() as td:
             old = ingest.CAPTION_CACHE_DIR

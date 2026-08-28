@@ -106,10 +106,12 @@ def _youtube_video_id(url: str) -> str:
         if video_id:
             return video_id
     if "youtube.com" in host:
-        if parsed.path == "/watch":
-            video_id = parse_qs(parsed.query).get("v", [None])[0]
-            if video_id:
-                return video_id
+        # Any youtube.com URL carrying a v= param names its video —
+        # verified_transcript_url is often the timedtext form
+        # (/api/timedtext?v=<id>&...), not just /watch.
+        video_id = parse_qs(parsed.query).get("v", [None])[0]
+        if video_id:
+            return video_id
         parts = [part for part in parsed.path.split("/") if part]
         if len(parts) >= 2 and parts[0] in {"embed", "shorts", "live"}:
             return parts[1]
