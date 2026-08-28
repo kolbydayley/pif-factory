@@ -50,12 +50,13 @@ def fetch_stats(conn) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--batch", type=int, default=40)
-    ap.add_argument("--max-batches", type=int, default=40)
+    ap.add_argument("--batch", type=int, default=5)
+    ap.add_argument("--max-batches", type=int, default=300)
     ap.add_argument("--since", default="2025-01-01")
     ap.add_argument("--abort-fail-rate", type=float, default=0.5)
-    ap.add_argument("--sleep", type=float, default=20.0,
+    ap.add_argument("--sleep", type=float, default=150.0,
                     help="pause between batches (be polite to YouTube)")
+    ap.add_argument("--block-cooldown", type=float, default=900.0)
     args = ap.parse_args()
     total_ok = total_fail = 0
     for batch_no in range(1, args.max_batches + 1):
@@ -96,11 +97,24 @@ def main() -> int:
         print(f"batch {batch_no}: attached {len(todo)}, fetched ok={ok} "
               f"fail={fail} (cum ok={total_ok} fail={total_fail})",
               flush=True)
-        if ok + fail >= 10 and rate >= args.abort_fail_rate:
-            print(f"ABORT: failure rate {rate:.0%} looks like a YouTube "
-                  "block — backing off. Re-run later.", flush=True)
+        conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+        blocked = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE job_type='fetch_transcript'"
+            " AND status='failed'"
+            " AND updated_at >= datetime('now','-10 minutes')"
+            " AND error LIKE '%blocking requests from your IP%'"
+        ).fetchone()[0]
+        conn.close()
+        if blocked:
+            print(f"YouTube block signature ({blocked} recent) — cooling "
+                  f"down {args.block_cooldown:.0f}s", flush=True)
+            time.sleep(args.block_cooldown)
+        elif ok + fail >= 10 and rate >= args.abort_fail_rate:
+            print(f"ABORT: failure rate {rate:.0%} with no block "
+                  "signature — inspect before re-running.", flush=True)
             return 2
-        time.sleep(args.sleep)
+        else:
+            time.sleep(args.sleep)
     print(json.dumps({"fetched_ok": total_ok, "failed": total_fail}))
     return 0
 
