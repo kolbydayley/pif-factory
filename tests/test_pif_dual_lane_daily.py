@@ -108,11 +108,20 @@ def test_provider_quota_exhaustion_detected():
         {"drafted": 0, "calls_made": 10, "failure_counts": {"timeout": 10}}) is False
 
 
-def test_lane_partitions_are_disjoint_and_cover():
+def test_lane_partitions_cover_and_continuous_lanes_disjoint():
     from research_factory.pif_bulk_draft_runner import (
         LANE_PARTITIONS, N_PARTITIONS, segment_partition)
-    all_parts = [p for parts in LANE_PARTITIONS.values() for p in parts]
-    assert len(all_parts) == len(set(all_parts)) == N_PARTITIONS
+    # Full coverage: every partition is drained by someone.
+    covered = {p for parts in LANE_PARTITIONS.values() for p in parts}
+    assert covered == set(range(N_PARTITIONS))
+    # The CONTINUOUS lanes must never share a slice (they select
+    # concurrently); episodic lanes (grok/codex daily runs) may share —
+    # canonical promotion dedups the rare double-draft.
+    continuous = ("glm-zai", "glm-zai-flash", "glm")
+    seen = []
+    for lane in continuous:
+        seen.extend(LANE_PARTITIONS[lane])
+    assert len(seen) == len(set(seen))
     for seg in ("seg_a", "seg_b", "seg_1234", "seg_cbe1f0bdf1da18d2f4542da4"):
         assert segment_partition(seg) == segment_partition(seg)  # stable
         assert 0 <= segment_partition(seg) < N_PARTITIONS
