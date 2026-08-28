@@ -60,6 +60,17 @@ def main() -> int:
     args = ap.parse_args()
     total_ok = total_fail = 0
     for batch_no in range(1, args.max_batches + 1):
+        # Canary probe: one direct caption fetch of a stable video. While
+        # YouTube's block is active this costs nothing from the candidate
+        # pool; only when the canary passes do we spend real episodes.
+        try:
+            from youtube_transcript_api import YouTubeTranscriptApi
+            YouTubeTranscriptApi().fetch("jNQXAC9IVRw", languages=("en",))
+        except Exception as exc:  # noqa: BLE001 - any failure means wait
+            print(f"canary blocked ({type(exc).__name__}) — cooling down "
+                  f"{args.block_cooldown:.0f}s", flush=True)
+            time.sleep(args.block_cooldown)
+            continue
         conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
         todo = candidates(conn, args.since, args.batch)
