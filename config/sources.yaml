@@ -377,3 +377,36 @@ sources:
     policy: private_analysis_only
     transcript_policy: creator_rss_or_official_public_transcripts
     enabled: false
+  # --- Upper-funnel expansion wave 2 (Kolby 2026-08-28). Feeds verified
+  # live (HTTP 200 + correct <title>) on 2026-08-28. enabled: false until
+  # the labeling backlog clears; flip + verify-sources + enqueue.
+  - name: The Prof G Pod
+    rss_url: https://feeds.megaphone.fm/WWO6655869236
+    category: tech_business
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: false
+  - name: Prof G Markets
+    rss_url: https://feeds.megaphone.fm/profgmarkets
+    category: tech_business
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: false
+  - name: Pivot
+    rss_url: https://feeds.megaphone.fm/pivot
+    category: tech_business
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: false
+  - name: TBPN
+    rss_url: https://feeds.transistor.fm/technology-brother
+    category: tech_business
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: false
+  - name: The Information TITV
+    rss_url: https://anchor.fm/s/9add758/podcast/rss
+    category: tech_news
+    policy: private_analysis_only
+    transcript_policy: creator_rss_or_official_public_transcripts
+    enabled: false
