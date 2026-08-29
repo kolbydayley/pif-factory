@@ -97,13 +97,15 @@ def match_and_register(conn, entries: list, apply: bool) -> dict:
     for ep_id, _title, et in etoks:
         best, second = (0.0, None), 0.0
         for url, vt in vtoks:
-            s = jaccard(et, vt)
+            # Web anchors append the episode DESCRIPTION to the title, so
+            # Jaccard dilutes; score by episode-side coverage instead.
+            s = len(et & vt) / len(et) if et else 0.0
             if s > best[0]:
                 second = best[0]
                 best = (s, url)
             elif s > second:
                 second = s
-        if best[1] and best[0] >= 0.55 and best[0] - second >= 0.15:
+        if best[1] and best[0] >= 0.85 and best[0] - second >= 0.1:
             matched += 1
             if apply:
                 conn.execute(
@@ -114,7 +116,7 @@ def match_and_register(conn, entries: list, apply: bool) -> dict:
                     conn, episode_id=ep_id,
                     source_kind="official_show_transcript",
                     result_url=best[1], worker_id="devtea-index")
-        elif best[0] >= 0.55:
+        elif best[0] >= 0.85:
             ambiguous += 1
     if apply:
         conn.commit()
