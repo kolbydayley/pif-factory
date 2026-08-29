@@ -89,6 +89,8 @@ def pull_source(conn, source_id: str) -> dict:
     before = None
     for _page in range(30):
         params = {"id": feed_id, "max": 1000}
+        if before:
+            params["before"] = before
         eps = _get("/episodes/byfeedid", params).get("items") or []
         new = 0
         for e in eps:
@@ -111,7 +113,6 @@ def pull_source(conn, source_id: str) -> dict:
         if new == 0 or len(eps) < 1000:
             break
         before = min(e.get("datePublished", 0) for e in eps)
-        params["before"] = before  # older pages if supported
         time.sleep(2)
     out = {"source_id": source_id, "feed_url": feed_url,
            "index_total_episodes": feed_info.get("episodeCount"),
