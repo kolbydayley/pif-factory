@@ -11,7 +11,17 @@ with guid-first dedupe. Output contract per show:
                               duration_seconds, description, url}]}
 
 Auth: PODCASTINDEX_KEY and PODCASTINDEX_SECRET env vars (free tier).
-Paces one request/2s; caches; safe to re-run.
+Paces one request/2s; safe to re-run.
+
+ToS handling rules (review 2026-08-29, in effect):
+- PI responses are transient discovery pointers, NOT a source of record.
+  Cached JSONs must be deleted after the insertion pass (--purge, or by
+  hand); episode rows are independently re-verifiable from the shows' own
+  public feeds, which remain the source of record.
+- Credentials are env-only, never written to any file.
+- Anything user-facing leaning on PI data carries the attribution already
+  in docs/signal-desk/README.md. Never expose the API through anything
+  we build.
 
 Usage: python3 scripts/pif_podcastindex_catalog.py --source marketplace-tech
        python3 scripts/pif_podcastindex_catalog.py --truncated  # all gap shows
@@ -117,7 +127,17 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", action="append")
     ap.add_argument("--truncated", action="store_true")
+    ap.add_argument("--purge", action="store_true",
+                    help="Delete this run's cached catalog JSONs (call after"
+                         " the insertion pass; ToS retention rule).")
     args = ap.parse_args()
+    if args.purge:
+        removed = 0
+        for f in OUT_DIR.glob("*.json"):
+            f.unlink()
+            removed += 1
+        print(json.dumps({"purged": removed}))
+        return
     targets = args.source or (TRUNCATED if args.truncated else [])
     if not targets:
         raise SystemExit("--source or --truncated required")
