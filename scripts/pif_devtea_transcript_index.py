@@ -131,6 +131,7 @@ def main() -> None:
     args = ap.parse_args()
     entries = crawl_index(args.pages, args.sleep)
     conn = sqlite3.connect(DB)
+    conn.row_factory = sqlite3.Row
     print(json.dumps(match_and_register(conn, entries, args.apply)))
     conn.close()
 
