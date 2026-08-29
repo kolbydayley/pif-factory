@@ -125,6 +125,26 @@ def _youtube_video_id(url: str) -> str:
 CAPTION_CACHE_DIR = Path.home() / "pif-factory" / "work" / "pif-ops" / "youtube-captions"
 
 
+def assert_transcript_plausible(*, words: int, duration_seconds,
+                                episode_id: str) -> None:
+    """Reject transcripts implausibly thin for the episode's runtime.
+
+    Client-rendered hosts (npr.org 2026-08-29) return nav-shell HTML that
+    parses to a few hundred words and, once stored as a "ready"
+    transcript, silently blocks the episode from every other acquisition
+    lane forever. Speech runs ~130-170 wpm; requiring just 10 words per
+    minute (6x below the floor of real speech) only ever rejects shells.
+    """
+    if not duration_seconds:
+        return
+    minimum = max(20, int(duration_seconds) // 6)  # 10 words/minute
+    if words < minimum:
+        raise ValueError(
+            "Transcript too short after parsing: "
+            f"{episode_id} ({words} words for {duration_seconds}s; "
+            f"minimum {minimum} — client-rendered shell suspected)")
+
+
 def fetch_transcript_source(url: str, *, source_kind: str, transcript_type: str | None) -> tuple[str, str | None]:
     if source_kind == "youtube_captions":
         try:
@@ -1968,6 +1988,11 @@ def store_transcript_text(
         raise ValueError(f"Episode not found: {episode_id}")
     if len(text.split()) < 20:
         raise ValueError(f"Transcript too short after parsing: {episode_id}")
+    assert_transcript_plausible(
+        words=len(text.split()),
+        duration_seconds=episode["duration_seconds"],
+        episode_id=episode_id,
+    )
     quality = analyze_transcript_quality(text, content_type=content_type or episode["transcript_type"], source_url=source_url)
     base_transcript_id = stable_id(episode_id, source_url, prefix="tr_")
     sha = sha256_text(text)

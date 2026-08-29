@@ -63,3 +63,25 @@ class CaptionCacheTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DurationPlausibilityTest(unittest.TestCase):
+    """A fetched transcript implausibly thin for the episode's duration is
+    a shell page (client-rendered host), not a transcript — must raise."""
+
+    def test_thin_for_duration_raises(self):
+        with self.assertRaises(ValueError):
+            ingest.assert_transcript_plausible(
+                words=346, duration_seconds=3600, episode_id="ep_x")
+
+    def test_dense_transcript_passes(self):
+        ingest.assert_transcript_plausible(
+            words=9000, duration_seconds=3600, episode_id="ep_x")
+
+    def test_unknown_duration_passes(self):
+        ingest.assert_transcript_plausible(
+            words=346, duration_seconds=None, episode_id="ep_x")
+
+    def test_short_clip_passes_proportionally(self):
+        ingest.assert_transcript_plausible(
+            words=120, duration_seconds=600, episode_id="ep_x")
