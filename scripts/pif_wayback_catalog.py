@@ -43,6 +43,30 @@ def _get(url: str, timeout: int = 60) -> bytes:
         return resp.read()
 
 
+TRACKING_HOSTS = {"rss.pdrl.fm", "pdst.fm", "pscrb.fm", "chrt.fm",
+                  "chtbl.com", "dts.podtrac.com", "pdcst.fm", "mgln.ai"}
+
+
+def canonical_feed_urls(feed_url: str) -> list:
+    """Unwrap tracking-prefix hosts: Wayback archives the canonical feed,
+    not the per-subscriber tracking wrapper (security-now lesson:
+    rss.pdrl.fm/<id>/feeds.twit.tv/sn.xml has zero snapshots; the inner
+    feeds.twit.tv/sn.xml has years of them). Returns candidates in
+    preference order."""
+    import urllib.parse as up
+    urls = [feed_url]
+    parsed = up.urlparse(feed_url)
+    parts = [s for s in parsed.path.split("/") if s]
+    if parsed.netloc in TRACKING_HOSTS and parts:
+        # Strip leading opaque ids until a segment containing a dot looks
+        # like an inner hostname, then rebuild.
+        for i, seg in enumerate(parts):
+            if "." in seg:
+                urls.append("https://" + "/".join(parts[i:]))
+                break
+    return urls
+
+
 def snapshots_for(feed_url: str) -> list:
     q = urllib.parse.urlencode({
         "url": feed_url, "output": "json", "fl": "timestamp,statuscode",
@@ -100,10 +124,16 @@ def pull_source(conn, source_id: str, sleep_s: int) -> dict:
     if not row:
         return {"source_id": source_id, "error": "unknown_source"}
     feed_url = row[0]
-    try:
-        stamps = snapshots_for(feed_url)
-    except Exception as exc:  # noqa: BLE001
-        return {"source_id": source_id, "error": f"cdx: {exc}"[:120]}
+    stamps, used_url = [], feed_url
+    for candidate in canonical_feed_urls(feed_url):
+        try:
+            stamps = snapshots_for(candidate)
+        except Exception:  # noqa: BLE001
+            continue
+        if stamps:
+            used_url = candidate
+            break
+    feed_url = used_url
     merged: dict = {}
     path = OUT_DIR / f"{source_id}.json"
     existing = json.loads(path.read_text()) if path.exists() else None
