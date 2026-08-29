@@ -78,9 +78,28 @@ def pull_source(conn, source_id: str) -> dict:
     if not row:
         return {"source_id": source_id, "error": "unknown_source"}
     feed_url = row[0]
-    feed = _get("/podcasts/byfeedurl", {"url": feed_url})
-    feed_info = feed.get("feed") or {}
-    feed_id = feed_info.get("id")
+    # PI indexes canonical feeds, not tracking wrappers (same lesson as
+    # Wayback) — unwrap and try candidates; 400 = "not found", try next.
+    import importlib.util as _ilu
+    spec = _ilu.spec_from_file_location(
+        "wb", str(PIF_ROOT / "scripts" / "pif_wayback_catalog.py"))
+    wb = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(wb)
+    feed_info, feed_id = {}, None
+    import urllib.error
+    for candidate in wb.canonical_feed_urls(feed_url):
+        try:
+            feed = _get("/podcasts/byfeedurl", {"url": candidate})
+        except urllib.error.HTTPError as exc:
+            if exc.code == 400:
+                continue
+            raise
+        feed_info = feed.get("feed") or {}
+        feed_id = feed_info.get("id")
+        if feed_id:
+            feed_url = candidate
+            break
+        time.sleep(2)
     if not feed_id:
         return {"source_id": source_id, "error": "feed_not_in_index"}
     time.sleep(2)
