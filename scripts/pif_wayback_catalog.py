@@ -71,7 +71,17 @@ def snapshots_for(feed_url: str) -> list:
     q = urllib.parse.urlencode({
         "url": feed_url, "output": "json", "fl": "timestamp,statuscode",
         "filter": "statuscode:200", "collapse": "timestamp:6"})  # monthly
-    rows = json.loads(_get(f"{CDX}?{q}").decode() or "[]")
+    # CDX is slow and flaky: generous timeout + one retry.
+    last_exc = None
+    for _ in range(2):
+        try:
+            rows = json.loads(_get(f"{CDX}?{q}", timeout=180).decode() or "[]")
+            break
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            time.sleep(10)
+    else:
+        raise last_exc
     stamps = [r[0] for r in rows[1:]]  # drop header
     if len(stamps) > MAX_SNAPSHOTS:  # thin to ~quarterly, keep ends
         step = len(stamps) / MAX_SNAPSHOTS
