@@ -43,3 +43,4 @@ build/
 
 # Shadow scoring artifacts (data, reproducible from lanes).
 shadow/
+.podcastindex.env.local
