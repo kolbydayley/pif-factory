@@ -170,3 +170,12 @@ Categorical hues are fixed, never cycled; colors follow entities.
   rows must chart in 2019).
 - The detectors degenerating to "everything fading" = window anchored past
   the coverage frontier.
+
+## Data-source attribution
+
+Episode catalog discovery for truncated feeds was assisted by the
+Podcast Index API (https://podcastindex.org). Per its terms, API
+responses are treated as transient discovery pointers: episode metadata
+of record comes from the shows' own public RSS feeds, raw API response
+caches are not retained, and credentials live only in environment
+variables.
