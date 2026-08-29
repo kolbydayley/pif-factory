@@ -173,9 +173,11 @@ Categorical hues are fixed, never cycled; colors follow entities.
 
 ## Data-source attribution
 
-Episode catalog discovery for truncated feeds was assisted by the
-Podcast Index API (https://podcastindex.org). Per its terms, API
-responses are treated as transient discovery pointers: episode metadata
-of record comes from the shows' own public RSS feeds, raw API response
-caches are not retained, and credentials live only in environment
-variables.
+Episode catalog recovery for truncated feeds (2026-08-29) used Apple's
+iTunes Search/Lookup API and Internet Archive Wayback Machine feed
+snapshots — no Podcast Index data has entered the corpus (the API key
+signup was blocked before any call was made). Prospectively, if the
+Podcast Index API is used: its responses are transient discovery
+pointers only (raw caches purged after insertion), episode metadata of
+record comes from the shows' own public RSS feeds, attribution is
+displayed, and credentials live only in environment variables.
