@@ -90,6 +90,14 @@ def main() -> int:
             if r.returncode != 0:
                 print(f"attach failed {row['id']}: "
                       f"{(r.stderr or '').strip()[:120]}", file=sys.stderr)
+        # enqueue_job dedupes into terminally-failed rows; resurrect them
+        wconn = sqlite3.connect(DB)
+        q = ','.join('?' * len(todo))
+        wconn.execute(
+            f"UPDATE jobs SET status='pending', attempts=0"
+            f" WHERE job_type='fetch_transcript' AND status='failed'"
+            f" AND target_id IN ({q})", [r_["id"] for r_ in todo])
+        wconn.commit(); wconn.close()
         drain = subprocess.run(
             [sys.executable, "-m", "research_factory", "run",
              "--job-types", "fetch_transcript",
