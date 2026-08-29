@@ -34,7 +34,8 @@ from research_factory.ingest import upsert_episode  # noqa: E402
 from research_factory.util import stable_id  # noqa: E402
 
 YTDLP = "/opt/homebrew/bin/yt-dlp"
-MIN_SECONDS = 600  # anything shorter is a clip/short, not an episode
+MIN_SECONDS = 1500  # channels post 10-20min segment clips; a real
+                    # episode of these shows runs 25min+
 
 
 def norm_title(t: str) -> str:
