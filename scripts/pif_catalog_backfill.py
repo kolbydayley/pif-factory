@@ -77,6 +77,36 @@ def plan_youtube_inserts(source_id: str, existing: set[str],
     return out
 
 
+def plan_podcastindex_inserts(source_id: str, existing_guids: set,
+                              existing_titles: set,
+                              episodes: list[dict]) -> list[dict]:
+    """Plan inserts from a PodcastIndex catalog JSON (peer-session pull).
+    Guid dedupe first (PI carries the true RSS guid), title fallback for
+    guid-convention mismatches (the Dwarkesh/Apple lesson)."""
+    out = []
+    for e in episodes:
+        guid = (e.get("guid") or "").strip()
+        title = (e.get("title") or "").strip()
+        if not guid or not title:
+            continue
+        if guid in existing_guids or norm_title(title) in existing_titles:
+            continue
+        out.append({
+            "id": stable_id(source_id, guid, prefix="ep_"),
+            "source_id": source_id, "guid": guid, "title": title,
+            "description": (e.get("description") or "")[:2000] or None,
+            "url": e.get("url"), "audio_url": e.get("audio_url"),
+            "published_at": (e.get("published_at") or "")[:10] or None,
+            "duration_seconds": e.get("duration_seconds"),
+            "feed_transcript_url": None, "feed_transcript_type": None,
+            "verified_transcript_url": None,
+            "verified_transcript_type": None,
+            "verified_transcript_source_kind": None,
+            "transcript_url": None, "transcript_type": None,
+        })
+    return out
+
+
 def youtube_candidates(channel_url: str) -> list[dict]:
     r = subprocess.run(
         [YTDLP, "-J", "--ignore-errors", channel_url],
@@ -129,6 +159,8 @@ def main() -> int:
     ap.add_argument("--source", required=True)
     ap.add_argument("--apple-id", type=int)
     ap.add_argument("--youtube-channel")
+    ap.add_argument("--podcastindex-file",
+                    help="catalog JSON from work/pif-ops/catalog-index/")
     ap.add_argument("--apply", action="store_true")
     args = ap.parse_args()
     conn = sqlite3.connect(PIF_ROOT / "data" / "factory.sqlite")
@@ -144,8 +176,23 @@ def main() -> int:
         cands = youtube_candidates(args.youtube_channel)
         eps = plan_youtube_inserts(args.source,
                                    existing_titles(conn, args.source), cands)
+    elif args.podcastindex_file:
+        cat = json.loads(Path(args.podcastindex_file).read_text())
+        entries = cat.get("episodes") or cat
+        have_guid = {r[0] for r in conn.execute(
+            "SELECT guid FROM episodes WHERE source_id=?", (args.source,))}
+        eps = plan_podcastindex_inserts(
+            args.source, have_guid, existing_titles(conn, args.source),
+            entries)
+        total = (cat.get("header") or {}).get("index_total_episodes") if \
+            isinstance(cat, dict) else None
+        if total:
+            have_n = len(have_guid)
+            print(f"coverage: {have_n} existing + {len(eps)} new of "
+                  f"{total} in index")
     else:
-        ap.error("pass --apple-id or --youtube-channel")
+        ap.error("pass --apple-id, --youtube-channel, or "
+                 "--podcastindex-file")
     print(f"{args.source}: {len(eps)} new episodes to insert")
     for e in eps[:5]:
         print(f"  {e['published_at']} {e['title'][:70]!r}")

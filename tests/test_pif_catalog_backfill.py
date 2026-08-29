@@ -41,3 +41,33 @@ class PlanYoutubeInsertsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlanPodcastindexInsertsTest(unittest.TestCase):
+    def test_guid_dedupe_then_title_fallback(self):
+        existing_guids = {"guid-a"}
+        existing_titles = {cb.norm_title("An Old Episode")}
+        eps = [
+            {"guid": "guid-a", "title": "Different Title Same Guid",
+             "published_at": "2020-01-01", "audio_url": "a.mp3",
+             "duration_seconds": 3600},
+            {"guid": "guid-b", "title": "An Old Episode",
+             "published_at": "2020-02-01", "audio_url": "b.mp3",
+             "duration_seconds": 3600},
+            {"guid": "guid-c", "title": "Genuinely New",
+             "published_at": "2020-03-01", "audio_url": "c.mp3",
+             "duration_seconds": 3600},
+        ]
+        plan = cb.plan_podcastindex_inserts(
+            "some-show", existing_guids, existing_titles, eps)
+        self.assertEqual([e["guid"] for e in plan], ["guid-c"])
+        self.assertEqual(plan[0]["source_id"], "some-show")
+        self.assertTrue(plan[0]["id"].startswith("ep_"))
+        self.assertEqual(plan[0]["published_at"], "2020-03-01")
+
+    def test_missing_guid_or_title_skipped(self):
+        plan = cb.plan_podcastindex_inserts("s", set(), set(), [
+            {"guid": "", "title": "No Guid", "published_at": "2020-01-01"},
+            {"guid": "g", "title": "", "published_at": "2020-01-01"},
+        ])
+        self.assertEqual(plan, [])
