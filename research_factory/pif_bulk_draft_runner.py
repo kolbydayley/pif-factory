@@ -50,6 +50,7 @@ CODEX_SESSIONS = Path.home() / ".codex" / "sessions"
 
 LANE_CONCURRENCY = {lane: prof["concurrency"] for lane, prof in LANE_PROFILES.items()}
 MIN_AUDIT_RATE = 0.05
+DETERMINISTIC_FAILURE_QUARANTINE_ATTEMPTS = 3
 
 PROMPT_V2_PATH = PIF_ROOT / "work" / "loadtest-20260813" / "prompt_v2.py"
 
@@ -88,6 +89,18 @@ def init_shadow_db() -> None:
                    audit_json TEXT,
                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
                    PRIMARY KEY (segment_id, lane)
+               )""")
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS draft_failures (
+                   segment_id TEXT NOT NULL,
+                   lane TEXT NOT NULL,
+                   failure_class TEXT NOT NULL,
+                   attempts INTEGER NOT NULL DEFAULT 1,
+                   last_reason TEXT,
+                   first_at TEXT NOT NULL DEFAULT (datetime('now')),
+                   last_at TEXT NOT NULL DEFAULT (datetime('now')),
+                   quarantined_at TEXT,
+                   PRIMARY KEY (segment_id, lane, failure_class)
                )""")
 
 
@@ -132,10 +145,19 @@ def select_unlabeled_segments(count: int, *, exclude_drafted_lane: str,
     and selects its partition slice.
     """
     drafted: set = set()
+    quarantined: set = set()
     if SHADOW_DB.exists():
         with _shadow_conn() as conn:
             drafted = {row[0] for row in conn.execute(
                 "SELECT DISTINCT segment_id FROM draft_labels")}
+            if conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table'"
+                " AND name='draft_failures'"
+            ).fetchone():
+                quarantined = {row[0] for row in conn.execute(
+                    "SELECT segment_id FROM draft_failures"
+                    " WHERE lane = ? AND quarantined_at IS NOT NULL",
+                    (exclude_drafted_lane,))}
     order_sql = {"newest": "s.created_at DESC",
                  "longest": "s.word_count DESC"}[order]
     conn = sqlite3.connect(f"file:{CANONICAL_DB}?mode=ro", uri=True)
@@ -152,6 +174,8 @@ def select_unlabeled_segments(count: int, *, exclude_drafted_lane: str,
     for row in rows:
         if row["segment_id"] in drafted:
             continue
+        if row["segment_id"] in quarantined:
+            continue
         if partitions is not None and \
                 segment_partition(row["segment_id"]) not in partitions:
             continue
@@ -159,6 +183,52 @@ def select_unlabeled_segments(count: int, *, exclude_drafted_lane: str,
         if len(picked) >= count:
             break
     return picked
+
+
+def record_draft_failure(
+    *,
+    segment_id: str,
+    lane: str,
+    failure_class: str,
+    reason: str | None,
+    deterministic: bool = False,
+) -> bool:
+    """Persist a shadow failure and return whether it is now quarantined."""
+
+    threshold = DETERMINISTIC_FAILURE_QUARANTINE_ATTEMPTS
+    with _shadow_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO draft_failures
+              (segment_id, lane, failure_class, attempts, last_reason,
+               quarantined_at)
+            VALUES (?, ?, ?, 1, ?, CASE WHEN ? THEN datetime('now') END)
+            ON CONFLICT(segment_id, lane, failure_class) DO UPDATE SET
+              attempts = draft_failures.attempts + 1,
+              last_reason = excluded.last_reason,
+              last_at = datetime('now'),
+              quarantined_at = CASE
+                WHEN ? AND draft_failures.attempts + 1 >= ?
+                THEN COALESCE(draft_failures.quarantined_at, datetime('now'))
+                ELSE draft_failures.quarantined_at
+              END
+            """,
+            (
+                segment_id,
+                lane,
+                failure_class,
+                (reason or "")[:500],
+                int(deterministic and threshold <= 1),
+                int(deterministic),
+                threshold,
+            ),
+        )
+        row = conn.execute(
+            "SELECT quarantined_at FROM draft_failures"
+            " WHERE segment_id = ? AND lane = ? AND failure_class = ?",
+            (segment_id, lane, failure_class),
+        ).fetchone()
+    return bool(row and row[0])
 
 
 def judge_candidate(segment_text: str, label_json: str) -> Dict[str, Any]:
@@ -307,7 +377,7 @@ def _run(args) -> None:
                 "windows": len(windows), "calls": calls,
                 "segment_id": row["segment_id"], "segment_text": text}
 
-    drafted, failed, dropped_events = 0, 0, 0
+    drafted, failed, dropped_events, quarantined = 0, 0, 0, 0
     calls_made = 0
     failure_counts: Dict[str, int] = {}
     stored: List[Dict[str, Any]] = []
@@ -321,10 +391,21 @@ def _run(args) -> None:
                 failed += 1
                 klass = res.get("error_class", "other")
                 failure_counts[klass] = failure_counts.get(klass, 0) + 1
+                record_draft_failure(
+                    segment_id=res["segment_id"], lane=args.lane,
+                    failure_class=klass, reason=res.get("error"),
+                    deterministic=False)
                 continue
             validation = validate_label(res["label"], res["segment_text"])
             if not validation["schema_ok"]:
                 failed += 1
+                failure_counts["schema"] = failure_counts.get("schema", 0) + 1
+                if record_draft_failure(
+                    segment_id=res["segment_id"], lane=args.lane,
+                    failure_class="schema", reason=validation.get("reason"),
+                    deterministic=True,
+                ):
+                    quarantined += 1
                 continue
             dropped_events += validation["dropped"]
             record = {"segment_id": res["segment_id"],
@@ -379,6 +460,7 @@ def _run(args) -> None:
         "drafted": drafted, "failed": failed,
         "calls_made": calls_made,
         "failure_counts": failure_counts,
+        "newly_quarantined": quarantined,
         "dropped_events": dropped_events,
         "wall_seconds": round(wall, 1),
         "throughput_per_hour": round(3600 * drafted / wall, 1) if wall else 0,

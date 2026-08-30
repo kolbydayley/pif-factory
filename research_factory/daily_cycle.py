@@ -1960,21 +1960,23 @@ def _record_scale_gate_state_receipt(
         "forbidden_keys": list(privacy_result.get("forbidden_keys") or []),
         "railway_operational_only": privacy_result.get("contract") == "railway-operational-v2",
     }
-    prior_pending = _prior_scale_gate_pending_jobs(conn, release_id=release_id, tier=tier)
     pending = int(queue_result.get("pending_jobs", 0) or 0)
-    growth = None if prior_pending is None else pending - prior_pending
-    growth_bounded = prior_pending is None or growth <= int(max_items)
+    growth_budget = _queue_growth_budget(
+        conn,
+        release_id=release_id,
+        tier=tier,
+        pending_jobs=pending,
+        max_items=max_items,
+        observed_at=created_at,
+    )
     queue = {
-        "passed": bool(queue_result.get("ok")) and growth_bounded,
+        "passed": bool(queue_result.get("ok")) and growth_budget["growth_bounded"],
         "pending_jobs": pending,
         "claimed_jobs": int(queue_result.get("claimed_jobs", 0) or 0),
         "expired_or_missing_leases": int(queue_result.get("expired_or_missing_leases", 0) or 0),
         "zombie_worker_runs": int(queue_result.get("zombie_worker_runs", 0) or 0),
         "orphan_queue_envelopes": int(queue_result.get("orphan_queue_envelopes", 0) or 0),
-        "prior_pending_jobs": prior_pending,
-        "pending_growth": growth,
-        "growth_allowance": int(max_items),
-        "growth_bounded": growth_bounded,
+        **growth_budget,
         "absolute_pending_is_pass_condition": False,
     }
     soft_runtime_exceeded = elapsed_seconds > float(max_runtime_seconds)
@@ -2398,31 +2400,94 @@ def _truthy_key(value: Any, keys: set[str]) -> bool:
     return False
 
 
-def _prior_scale_gate_pending_jobs(
+def _prior_scale_gate_queue_observation(
     conn: sqlite3.Connection,
     *,
     release_id: str | None,
     tier: str,
-) -> int | None:
+) -> dict[str, Any] | None:
     if not release_id:
         return None
-    rows = conn.execute(
+    row = conn.execute(
         """
-        SELECT gate_json FROM pif_scale_gate_state_receipts
+        SELECT daily_run_id, created_at, gate_json
+        FROM pif_scale_gate_state_receipts
         WHERE corpus_release_id = ? AND cohort_tier = ?
-          AND genuinely_successful = 1
-        ORDER BY run_date DESC, created_at DESC, id DESC
+        ORDER BY created_at DESC, id DESC
         LIMIT 1
         """,
         (release_id, tier),
-    ).fetchall()
-    if not rows:
+    ).fetchone()
+    if not row:
         return None
-    gate = loads_json(rows[0]["gate_json"], {})
+    gate = loads_json(row["gate_json"], {})
     queue = gate.get("queue") if isinstance(gate, Mapping) else None
     if not isinstance(queue, Mapping) or queue.get("pending_jobs") is None:
         return None
-    return int(queue["pending_jobs"])
+    return {
+        "daily_run_id": str(row["daily_run_id"]),
+        "created_at": str(row["created_at"]),
+        "pending_jobs": int(queue["pending_jobs"]),
+    }
+
+
+def _queue_growth_budget(
+    conn: sqlite3.Connection,
+    *,
+    release_id: str | None,
+    tier: str,
+    pending_jobs: int,
+    max_items: int,
+    observed_at: str,
+) -> dict[str, Any]:
+    """Bound queue growth by measured intake, not the extraction batch size.
+
+    Acquisition can legitimately create thousands of segment-label jobs between
+    daily receipts.  Counting those newly inserted rows permits that intake
+    while still catching growth caused by mass requeues or replay of older job
+    rows.  Failed gate receipts remain valid immutable queue observations, so a
+    red day does not make later growth accumulate against the last green day.
+    """
+
+    prior = _prior_scale_gate_queue_observation(
+        conn, release_id=release_id, tier=tier
+    )
+    if prior is None:
+        return {
+            "prior_pending_jobs": None,
+            "pending_growth": None,
+            "growth_allowance": int(max_items),
+            "growth_allowance_floor": int(max_items),
+            "growth_allowance_basis": "first_queue_observation",
+            "growth_baseline_daily_run_id": None,
+            "growth_baseline_created_at": None,
+            "measured_intake_jobs": 0,
+            "growth_bounded": True,
+        }
+
+    intake = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM jobs
+        WHERE datetime(created_at) > datetime(?)
+          AND datetime(created_at) <= datetime(?)
+        """,
+        (prior["created_at"], observed_at),
+    ).fetchone()[0]
+    measured_intake = int(intake or 0)
+    allowance = max(int(max_items), measured_intake)
+    growth = int(pending_jobs) - int(prior["pending_jobs"])
+    return {
+        "prior_pending_jobs": int(prior["pending_jobs"]),
+        "pending_growth": growth,
+        "growth_allowance": allowance,
+        "growth_allowance_floor": int(max_items),
+        "growth_allowance_basis": "new_jobs_created_since_prior_queue_observation",
+        "growth_baseline_daily_run_id": prior["daily_run_id"],
+        "growth_baseline_created_at": prior["created_at"],
+        "measured_intake_jobs": measured_intake,
+        "growth_bounded": growth <= allowance,
+    }
 
 
 def _consecutive_success_days(

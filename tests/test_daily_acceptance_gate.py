@@ -11,6 +11,7 @@ from unittest.mock import patch
 from research_factory import db
 from research_factory.daily_cycle import (
     OPERATIONAL_STAGE_NAMES,
+    _queue_growth_budget,
     _record_scale_gate_state_receipt,
     _validate_current_accepted_release,
     ensure_daily_schema,
@@ -250,6 +251,77 @@ def _seed_current_release(conn: sqlite3.Connection, base: Path) -> Path:
 
 
 class DailyAcceptanceGateTests(unittest.TestCase):
+    def test_queue_growth_budget_tracks_new_intake_from_latest_red_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = db.connect(Path(tmp) / "factory.sqlite")
+            try:
+                db.init_db(conn)
+                ensure_daily_schema(conn)
+                conn.execute(
+                    """
+                    INSERT INTO pif_daily_runs
+                      (id, idempotency_key, run_date, config_json, status, started_at)
+                    VALUES ('prior-red', 'prior-red', '2026-08-28', '{}', 'failed',
+                            '2026-08-28T04:00:00+00:00')
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO pif_scale_gate_state_receipts
+                      (id, daily_run_id, run_date, corpus_release_id, cohort_tier,
+                       cohort_item_count, genuinely_successful,
+                       consecutive_success_days, promotion_eligible, gate_json,
+                       receipt_sha256, receipt_json, created_at)
+                    VALUES ('gate-red', 'prior-red', '2026-08-28', 'release', '25',
+                            25, 0, 0, 0, ?, ?, '{}',
+                            '2026-08-28T05:00:00+00:00')
+                    """,
+                    (
+                        dumps_json({"queue": {"pending_jobs": 100}}),
+                        "a" * 64,
+                    ),
+                )
+                for job_id in range(1, 1001):
+                    conn.execute(
+                        """
+                        INSERT INTO jobs
+                          (id, lane, job_type, target_id, status, dedupe_key,
+                           created_at, updated_at)
+                        VALUES (?, 'podcast', 'label_segment', ?, 'pending', ?,
+                                '2026-08-29T04:00:00+00:00',
+                                '2026-08-29T04:00:00+00:00')
+                        """,
+                        (job_id, f"segment-{job_id}", f"job-{job_id}"),
+                    )
+                conn.commit()
+
+                budget = _queue_growth_budget(
+                    conn,
+                    release_id="release",
+                    tier="25",
+                    pending_jobs=1_100,
+                    max_items=25,
+                    observed_at="2026-08-29T05:00:00+00:00",
+                )
+
+                self.assertEqual(budget["growth_baseline_daily_run_id"], "prior-red")
+                self.assertEqual(budget["measured_intake_jobs"], 1_000)
+                self.assertEqual(budget["growth_allowance"], 1_000)
+                self.assertEqual(budget["pending_growth"], 1_000)
+                self.assertTrue(budget["growth_bounded"])
+
+                replay = _queue_growth_budget(
+                    conn,
+                    release_id="release",
+                    tier="25",
+                    pending_jobs=1_101,
+                    max_items=25,
+                    observed_at="2026-08-29T05:00:00+00:00",
+                )
+                self.assertFalse(replay["growth_bounded"])
+            finally:
+                conn.close()
+
     @staticmethod
     def _successful_validation_result() -> dict:
         return {
