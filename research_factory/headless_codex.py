@@ -379,7 +379,14 @@ def execute_claimed_label_runs(
     )
 
     budget_day = now_iso()[:10]
-    budget = budget_gate(conn, day=budget_day)
+    budget = budget_gate(
+        conn,
+        day=budget_day,
+        additional_budget_db_paths=(
+            root() / "data" / "factory.sqlite",
+            root() / "work" / "attribution-lab" / "lab.sqlite",
+        ),
+    )
     rows = conn.execute(
         """
         SELECT jobs.id AS job_id, jobs.lease_owner, jobs.attempts,

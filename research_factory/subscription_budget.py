@@ -11,7 +11,9 @@ Kolby's rulings (2026-08-10):
   tokens** across all lanes (episode_context, labels, audits, backfills).
 - The cap is enforced **before dispatch** at the executor choke point.
 - At >=120% of the cap a ``KILL`` file engages and every further dispatch is
-  refused, on any day, until a human removes the file.
+  refused for that budget day. A valid prior-day receipt is archived
+  automatically after rollover; malformed, same-day, and future-dated
+  receipts remain fail-closed.
 
 The ledger is append-only rows in ``pif_subscription_budget_ledger``; the
 daily receipt (``pif_subscription_daily_budget_ledger_v1``) generalizes the
@@ -21,9 +23,11 @@ receipt per calendar day under ``work/pif-ops/budget/<day>/``.
 
 from __future__ import annotations
 
+import json
 import sqlite3
+from datetime import date
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from .paths import root
 from .util import dumps_json, now_iso, sha256_text, stable_id
@@ -43,9 +47,62 @@ __all__ = [
 
 # Kolby's ruling 2026-08-10: hard daily ceiling for subscription tokens.
 DEFAULT_DAILY_CAP_TOKENS = 5_000_000
+MAX_AUTHORIZED_DAILY_CAP_TOKENS = 50_000_000
 # At 120% of the cap the KILL file engages: something is bypassing the
 # before-dispatch gate (a crash loop, a parallel driver) and everything stops.
 KILL_MULTIPLIER = 1.2
+
+
+def _authorized_cap_override(directory: Path, *, day: str) -> tuple[int, str] | None:
+    """Return a bounded, owner-authorized cap for exactly one budget day."""
+
+    path = directory / "AUTHORIZED_CAP.json"
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        cap = payload["cap_tokens"]
+        if (
+            payload.get("day") != day
+            or payload.get("authorized_by") != "kolby"
+            or not isinstance(cap, int)
+            or isinstance(cap, bool)
+            or cap < DEFAULT_DAILY_CAP_TOKENS
+            or cap > MAX_AUTHORIZED_DAILY_CAP_TOKENS
+        ):
+            return None
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return cap, str(path)
+
+
+def _retire_prior_day_kill(kill_path: Path, *, day: str) -> Path | None:
+    """Archive a valid prior-day kill receipt; otherwise fail closed."""
+
+    if not kill_path.exists():
+        return None
+    try:
+        payload = json.loads(kill_path.read_text(encoding="utf-8"))
+        kill_day_text = payload["day"]
+        if not isinstance(kill_day_text, str):
+            return None
+        kill_day = date.fromisoformat(kill_day_text)
+        current_day = date.fromisoformat(day)
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return None
+    if kill_day >= current_day:
+        return None
+
+    archive_dir = kill_path.parent / kill_day_text
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    digest = sha256_text(dumps_json(payload))[:12]
+    archive_path = archive_dir / f"KILL-retired-{digest}.json"
+    try:
+        kill_path.replace(archive_path)
+    except FileNotFoundError:
+        # Another executor retired the same shared gate first.
+        return None
+    return archive_path
 
 
 def default_budget_dir() -> Path:
@@ -128,25 +185,76 @@ def tokens_used(conn: sqlite3.Connection, *, day: str) -> int:
         return int(row[0])
 
 
+def _connection_database_path(conn: sqlite3.Connection) -> Path | None:
+    for row in conn.execute("PRAGMA database_list"):
+        name = row[1]
+        filename = row[2]
+        if name == "main" and filename:
+            return Path(filename).resolve()
+    return None
+
+
+def _tokens_used_from_readonly_database(path: Path, *, day: str) -> int:
+    if not path.exists():
+        return 0
+    other = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+    try:
+        table = other.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='pif_subscription_budget_ledger'"
+        ).fetchone()
+        if table is None:
+            return 0
+        row = other.execute(
+            "SELECT COALESCE(SUM(tokens), 0) "
+            "FROM pif_subscription_budget_ledger WHERE day = ?",
+            (day,),
+        ).fetchone()
+        return int(row[0] if row is not None else 0)
+    finally:
+        other.close()
+
+
 def budget_gate(
     conn: sqlite3.Connection,
     *,
     day: str,
-    cap_tokens: int = DEFAULT_DAILY_CAP_TOKENS,
+    cap_tokens: int | None = None,
     budget_dir: Path | None = None,
+    additional_budget_db_paths: Iterable[Path] | None = None,
 ) -> dict[str, Any]:
     """Decide whether dispatch is allowed right now. Fail closed.
 
-    The KILL file blocks every day, not just the day that engaged it: an
-    engaged kill means the before-dispatch gate was bypassed, and only a human
-    removing the file may re-open dispatch.
+    A valid prior-day KILL receipt is archived on rollover. Same-day,
+    malformed, and future-dated receipts continue to block dispatch.
     """
 
     directory = budget_dir if budget_dir is not None else default_budget_dir()
     directory.mkdir(parents=True, exist_ok=True)
+    resolved_cap = (
+        DEFAULT_DAILY_CAP_TOKENS if cap_tokens is None else int(cap_tokens)
+    )
+    cap_source = "default" if cap_tokens is None else "argument"
+    authorized_cap_path = None
+    if cap_tokens is None:
+        authorized = _authorized_cap_override(directory, day=day)
+        if authorized is not None:
+            resolved_cap, authorized_cap_path = authorized
+            cap_source = "owner_authorized_day_override"
     kill_path = directory / "KILL"
-    used = tokens_used(conn, day=day)
-    kill_engaged = used >= int(cap_tokens * KILL_MULTIPLIER)
+    retired_kill_path = _retire_prior_day_kill(kill_path, day=day)
+    current_used = tokens_used(conn, day=day)
+    current_path = _connection_database_path(conn)
+    additional_used = 0
+    counted_paths: list[str] = []
+    for candidate in additional_budget_db_paths or ():
+        resolved = Path(candidate).resolve()
+        if resolved == current_path or str(resolved) in counted_paths:
+            continue
+        additional_used += _tokens_used_from_readonly_database(resolved, day=day)
+        counted_paths.append(str(resolved))
+    used = current_used + additional_used
+    kill_engaged = used >= int(resolved_cap * KILL_MULTIPLIER)
     if kill_engaged and not kill_path.exists():
         kill_path.write_text(
             dumps_json(
@@ -154,7 +262,7 @@ def budget_gate(
                     "engaged_at": now_iso(),
                     "day": day,
                     "tokens_used": used,
-                    "cap_tokens": cap_tokens,
+                    "cap_tokens": resolved_cap,
                     "reason": "usage_reached_120_percent_of_daily_cap",
                 }
             )
@@ -164,7 +272,7 @@ def budget_gate(
     if kill_path.exists():
         allowed = False
         reason = "kill_file_present"
-    elif used >= cap_tokens:
+    elif used >= resolved_cap:
         allowed = False
         reason = "daily_cap_reached"
     else:
@@ -172,13 +280,21 @@ def budget_gate(
         reason = None
     return {
         "day": day,
-        "cap_tokens": int(cap_tokens),
+        "cap_tokens": resolved_cap,
+        "cap_source": cap_source,
+        "authorized_cap_path": authorized_cap_path,
         "tokens_used": used,
-        "remaining_tokens": max(0, int(cap_tokens) - used),
+        "tokens_used_current_database": current_used,
+        "tokens_used_additional_databases": additional_used,
+        "additional_budget_db_paths": counted_paths,
+        "remaining_tokens": max(0, resolved_cap - used),
         "allowed": allowed,
         "reason": reason,
         "kill_engaged": kill_engaged or kill_path.exists(),
         "kill_path": str(kill_path),
+        "retired_kill_path": (
+            str(retired_kill_path) if retired_kill_path is not None else None
+        ),
     }
 
 

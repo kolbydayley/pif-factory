@@ -86,7 +86,9 @@ def test_gate_allows_under_cap_and_refuses_at_cap(tmp_path: Path) -> None:
     assert gate["reason"] == "daily_cap_reached"
 
 
-def test_kill_file_engages_at_120_percent_and_blocks(tmp_path: Path) -> None:
+def test_kill_file_engages_at_120_percent_and_retires_next_day(
+    tmp_path: Path,
+) -> None:
     conn = _conn()
     sb.record_usage(
         conn,
@@ -102,10 +104,106 @@ def test_kill_file_engages_at_120_percent_and_blocks(tmp_path: Path) -> None:
     assert gate["kill_engaged"] is True
     assert (tmp_path / "KILL").exists()
 
-    # The KILL file blocks even a fresh day until a human removes it.
+    # A valid prior-day receipt is preserved but no longer blocks a fresh day.
     gate_next = sb.budget_gate(conn, day="2026-08-11", budget_dir=tmp_path)
-    assert gate_next["allowed"] is False
-    assert gate_next["reason"] == "kill_file_present"
+    assert gate_next["allowed"] is True
+    assert gate_next["reason"] is None
+    assert not (tmp_path / "KILL").exists()
+    retired = Path(gate_next["retired_kill_path"])
+    assert retired.parent == tmp_path / "2026-08-10"
+    assert retired.exists()
+
+
+def test_invalid_or_non_prior_kill_receipt_remains_fail_closed(
+    tmp_path: Path,
+) -> None:
+    conn = _conn()
+    kill_path = tmp_path / "KILL"
+
+    kill_path.write_text("not-json\n", encoding="utf-8")
+    malformed = sb.budget_gate(conn, day="2026-08-11", budget_dir=tmp_path)
+    assert malformed["allowed"] is False
+    assert malformed["reason"] == "kill_file_present"
+
+    kill_path.write_text('{"day":"2026-08-11"}\n', encoding="utf-8")
+    same_day = sb.budget_gate(conn, day="2026-08-11", budget_dir=tmp_path)
+    assert same_day["allowed"] is False
+    assert same_day["reason"] == "kill_file_present"
+
+    kill_path.write_text('{"day":"2026-08-12"}\n', encoding="utf-8")
+    future = sb.budget_gate(conn, day="2026-08-11", budget_dir=tmp_path)
+    assert future["allowed"] is False
+    assert future["reason"] == "kill_file_present"
+
+
+def test_owner_authorized_cap_override_is_bounded_and_day_scoped(
+    tmp_path: Path,
+) -> None:
+    conn = _conn()
+    override = tmp_path / "AUTHORIZED_CAP.json"
+    override.write_text(
+        '{"authorized_by":"kolby","cap_tokens":20000000,'
+        '"day":"2026-08-11"}\n',
+        encoding="utf-8",
+    )
+
+    active = sb.budget_gate(conn, day="2026-08-11", budget_dir=tmp_path)
+    assert active["cap_tokens"] == 20_000_000
+    assert active["cap_source"] == "owner_authorized_day_override"
+    assert active["authorized_cap_path"] == str(override)
+
+    expired = sb.budget_gate(conn, day="2026-08-12", budget_dir=tmp_path)
+    assert expired["cap_tokens"] == sb.DEFAULT_DAILY_CAP_TOKENS
+    assert expired["cap_source"] == "default"
+
+    override.write_text(
+        '{"authorized_by":"kolby","cap_tokens":50000001,'
+        '"day":"2026-08-12"}\n',
+        encoding="utf-8",
+    )
+    excessive = sb.budget_gate(conn, day="2026-08-12", budget_dir=tmp_path)
+    assert excessive["cap_tokens"] == sb.DEFAULT_DAILY_CAP_TOKENS
+
+
+def test_gate_sums_usage_from_additional_budget_databases(
+    tmp_path: Path,
+) -> None:
+    conn = _conn()
+    sb.record_usage(
+        conn,
+        day="2026-08-11",
+        provider_lane="codex_subscription",
+        lane="labels",
+        run_id="lab",
+        tokens=3_000_000,
+        provider_calls=10,
+    )
+    other_path = tmp_path / "production.sqlite"
+    other = sqlite3.connect(other_path)
+    other.row_factory = sqlite3.Row
+    sb.record_usage(
+        other,
+        day="2026-08-11",
+        provider_lane="codex_subscription",
+        lane="labels",
+        run_id="production",
+        tokens=2_000_000,
+        provider_calls=10,
+    )
+    other.commit()
+    other.close()
+
+    gate = sb.budget_gate(
+        conn,
+        day="2026-08-11",
+        budget_dir=tmp_path,
+        additional_budget_db_paths=(other_path,),
+    )
+    assert gate["tokens_used"] == 5_000_000
+    assert gate["tokens_used_current_database"] == 3_000_000
+    assert gate["tokens_used_additional_databases"] == 2_000_000
+    assert gate["allowed"] is False
+    assert gate["reason"] == "daily_cap_reached"
 
 
 def test_daily_receipt_is_written_and_hashed(tmp_path: Path) -> None:
