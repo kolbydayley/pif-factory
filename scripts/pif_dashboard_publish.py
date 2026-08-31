@@ -24,7 +24,18 @@ from pathlib import Path
 PIF_ROOT = Path.home() / "pif-factory"
 DATA_JSON = PIF_ROOT / "work" / "pif-ops" / "dashboard" / "data.json"
 DASHBOARD_HTML = PIF_ROOT / "work" / "pif-ops" / "dashboard" / "dashboard.html"
+PUBLIC_INDEX_JSON = DASHBOARD_HTML.with_name("signal-desk-index.json")
 FUNNEL_JSON = DASHBOARD_HTML.with_name("pif-signal-desk-funnel.json")
+PUBLIC_BUILD_FILES = (
+    "dashboard.html",
+    "signal-desk.css",
+    "signal-desk.js",
+    "signal-desk-index.json",
+    "signal-desk-issues.json",
+    "signal-desk-voices.json",
+    "signal-desk-network.json",
+    "pif-signal-desk-funnel.json",
+)
 HOST = "https://dashboards-production-dcba.up.railway.app"
 SLUG = "pif-signal-desk"
 CANONICAL = "https://signal-desk-production-edf4.up.railway.app/pif-signal-desk.html"
@@ -37,7 +48,7 @@ REDIRECT_HTML = (
     f"<title>Signal Desk</title><a href=\"{CANONICAL}\">"
     "Signal Desk has moved</a>"
 ).encode()
-EXPECTED_SCHEMA = "signal_desk_v4"
+EXPECTED_SCHEMA = "signal_desk_v5"
 MAX_BUILD_AGE_DAYS = 2  # nightly cadence; anything older is a broken chain
 
 
@@ -47,8 +58,8 @@ def should_publish(data: dict, today: dt.date | None = None) -> tuple[bool, str]
     if data.get("schema_version") != EXPECTED_SCHEMA:
         return False, (f"schema mismatch: {data.get('schema_version')!r} "
                        f"!= {EXPECTED_SCHEMA!r}")
-    if not data.get("topics"):
-        return False, "empty topics table — aggregator produced no output"
+    if not data.get("issues"):
+        return False, "empty issues index — public build produced no output"
     try:
         generated = dt.datetime.fromisoformat(data["generated_at"]).date()
     except (KeyError, ValueError):
@@ -69,10 +80,16 @@ def _railway_api_key() -> str:
 
 
 def publish(dry_run: bool = False) -> int:
-    data = json.loads(DATA_JSON.read_text())
+    data = json.loads(PUBLIC_INDEX_JSON.read_text())
     ok, reason = should_publish(data)
     if not ok:
         print(f"REFUSED: {reason}", file=sys.stderr)
+        return 2
+    missing = [name for name in PUBLIC_BUILD_FILES
+               if not (DASHBOARD_HTML.parent / name).is_file()]
+    if missing:
+        print(f"REFUSED: missing public build files: {', '.join(missing)}",
+              file=sys.stderr)
         return 2
     body = DASHBOARD_HTML.read_bytes()
     local_sha = hashlib.sha256(body).hexdigest()
@@ -114,17 +131,23 @@ def sync_site_and_push() -> int:
         print("no git remote configured; skipping site push "
               "(blob PUT already published)")
         return 0
-    SITE_FILE.write_bytes(DASHBOARD_HTML.read_bytes())
-    SITE_FUNNEL_FILE.write_bytes(FUNNEL_JSON.read_bytes())
+    source_dir = DASHBOARD_HTML.parent
+    site_paths = []
+    for name in PUBLIC_BUILD_FILES:
+        source = source_dir / name
+        target_name = "pif-signal-desk.html" if name == "dashboard.html" else name
+        target = SITE_FILE.parent / target_name
+        target.write_bytes(source.read_bytes())
+        site_paths.append(target)
     diff = subprocess.run(
-        ["git", "status", "--porcelain", "--", str(SITE_FILE),
-         str(SITE_FUNNEL_FILE)],
+        ["git", "status", "--porcelain", "--",
+         *[str(path) for path in site_paths]],
         capture_output=True, text=True, cwd=PIF_ROOT)
     if not diff.stdout.strip():
         print("site artifact unchanged; no push needed")
         return 0
     for cmd in (
-        ["git", "add", "--", str(SITE_FILE), str(SITE_FUNNEL_FILE)],
+        ["git", "add", "--", *[str(path) for path in site_paths]],
         ["git", "commit", "-m", "chore(site): nightly Signal Desk artifact"],
         ["git", "push"],
     ):

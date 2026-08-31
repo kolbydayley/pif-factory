@@ -18,12 +18,12 @@ _TODAY = dt.date(2026, 8, 27)
 
 def _data(**kw):
     base = {
-        "schema_version": "signal_desk_v4",
+        "schema_version": "signal_desk_v5",
         "generated_at": "2026-08-27T00:30:00",
         "data_through": "2026-07-01",
         "detectors": {"emerging": [], "shifting": [],
                       "contested": [], "fading": []},
-        "topics": {"a": {}},
+        "issues": [{"id": "issue_a"}],
         "corpus": {"labels": 1000},
     }
     base.update(kw)
@@ -48,7 +48,7 @@ class PublishGuardTest(unittest.TestCase):
         self.assertIn("schema", reason)
 
     def test_empty_topics_refuses(self):
-        ok, reason = pub.should_publish(_data(topics={}), today=_TODAY)
+        ok, reason = pub.should_publish(_data(issues=[]), today=_TODAY)
         self.assertFalse(ok)
         self.assertIn("empty", reason)
 
@@ -59,6 +59,12 @@ class PublishGuardTest(unittest.TestCase):
                          "pif-signal-desk-funnel.json")
         dockerfile = (pub.SITE_FILE.parent / "Dockerfile").read_text()
         self.assertIn("COPY pif-signal-desk-funnel.json", dockerfile)
+
+    def test_every_split_payload_is_packaged_in_the_railway_image(self):
+        dockerfile = (pub.SITE_FILE.parent / "Dockerfile").read_text()
+        for name in pub.PUBLIC_BUILD_FILES:
+            target = "pif-signal-desk.html" if name == "dashboard.html" else name
+            self.assertIn(f"COPY {target}", dockerfile)
 
 
 if __name__ == "__main__":

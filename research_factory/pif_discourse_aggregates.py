@@ -67,6 +67,90 @@ TOP_PEOPLE = 120
 POSITIVE = {"supportive", "promotional", "bullish"}
 NEGATIVE = {"skeptical", "warning", "bearish"}
 
+_NON_DIRECT_SPEAKER_ROLES = {
+    "reported", "quoted", "referenced", "mentioned", "producer",
+    "production", "boilerplate", "external", "prior podcast",
+}
+
+
+def _speaker_key(value: Optional[str]) -> str:
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"[^a-z0-9]+", " ", value.casefold()).strip()
+
+
+def _episode_speaker_attribution(conn: sqlite3.Connection) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """Return conservative direct-speaker decisions from episode context.
+
+    New context artifacts expose ``direct_speaker``. Older artifacts expose a
+    role, which is accepted only for clear host/guest roles without any
+    quoted/reported/mentioned marker. Missing context remains unresolved.
+    """
+    latest: Dict[str, str] = {}
+    try:
+        rows = conn.execute(
+                """
+                SELECT episode_id, speaker_map_json
+                FROM episode_context_runs
+                WHERE status = 'completed'
+                ORDER BY COALESCE(completed_at, updated_at, created_at) DESC
+                """)
+    except sqlite3.OperationalError:
+        # Small in-memory aggregate fixtures and older databases may not have
+        # the context table. Failing closed here preserves those read paths.
+        return {}
+    for row in rows:
+        latest.setdefault(str(row["episode_id"]), row["speaker_map_json"] or "[]")
+
+    result: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for episode_id, raw in latest.items():
+        try:
+            speakers = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        episode_map: Dict[str, Dict[str, Any]] = {}
+        for speaker in speakers if isinstance(speakers, list) else []:
+            if not isinstance(speaker, dict):
+                continue
+            name = speaker.get("display_name") or speaker.get("name")
+            role = str(speaker.get("role") or "").casefold()
+            explicit = speaker.get("direct_speaker")
+            excluded = any(marker in role for marker in _NON_DIRECT_SPEAKER_ROLES)
+            older_direct_role = any(marker in role for marker in (
+                "host", "guest", "interviewer", "narrator", "panelist",
+                "speaker", "founder", "executive",
+            ))
+            direct = explicit is True or (
+                explicit is None and older_direct_role and not excluded
+            )
+            status = "direct" if direct else (
+                "mentioned" if excluded or explicit is False else "unresolved"
+            )
+            names = [name, *(speaker.get("aliases_or_variants") or []),
+                     *(speaker.get("source_forms") or [])]
+            raw_confidence = speaker.get("confidence")
+            if isinstance(raw_confidence, str):
+                confidence = {"high": 0.9, "medium": 0.7, "low": 0.4}.get(
+                    raw_confidence.casefold(), 0.0
+                )
+            else:
+                try:
+                    confidence = float(raw_confidence or 0)
+                except (TypeError, ValueError):
+                    confidence = 0.0
+            decision = {
+                "status": status,
+                "confidence": round(confidence, 2),
+                "basis": "episode_context",
+                "role": speaker.get("role"),
+            }
+            for candidate in names:
+                key = _speaker_key(candidate)
+                if key:
+                    episode_map[key] = decision
+        result[episode_id] = episode_map
+    return result
+
 
 def stance_group(stance: Optional[str]) -> str:
     s = (stance or "").lower()
@@ -581,6 +665,7 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
     people_positions: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     concept_field: Dict[str, Counter] = defaultdict(Counter)
     ctx_map: Dict[str, tuple] = {}
+    episode_speakers = _episode_speaker_attribution(conn)
     for r in pos_rows:
         topic = canon(norm_topic(r["concept_name"]))
         mo = month_of(r["published_at"])
@@ -621,6 +706,12 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             "confidence": round(float(r["confidence"] or 0), 2),
             "evidence": short_excerpt(evidence),
             "role": r["actor_type"],
+            "speaker_attribution": episode_speakers.get(
+                r["episode_id"], {}
+            ).get(_speaker_key(name), {
+                "status": "unresolved", "confidence": 0,
+                "basis": "missing_episode_context", "role": None,
+            }),
         }
         if topic and entry["evidence"]:
             display_name = name

@@ -1,186 +1,152 @@
-# Signal Desk — discourse dashboard handoff
+# Signal Desk — strategic intelligence handoff
 
-One-page brief for any agent (Codex) taking ownership of the Signal Desk.
-Everything referenced is in this repo unless marked external. Built
-2026-08-26 in a Claude session; Kolby-directed design decisions inline.
+Signal Desk is a public, mobile-first research interface for answering four
+questions about the technical-podcast corpus:
 
-## What it is
+1. What changed?
+2. Why does it matter?
+3. Where do credible people disagree?
+4. What evidence and coverage limitations should I trust?
 
-A subject-agnostic **technical-podcast discourse research navigator**:
-mobile-first shifts, open-vocabulary topic research, rich person profiles,
-and every evidence excerpt linked to its original source. It supports both a
-two-minute scan and progressively deeper research without requiring an
-account. Single self-contained HTML file, regenerated nightly. NOT an AI
-dashboard — swap the podcast sources to a new sector and it re-molds itself
-with zero configuration (explicit Kolby requirement).
+The production URL is
+<https://signal-desk-production-edf4.up.railway.app/pif-signal-desk.html>.
+Public pages contain bounded excerpts and source links, never full
+transcripts.
 
-## Components
+## Architecture
 
-| Piece | Path | Role |
+| Component | Path | Responsibility |
 |---|---|---|
-| Topic registry | `research_factory/topic_canonicalizer.py` | Precision-first stable issue IDs, accepted aliases, versioned assignments, and reviewable issue relationships |
-| Aggregator | `research_factory/pif_discourse_aggregates.py` | Read-only over `data/factory.sqlite` → `work/pif-ops/dashboard/data.json` (~1MB) |
-| Renderer | `scripts/pif_dashboard_build.py` | Embeds research data into the HTML and emits a separate live funnel JSON resource beside it |
-| Nightly job (external) | codex-cron `pif-dashboard-refresh`, daily 21:30, cwd this repo | Refreshes the stable registry, aggregates, renders, and publishes; fires after `pif-canonical-promotion` (21:00) so each night's labels are included |
+| Topic registry | `research_factory/topic_canonicalizer.py` | Stable issue IDs, accepted aliases, versioned assignments, and reviewable relationships |
+| Aggregator | `research_factory/pif_discourse_aggregates.py` | Read-only corpus aggregation plus episode-context speaker attribution |
+| Trust layer | `research_factory/signal_desk_intelligence.py` | Publishability, evidence quality, identity/source canonicalization, briefs, and split payloads |
+| HTML shell | `scripts/pif_dashboard_build.py` | Small accessible application shell and asset/payload build |
+| Frontend | `scripts/signal_desk_assets/` | Briefing, Issues, Voices, Ask, Evidence, and Coverage & Trust views |
+| Publisher | `scripts/pif_dashboard_publish.py` | Freshness/schema guard, legacy upload, site staging, commit, push, and public verification |
+| Railway image | `site/Dockerfile` | Static production image with every split payload packaged beside the app |
 
-## Live dashboard
+The V5 build emits:
 
-Canonical (GitHub auto-deploy):
-<https://signal-desk-production-edf4.up.railway.app/pif-signal-desk.html>
-Legacy blob host (kept in sync by the same publish run):
-<https://dashboards-production-dcba.up.railway.app/d/pif-signal-desk.html>
+- `dashboard.html` — lightweight shell;
+- `signal-desk.css` and `signal-desk.js`;
+- `signal-desk-index.json` — briefing and searchable indexes;
+- `signal-desk-issues.json` — stable issue briefs and evidence ledgers;
+- `signal-desk-voices.json` — canonical voice profiles;
+- `signal-desk-network.json` — explicitly labeled co-appearance edges;
+- `pif-signal-desk-funnel.json` — dynamic Coverage & Trust data.
 
-Publish pipeline (2026-08-27): `scripts/pif_dashboard_publish.py` guards the
-fresh build, PUTs it to the legacy host, copies it to `site/`, commits, and
-pushes to `github.com/kolbydayley/pif-factory` (private). The Railway
-`signal-desk` service (project keystone-dashboards, service
-82d5e774-bb35-4534-b927-bfcd7c5ea572, root `/site`, branch
-`codex/pif-working-system-rebuild-20260720`) auto-deploys on every push —
-git push is the single publish surface.
+The split files are fetched only by the views that need them. The Coverage
+payload is fetched with cache disabled and refreshed every 60 seconds.
 
-The Railway `keystone-dashboards` host serves the current published artifact.
-Kolby authorized automated publishing on 2026-08-27 (Signal Desk 10x
-project): `scripts/pif_dashboard_publish.py` guard-checks the fresh build
-(schema `signal_desk_v4`, non-empty topics, <=2 days old), PUTs it to the
-host, and verifies the public GET is byte-identical. Append it as the third
-step of the `pif-dashboard-refresh` codex-cron job.
+## Trust and publication contract
 
-Regenerate manually:
+The public model fails closed.
 
-    python3 -B -m research_factory.cli --db data/factory.sqlite canonicalize-topics --limit 5000
-    python3 -B -m research_factory.pif_discourse_aggregates
-    python3 -B scripts/pif_dashboard_build.py
+- Evidence is `accepted`, `uncertain`, or `quarantined`.
+- A voice excerpt is accepted only when the latest episode-context artifact
+  verifies that person as a direct speaker. Missing context, quoted/reported
+  actors, third-person mentions, and ambiguous legacy attribution never
+  appear under **What they say**.
+- Page chrome, sponsor copy, short fragments, missing original sources, and
+  unresolved/composite identities lower or block publication.
+- Each evidence record carries attribution type/confidence, publishability,
+  quality score/reasons, stable source location, and a deduplication key.
+- A decision-grade brief needs at least three accepted excerpts from three
+  episodes, two shows, and two distinct verified voices. Everything below the
+  threshold is labeled **Watchlist** and states the limitation.
+- Authority and Network reach are distinct. Reach is co-appearance
+  connectivity and is never presented as correctness or expertise.
+- Co-mentioned issues are **Research leads**, not relationships. Typed edges
+  remain hidden until explicitly adjudicated.
+- Brief sentences contain evidence IDs as citations. Unsupported synthesis is
+  omitted rather than filled with plausible prose.
 
-## Data contracts (the load-bearing decisions)
+The speaker gate is derived in the aggregator from the latest completed
+`episode_context_runs.speaker_map_json`. New artifacts use
+`direct_speaker`; older artifacts are accepted only for unambiguous
+host/guest/interviewer/narrator roles with no quoted, reported, referenced,
+mentioned, producer, or external marker.
 
-- **Discourse time = `episodes.published_at`** (feed-reported release date).
-  Never label/transcription time. Back-filling a 2019 episode lands in 2019.
-- **Data-frontier anchoring**: detector windows anchor to the newest month
-  with >= 50 labeled rows (`data_frontier()`), not the calendar. An
-  ingestion freeze reads as a coverage gap, never as "everything faded".
-  The dashboard shows an amber ingestion-lag chip when frontier > 21 days old.
-- **Open vocabulary with stable issues**: topics come from label
-  `topics[].topic` strings and `actor_positions.concept_name`; there is no
-  subject enum. Migration V6 persists `canonical_issues`, accepted aliases,
-  versioned topic assignments, and explicit `same_issue`, `broader_than`,
-  `narrower_than`, `related_to`, `distinct_from`, or `uncertain`
-  relationships. Only exact normalized or plural/order-only identity matches
-  merge automatically. Token containment is a candidate hierarchy relation,
-  never permission to swallow a scoped issue. Signal Desk reads accepted
-  assignments first and uses the same precision-first rule for unseen terms.
-- **Stance collapsing**: supportive/promotional/bullish → positive;
-  skeptical/warning/bearish → negative; else neutral (`stance_group()`).
-- **Sources**: labels (all packs incl. `ai_discourse_bulk_v1`) for topic
-  series; `actor_positions` (guest/host/person) for the people board;
-  `expert_authority_scores` × `canonical_people` for authority badges;
-  evidence excerpts come from `actor_positions.evidence_json.evidence` and
-  are whitespace-normalized and capped at 240 characters for public display.
-- **Related issues**: ranked from topics co-occurring in the same episodes,
-  with shared-show breadth used before shared-episode count.
-- **Honest chart magnitude**: monthly chart height is the three-month smoothed
-  share of all discourse mentions, not a raw count that inherits corpus
-  coverage swings. Exact counts remain in month labels; months below the
-  corpus-derived coverage floor are visibly de-emphasized.
-- **Trust honesty**: authority-scored voices rank first. When no scored person
-  is attached to a topic, the UI says so and presents evidence without making
-  a trust claim.
-- **People quality**: a person must appear in at least two distinct episodes.
-  Browse order starts with sustained episode presence; a changed position
-  requires different episodes at least 14 days apart.
+## Information architecture
 
-## Progressive disclosure routes
+Primary navigation:
 
-The research views remain self-contained, while the Podcast Funnel fetches
-`pif-signal-desk-funnel.json` from the server with caching disabled and
-refreshes it every 60 seconds. The nightly publish stages that JSON beside the
-HTML, so funnel counts and the enrolled-show roster always come from the
-latest published processing snapshot rather than build-time values embedded
-in the page.
+- **Briefing** — New, Accelerating, Changing consensus, Fading, and Watchlist;
+- **Issues** — alias-aware discovery plus source-grounded issue briefs;
+- **Voices** — direct claims separated from third-party mentions;
+- **Ask** — canonical issue resolution and cited, deterministic synthesis.
 
-The renderer uses hash routes, so every research layer has a
-stable browser-history state without needing a server-side router:
+**Coverage & Trust** is secondary navigation. It shows the full
+shows → episodes → segments funnel, losses by dimension, duplicate resolved
+feeds, quarantines, ingestion gaps, source search, and enrollment preflight.
 
-- `#home/shifts`, `#home/people`, `#home/topics`
-- `#funnel` for the enrolled-show roster, episode processing funnel, and
-  private show-enrollment intake
-- `#topic/<topic>` and topic slices for `stance/<group>` or `month/<month>`
-- `#person/<person>` for recurring claims, meaningful cross-episode position
-  changes, disagreements with the field, and evidence
-- `#evidence/<position-id>/<topic>` for excerpt context and the original link
+Stable routes:
 
-On mobile, topic pages put major issues and trusted-voice status before the
-long trend and evidence record. Person pages put biggest recurring claims
-first. Desktop retains the two-column research layout.
+- `#briefing`, `#issues`, `#voices`, `#ask/<question>`, `#coverage`;
+- `#issue/<stable-id>` with optional `month/<yyyy-mm>`;
+- `#voice/<stable-id>`;
+- `#evidence/<evidence-id>/<origin>/<origin-id>`.
 
-The Podcast Funnel separates catalogued feed inventory from transcript
-attempts, segmented episodes, and intelligence-ready episodes. Because the
-published desk is intentionally public and static, its add-show form opens a
-prefilled issue in the private repository; an operator must still verify the
-RSS feed, check aliases, and run a bounded ingestion dry run before a source
-enters production.
+Legacy hashes (`#home/shifts`, `#home/topics`, `#home/people`, `#topic`,
+`#person`, and `#funnel`) redirect through the alias registry. Unknown or
+retired IDs show an origin-aware unavailable state instead of a dead page.
 
-## Statistical layer (V4, 2026-08-27)
+## Data semantics
 
-`research_factory/discourse_stats.py` (pure stdlib) backs every detector:
-exact conditional binomial rate tests for emerging/fading (exposure =
-monthly labeled-mention totals, so corpus-coverage swings never read as
-surges), permutation/chi-square stance-shift tests, a lopsided-null
-contested test, Wilson CIs on monthly stance shares (`pos_ci`/`neg_ci` in
-each series cell), and Benjamini-Hochberg FDR gating. Every detector hit
-carries `p_value`, an effect size with CI, and a `tier`
-(strong/moderate/weak). Weak = passes the legacy raw-count rule but fails
-significance; the front page never shows weak. `low_sample` is now derived
-from the corpus (week_total < 0.25 x median) instead of the inert fixed
-150. Effect floors are provisional pending the Phase-2 backtest sweep.
+- Discourse time is `episodes.published_at`, never processing time.
+- Charts use three-month smoothed share of discourse. Raw counts remain in
+  accessible month labels/tooltips, and low-coverage months are visibly dim.
+- Topic vocabulary is open, but only accepted canonical assignments and
+  precision-first normalization merge topics.
+- Supportive/promotional/bullish collapse to positive;
+  skeptical/warning/bearish to negative; everything else is neutral.
+- The funnel canonicalizes resolved RSS URLs, exposes aliases, and keeps raw
+  and canonical show totals so duplicate feeds cannot silently inflate
+  coverage.
 
-## Detectors (subject-blind statistics, in the aggregator)
+## Build, test, and publish
 
-- **emerging**: pulse volume >= 8 in the last 3 anchored months with
-  baseline rate < 2/month over the prior 9.
-- **shifting**: total-variation divergence >= 0.3 between pulse and
-  baseline stance distributions (needs >= 8 pulse, >= 10 baseline rows).
-- **contested**: within the pulse window, min(pos,neg)/max >= 0.5 with
-  >= 8 positions.
-- **fading**: baseline peak week >= 8, pulse <= 2 mentions.
+Regenerate the full public data and application:
 
-Tuning lives in the constants at the top of the aggregator
-(`PULSE_MONTHS`, `BASELINE_MONTHS`, thresholds inline).
+```sh
+python3 -B -m research_factory.cli --db data/factory.sqlite canonicalize-topics --limit 5000
+python3 -B -m research_factory.pif_discourse_aggregates
+python3 -B scripts/pif_dashboard_build.py
+python3 -B scripts/pif_dashboard_publish.py
+```
 
-## Design system (renderer)
+Focused verification:
 
-Editorial "signals desk": Fraunces display serif + IBM Plex Sans/Mono,
-warm paper surface, dataviz-validated palette (positive `#2a78d6`,
-negative `#d84b4a`, neutral `#b9b4a8`, accent `#178b62`). Mobile uses a
-persistent three-destination bottom navigation and 44px-or-larger targets.
-Categorical hues are fixed, never cycled; colors follow entities.
+```sh
+python3 -B -m pytest -q \
+  tests/test_signal_desk_intelligence.py \
+  tests/test_pif_dashboard_build.py \
+  tests/test_pif_dashboard_publish.py \
+  tests/test_pif_discourse_aggregates.py
+node --check scripts/signal_desk_assets/signal-desk.js
+```
 
-## Known limits / roadmap (in priority order)
+The publisher requires schema `signal_desk_v5`, non-empty issue data, a fresh
+payload, and every split companion file. The Railway `signal-desk` service
+deploys the `site/` directory from branch
+`codex/pif-working-system-rebuild-20260720`.
 
-1. **Accepted aliases are embedded but not yet labeled in the UI**: every
-   topic payload carries its stable `issue_id` and accepted `aliases`; the
-   detail page still needs a compact “also known as” treatment.
-2. **Bulk labels aren't in `actor_positions` yet** — the people board deepens
-   automatically when the tier-100 intelligence campaign runs claim/position
-   extraction over the `ai_discourse_bulk_v1` pack (8.5k+ labels waiting).
-3. Prediction track records / consensus-formation views once
-   outcome-resolution data matures.
+Deployment is complete only after checking the public HTML, CSS, JavaScript,
+all JSON payloads, representative deep links, and rendered DOM at the Railway
+URL. A git push or Railway build receipt alone is not proof of production.
 
-## Verification habits that caught real bugs during the build
+## Accessibility and responsive contract
 
-- Render and LOOK (screenshot) before shipping — layout bugs don't show in
-  code review.
-- Check date semantics end-to-end with a query (labeled-today/released-2019
-  rows must chart in 2019).
-- The detectors degenerating to "everything fading" = window anchored past
-  the coverage frontier.
+- The mobile application shell reserves a separate safe-area-aware region for
+  bottom navigation; it never overlays research content.
+- 390px and 430px layouts must have no horizontal overflow.
+- Interactive targets are at least 44px, with visible focus and semantic
+  `aria-current`/`aria-pressed` states.
+- Charts are keyboard-operable buttons with complete nonvisual month labels.
+- Stance and confidence always have text labels; color is supplemental.
+- Search and validation results use live status text.
 
-## Data-source attribution
-
-Episode catalog recovery for truncated feeds (2026-08-29) used Apple's
-iTunes Search/Lookup API and Internet Archive Wayback Machine feed
-snapshots — no Podcast Index data has entered the corpus (the API key
-signup was blocked before any call was made). Prospectively, if the
-Podcast Index API is used: its responses are transient discovery
-pointers only (raw caches purged after insertion), episode metadata of
-record comes from the shows' own public RSS feeds, attribution is
-displayed, and credentials live only in environment variables.
+The browser audit should always include Briefing, one watchlist issue, one
+decision-grade issue, a person with both direct and mentioned evidence, Ask,
+an evidence citation, Coverage stages, duplicate feeds, empty search states,
+browser back, 390px, 430px, and a desktop viewport.
