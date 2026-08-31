@@ -148,7 +148,10 @@ def classify_evidence(raw: dict[str, Any], alleged_person: str | None = None
     if not str(item.get("source_url") or "").startswith(("http://", "https://")):
         reasons.append("missing_original_source")
 
-    if role == "organization":
+    if role == "source_excerpt":
+        attribution_type = "claim_attributed" if person != "Unattributed voice" \
+            else "source_excerpt"
+    elif role == "organization":
         attribution_type = "mentioned_organization"
         reasons.append("organization_not_speaker")
     elif not is_primary_person(person):
@@ -164,7 +167,9 @@ def classify_evidence(raw: dict[str, Any], alleged_person: str | None = None
         attribution_type = "direct_speech_verified"
 
     attribution_confidence = min(0.94, max(0.0, confidence))
-    if attribution_type != "direct_speech_verified":
+    if attribution_type not in {
+        "direct_speech_verified", "source_excerpt", "claim_attributed"
+    }:
         attribution_confidence = min(attribution_confidence, 0.45)
     publishability = "accepted"
     if reasons or attribution_confidence < 0.72:
@@ -226,7 +231,8 @@ def build_issue_brief(name: str, topic: dict[str, Any], signal: dict[str, Any]
     accepted = topic.get("accepted_evidence", [])
     shows = {e.get("show") for e in accepted if e.get("show")}
     episodes = {e.get("episode_id") for e in accepted if e.get("episode_id")}
-    people = {e.get("person") for e in accepted if e.get("person")}
+    people = {e.get("person") for e in accepted
+              if is_primary_person(e.get("person"))}
     kind = signal.get("kind", "discussed")
     item = signal.get("item") or {}
     detector_tier = item.get("tier")
@@ -315,8 +321,13 @@ def prepare_topics(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]
             if key not in deduped or evidence["quality_score"] > deduped[key]["quality_score"]:
                 deduped[key] = evidence
         evidence = list(deduped.values())
-        evidence.sort(key=lambda e: (e["publishability"] == "accepted",
-                                     e["quality_score"], e.get("date", "")),
+        evidence.sort(key=lambda e: (
+            e["publishability"] == "accepted",
+            is_primary_person(e.get("person")),
+            e.get("attribution_type") in {
+                "direct_speech_verified", "claim_attributed"
+            },
+            e["quality_score"], e.get("date", "")),
                       reverse=True)
         item["accepted_evidence"] = [e for e in evidence
                                      if e["publishability"] == "accepted"]
@@ -440,6 +451,8 @@ def prepare_people(data: dict[str, Any], topic_aliases: dict[str, str]
             "evidence_coverage": {
                 "direct": len(evidence), "mentions": len(mentions),
                 "shows": len({e.get("show") for e in evidence if e.get("show")}),
+                "episodes": len({e.get("episode_id") for e in evidence
+                                 if e.get("episode_id")}),
             },
         }
         people[person_id] = person
@@ -550,6 +563,18 @@ def build_payloads(data: dict[str, Any], diff: dict[str, Any] | None = None
         t["brief"]["decision_grade"], t["pulse_shows"], t["pulse_vol"]),
                      reverse=True)
 
+    public_topic_index = [
+        topic for topic in topic_index
+        if topic["brief"]["decision_grade"]
+    ]
+    watchlist_topic_index = [
+        topic for topic in topic_index
+        if not topic["brief"]["decision_grade"]
+        and topic["brief"]["coverage"]["accepted_excerpts"] >= 3
+        and topic["brief"]["coverage"]["episodes"] >= 3
+        and topic["brief"]["coverage"]["shows"] >= 2
+    ][:8]
+
     people_index = [{
         "id": pid, "name": p["name"], "authority": p["authority"],
         "network_reach": p["network_reach"], "n_episodes": p["n_episodes"],
@@ -562,8 +587,14 @@ def build_payloads(data: dict[str, Any], diff: dict[str, Any] | None = None
         p["authority"] is not None, p["authority"] or 0,
         p["direct_evidence_count"], p["n_episodes"]), reverse=True)
 
+    public_people_index = [
+        person for person in people_index
+        if people[person["id"]]["evidence_coverage"]["direct"] >= 2
+        and people[person["id"]]["evidence_coverage"]["episodes"] >= 2
+    ]
+
     briefing = []
-    for topic in topic_index:
+    for topic in [*public_topic_index, *watchlist_topic_index]:
         brief = topic["brief"]
         bucket = {
             "emerging": "new", "shifting": "changing_consensus",
@@ -583,8 +614,8 @@ def build_payloads(data: dict[str, Any], diff: dict[str, Any] | None = None
         "index": {**common, "corpus": data.get("corpus", {}),
                   "months": data.get("months", []),
                   "month_totals": data.get("month_totals", []),
-                  "briefing": briefing, "issues": topic_index,
-                  "voices": people_index, "diff": diff,
+                  "briefing": briefing, "issues": public_topic_index,
+                  "voices": public_people_index, "diff": diff,
                   "aliases": {"issues": topic_aliases,
                               "voices": person_aliases}},
         "issues": {**common, "issues": topics},

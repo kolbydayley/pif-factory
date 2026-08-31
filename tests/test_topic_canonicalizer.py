@@ -7,6 +7,7 @@ from collections import Counter
 
 from research_factory.db import TOPIC_ISSUE_REGISTRY_V6
 from research_factory.topic_canonicalizer import (
+    EXPLICIT_SAME_ISSUE_ALIASES,
     build_precision_first_canon,
     canonicalize_topics,
     classify_topic_pair,
@@ -16,6 +17,20 @@ from research_factory.topic_canonicalizer import (
 
 
 class TopicCanonicalizerTest(unittest.TestCase):
+    def test_explicit_issue_synonyms_are_narrow_and_stable(self) -> None:
+        self.assertEqual(
+            EXPLICIT_SAME_ISSUE_ALIASES["ai existential risk pdoom"],
+            "ai existential risk",
+        )
+        self.assertEqual(
+            EXPLICIT_SAME_ISSUE_ALIASES["open source models"],
+            "open source ai models",
+        )
+        self.assertEqual(
+            EXPLICIT_SAME_ISSUE_ALIASES["llm hallucinations"],
+            "ai hallucinations",
+        )
+
     def test_normalization_repairs_possessives_without_erasing_scope(self) -> None:
         self.assertEqual(normalize_topic_surface("AI’s impact/on_jobs"), "ai impact on jobs")
 
@@ -23,6 +38,9 @@ class TopicCanonicalizerTest(unittest.TestCase):
         plural = classify_topic_pair("AI models", "AI model")
         self.assertEqual(plural.relation, "same_issue")
         self.assertTrue(plural.auto_merge)
+        timeline = classify_topic_pair("AGI timelines", "AGI timeline")
+        self.assertEqual(timeline.relation, "same_issue")
+        self.assertTrue(timeline.auto_merge)
 
         scoped = classify_topic_pair("enterprise AI adoption", "enterprise AI")
         self.assertEqual(scoped.relation, "narrower_than")
@@ -74,13 +92,17 @@ class TopicCanonicalizerTest(unittest.TestCase):
                                 {"topic": "enterprise AI"},
                                 {"topic": "enterprise AI adoption"},
                                 {"topic": "AI models"},
+                                {"topic": "open source AI models"},
                             ]
                         }
                     ),
                 ),
                 (
                     "s2",
-                    json.dumps({"topics": [{"topic": "AI model"}]}),
+                    json.dumps({"topics": [
+                        {"topic": "AI model"},
+                        {"topic": "open source AI"},
+                    ]}),
                 ),
             ),
         )
@@ -90,6 +112,14 @@ class TopicCanonicalizerTest(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertEqual(registry["ai model"]["issue_id"], registry["ai models"]["issue_id"])
+        self.assertEqual(
+            registry["open source ai"]["issue_id"],
+            registry["open source ai models"]["issue_id"],
+        )
+        self.assertIn(
+            "open source ai",
+            registry["open source ai models"]["aliases"],
+        )
         stable_issue_id = registry["ai model"]["issue_id"]
         self.assertNotEqual(
             registry["enterprise ai"]["issue_id"],

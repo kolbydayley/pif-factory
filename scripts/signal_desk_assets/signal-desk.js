@@ -27,7 +27,8 @@
   const esc = value => String(value ?? "").replace(/[&<>"]/g, char => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;",
   }[char]));
-  const cap = value => String(value ?? "").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const cap = value => String(value ?? "").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+    .replace(/\b(Ai|Agi|Us|Llm|Api|Ipo|Mcp|Rss|Css|Html|Htmx|Ipv6)\b/g, token => token.toUpperCase());
   const enc = value => encodeURIComponent(String(value));
   const safeUrl = value => /^https?:\/\//i.test(value || "") ? value : null;
   const fmt = value => Number(value || 0).toLocaleString();
@@ -267,7 +268,10 @@
   }
 
   function relatedCards(issue) {
-    const rows = (issue.related || []).filter(row => INDEX.aliases.issues[String(row.topic || "").toLowerCase()]);
+    const rows = (issue.related || []).filter(row => {
+      const id = resolveIssue(row.topic);
+      return INDEX.issues.some(candidate => candidate.id === id);
+    });
     if (!rows.length) return `<div class="empty">No accepted relationship is available yet.</div>`;
     return rows.slice(0, 8).map(row => {
       const id = resolveIssue(row.topic);
@@ -283,14 +287,32 @@
     if (!issue) return renderNotFound("issues");
     state.selectedMonth = filterType === "month" ? filterValue : "";
     const brief = issue.brief;
+    const isPublished = INDEX.issues.some(candidate => candidate.id === id)
+      || INDEX.briefing.some(candidate => candidate.id === id);
+    if (!isPublished) {
+      app.innerHTML = `<section class="view evidence-page">
+        ${breadcrumb([{label: "Issues", route: "issues"}, {label: cap(issue.name)}])}
+        <div class="eyebrow detail-label">Candidate issue · not published</div>
+        <h1>${esc(cap(issue.name))}</h1>
+        <p class="lede">Signal Desk has observed this label, but does not yet have enough clean, source-grounded evidence to make it a useful decision brief.</p>
+        <section class="panel" style="margin-top:24px"><h2 class="panel-title">Why this page is withheld</h2>
+          <p>${fmt(issue.pulse_vol || 0)} recent mentions were detected, but the record does not pass the decision-grade publication gate. Empty charts, generic watchpoints, and unsubstantiated relationships are intentionally suppressed.</p>
+          <div class="callout danger" style="margin-top:14px">This candidate is excluded from Briefing, Issues, and Ask until it has at least three publishable excerpts from three episodes, two shows, and two distinct voices.</div>
+          <div class="button-row" style="margin-top:16px"><button class="primary" data-route="issues">Browse researchable issues</button><button class="secondary" data-route="coverage">Inspect corpus coverage</button></div>
+        </section>${coverageFooter()}
+      </section>`;
+      return;
+    }
     let evidence = state.evidenceMode === "accepted" ? issue.accepted_evidence : issue.uncertain_evidence;
     if (state.selectedMonth) evidence = evidence.filter(item => item.month === state.selectedMonth);
+    const firstEvidence = evidence.slice(0, 6);
+    const remainingEvidence = evidence.slice(6);
     const positive = issue.accepted_evidence.filter(item => item.group === "positive").slice(0, 2);
     const negative = issue.accepted_evidence.filter(item => item.group === "negative").slice(0, 2);
     app.innerHTML = `<section class="view">
-      ${breadcrumb([{label: "Issues", route: "issues"}, {label: issue.name}])}
+      ${breadcrumb([{label: "Issues", route: "issues"}, {label: cap(issue.name)}])}
       <div class="detail-head"><div><div class="eyebrow detail-label">${esc(cap(brief.classification))} · ${esc(brief.confidence)} confidence</div>
-        <h1>${esc(issue.name)}</h1><p class="lede">${esc(brief.what_changed.text)}</p></div>${coveragePill(brief, id)}</div>
+        <h1>${esc(cap(issue.name))}</h1><p class="lede">${esc(brief.what_changed.text)}</p></div>${coveragePill(brief, id)}</div>
       <div class="metric-grid">
         <div class="metric"><b>${fmt(brief.coverage.accepted_excerpts)}</b><span>accepted excerpts</span></div>
         <div class="metric"><b>${fmt(brief.coverage.episodes)}</b><span>supporting episodes</span></div>
@@ -299,21 +321,22 @@
       </div>
       <div class="research-grid mobile-priority">
         <div>
-          <section class="panel brief-panel"><div class="eyebrow">Two-minute brief</div><h2 class="panel-title">Why it matters</h2>
-            <div class="brief-stack">${sentence(brief.why_it_matters)}${brief.implications.map(item => sentence(item)).join("")}</div>
-            <h3 style="margin-top:20px">What to watch</h3><ul class="watch-list">${brief.watchpoints.map(item => `<li>${esc(item)}</li>`).join("")}</ul>
+          <section class="panel brief-panel"><div class="eyebrow">Two-minute evidence brief</div><h2 class="panel-title">What changed</h2>
+            <div class="brief-stack">${sentence(brief.what_changed)}<h3>Why this qualifies</h3>${sentence(brief.why_it_matters)}<h3>Current evidence mix</h3>${brief.implications.map(item => sentence(item)).join("")}</div>
           </section>
           <section class="panel evidence-panel"><div class="section-head" style="margin-top:0"><h2>Best evidence</h2><p>Direct, source-grounded excerpts</p></div>
             <div class="filter-row"><button class="chip" id="accepted-toggle" aria-pressed="${state.evidenceMode === "accepted"}">Accepted ${issue.accepted_evidence.length}</button>
               <button class="chip" id="uncertain-toggle" aria-pressed="${state.evidenceMode === "uncertain"}">Uncertain ${issue.uncertain_evidence.length}</button>
             </div>
-            <div class="evidence-list" style="margin-top:14px">${evidence.length ? evidence.map(item => evidenceCard(item, id)).join("") : `<div class="empty">No ${state.evidenceMode} evidence matches this slice.</div>`}</div>
+            <div class="evidence-list" style="margin-top:14px">${evidence.length ? firstEvidence.map(item => evidenceCard(item, id)).join("") : `<div class="empty">No ${state.evidenceMode} evidence matches this slice.</div>`}
+              ${remainingEvidence.length ? `<details class="evidence-more"><summary>Show ${remainingEvidence.length} more excerpts</summary><div class="evidence-list">${remainingEvidence.map(item => evidenceCard(item, id)).join("")}</div></details>` : ""}
+            </div>
           </section>
           <section class="panel trend-panel"><h2 class="panel-title">How attention moved</h2>${trend(issue, state.selectedMonth)}</section>
-          <section class="panel argument-panel"><h2 class="panel-title">Where the evidence differs</h2><p class="panel-sub">Claim-level stance from accepted excerpts; this is not a vote or prediction.</p>
+          ${(positive.length || negative.length) ? `<section class="panel argument-panel"><h2 class="panel-title">Where the evidence differs</h2><p class="panel-sub">Claim-level stance from accepted excerpts; this is not a vote or prediction.</p>
             <div class="argument-row"><span class="argument-label">Supportive</span><div>${positive.length ? positive.map(item => evidenceCard(item, id, {compact: true})).join("") : `<div class="empty">No accepted supportive evidence.</div>`}</div></div>
             <div class="argument-row"><span class="argument-label">Skeptical</span><div>${negative.length ? negative.map(item => evidenceCard(item, id, {compact: true})).join("") : `<div class="empty">No accepted skeptical evidence.</div>`}</div></div>
-          </section>
+          </section>` : ""}
         </div>
         <aside>
           <section class="panel related-panel"><h2 class="panel-title">Research leads</h2><p class="panel-sub">Co-mentioned issues are leads, not causal relationships. Typed relationships remain hidden until adjudicated.</p><div class="claim-list">${relatedCards(issue)}</div></section>
@@ -374,7 +397,23 @@
     const [voicePayload, networkPayload] = await Promise.all([load("voices"), load("network")]);
     const person = voicePayload.voices[id];
     if (!person) return renderNotFound("voices");
-    const connections = (networkPayload.network.people[id] || []).slice(0, 10);
+    const isPublished = INDEX.voices.some(candidate => candidate.id === id);
+    if (!isPublished) {
+      app.innerHTML = `<section class="view evidence-page">
+        ${breadcrumb([{label: "Voices", route: "voices"}, {label: person.name}])}
+        <div class="eyebrow detail-label">Candidate voice · not published</div>
+        <h1>${esc(person.name)}</h1>
+        <p class="lede">Signal Desk has observed this identity, but does not yet have enough clean, directly attributed speech to publish a useful voice profile.</p>
+        <section class="panel" style="margin-top:24px"><h2 class="panel-title">Why this page is withheld</h2>
+          <p>${fmt(person.evidence_coverage.direct || 0)} direct excerpts across ${fmt(person.evidence_coverage.episodes || 0)} episodes passed attribution checks. Public profiles require at least two accepted excerpts from two episodes.</p>
+          <div class="callout danger" style="margin-top:14px">Third-party mentions are not substituted for this person’s own views.</div>
+          <div class="button-row" style="margin-top:16px"><button class="primary" data-route="voices">Browse researchable voices</button><button class="secondary" data-route="coverage">Inspect corpus coverage</button></div>
+        </section>${coverageFooter()}
+      </section>`;
+      return;
+    }
+    const publishedVoiceIds = new Set(INDEX.voices.map(candidate => candidate.id));
+    const connections = (networkPayload.network.people[id] || []).filter(row => publishedVoiceIds.has(row.person_id)).slice(0, 10);
     const claims = person.top_topics.slice(0, 6);
     const direct = person.direct_evidence.slice(0, 12);
     app.innerHTML = `<section class="view">

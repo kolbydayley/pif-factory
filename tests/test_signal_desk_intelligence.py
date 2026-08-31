@@ -57,6 +57,15 @@ def test_grounded_direct_speech_can_be_accepted():
     assert row["quality_score"] > 0.7
 
 
+def test_clean_issue_source_excerpt_can_publish_without_person_attribution():
+    row = classify_evidence(evidence(
+        role="source_excerpt", person="Unattributed voice",
+        speaker_attribution={"status": "unresolved", "confidence": 0.9},
+    ))
+    assert row["attribution_type"] == "source_excerpt"
+    assert row["publishability"] == "accepted"
+
+
 def test_unverified_speaker_fails_closed():
     row = classify_evidence(evidence(speaker_attribution={
         "status": "unresolved", "confidence": 0,
@@ -114,6 +123,19 @@ def test_build_payloads_filters_operational_topics_and_cites_brief():
                 "pulse_shows": 3, "series": [], "aliases": ["agent costs"],
                 "evidence": evs, "related": [],
             },
+            "agent labor": {
+                "total": 7, "pulse_vol": 7, "pulse_episodes": 3,
+                "pulse_shows": 3, "series": [], "aliases": [],
+                "evidence": [evidence(
+                    id=f"watch_{i}", episode_id=f"watch_ep_{i}",
+                    show=f"Watch Show {i}", role="source_excerpt",
+                    person="Unattributed voice",
+                    speaker_attribution={
+                        "status": "unresolved", "confidence": 0.9,
+                    },
+                ) for i in range(1, 4)],
+                "related": [],
+            },
             "guest identity affiliation": {
                 "total": 99, "pulse_vol": 99, "series": [], "evidence": [],
             },
@@ -124,7 +146,13 @@ def test_build_payloads_filters_operational_topics_and_cites_brief():
     }
     payloads = build_payloads(data)
     assert payloads["index"]["schema_version"] == SCHEMA_VERSION
-    assert len(payloads["issues"]["issues"]) == 1
+    assert len(payloads["issues"]["issues"]) == 2
+    assert [item["name"] for item in payloads["index"]["issues"]] == [
+        "agent economics"
+    ]
+    assert {item["name"] for item in payloads["index"]["briefing"]} == {
+        "agent economics", "agent labor"
+    }
     brief = payloads["index"]["briefing"][0]["brief"]
     assert brief["decision_grade"] is True
     assert brief["what_changed"]["citations"]

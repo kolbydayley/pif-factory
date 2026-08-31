@@ -156,6 +156,9 @@ button.claim-card:hover,button.stage-card:hover{
 .month-label{font:9px var(--mono);color:var(--ink3);margin-top:5px;white-space:nowrap}
 .legend{font:11px/1.55 var(--mono);color:var(--ink3);margin-top:10px}
 .evidence-list{display:grid;gap:12px}
+.evidence-more{border-top:1px solid var(--rule);padding-top:10px}
+.evidence-more summary{min-height:44px;display:flex;align-items:center;color:var(--blue);font-weight:600;cursor:pointer}
+.evidence-more[open] summary{margin-bottom:12px}
 .evidence{border:1px solid var(--rule);border-radius:14px;background:var(--panel);padding:16px}
 .evidence-top{display:flex;justify-content:space-between;gap:12px;align-items:start}
 .person-link{border:0;background:none;padding:0;cursor:pointer;text-align:left;font-weight:700}

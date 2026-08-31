@@ -14,6 +14,31 @@ from .util import dumps_json, now_iso, stable_id
 METHOD = "precision_first_topic_issue_v1"
 JUNK_TOPICS = {"other", "misc", "miscellaneous", "unknown", "none", "n a", "general"}
 STOPWORDS = {"a", "an", "and", "as", "for", "in", "of", "on", "the", "to", "vs"}
+EXPLICIT_SAME_ISSUE_ALIASES = {
+    # Human-adjudicated identity merges. These are deliberately narrow: the
+    # terms are interchangeable in this corpus, not merely related.
+    "agi timelines": "agi timeline",
+    "us china ai race": "us china ai competition",
+    "ai existential risk pdoom": "ai existential risk",
+    "open source ai": "open source ai models",
+    "open source models": "open source ai models",
+    "open models": "open source ai models",
+    "ai impact on jobs": "ai impact on employment",
+    "ai job displacement": "ai impact on employment",
+    "ai impact on labor market": "ai impact on employment",
+    "ai driven job displacement": "ai impact on employment",
+    "ai regulation": "government regulation of ai",
+    "ai governance and regulation": "government regulation of ai",
+    "llm hallucinations": "ai hallucinations",
+    "nuclear energy": "nuclear power",
+    "space based data centers": "space data centers",
+    "microsoft openai partnership": "microsoft openai relationship",
+    "self driving cars": "autonomous vehicles",
+    "ai bubble risk": "ai bubble",
+    "ai bubble debate": "ai bubble",
+    "fed rate cuts": "federal reserve rate cuts",
+    "two state solution viability": "two state solution",
+}
 
 
 def normalize_topic_surface(value: str | None) -> str | None:
@@ -34,7 +59,7 @@ def _stem_token(token: str) -> str:
     # Deliberately narrow: plural morphology is safe; semantic stemming is not.
     if len(token) > 4 and token.endswith("ies"):
         return token[:-3] + "y"
-    if len(token) > 4 and token.endswith("es"):
+    if len(token) > 4 and token.endswith(("ches", "shes", "xes", "zes", "ses")):
         return token[:-2]
     if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
         return token[:-1]
@@ -144,6 +169,19 @@ def load_accepted_topic_registry(conn: sqlite3.Connection) -> dict[str, dict[str
         alias = row["alias"]
         if alias and alias != item["display_name"] and alias not in item["aliases"]:
             item["aliases"].append(alias)
+    for alias, target in EXPLICIT_SAME_ISSUE_ALIASES.items():
+        target_item = registry.get(target)
+        if not target_item:
+            continue
+        merged = {
+            **target_item,
+            "aliases": sorted(set([
+                *target_item.get("aliases", []), alias,
+                registry.get(alias, {}).get("display_name", alias),
+            ])),
+        }
+        registry[target] = merged
+        registry[alias] = merged
     return registry
 
 

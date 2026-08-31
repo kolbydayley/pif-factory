@@ -173,6 +173,30 @@ def short_excerpt(value: Optional[str], limit: int = 240) -> Optional[str]:
     return f"{clipped}…"
 
 
+_CLAIM_SPEAKER = re.compile(
+    r"^([A-Z][A-Za-z.'’-]+(?:\s+[A-Z][A-Za-z.'’-]+){1,4})\s+"
+    r"(?:says|said|argues|argued|thinks|believes|expects|predicts|notes|"
+    r"assesses|reports|describes|explains|warns|estimates|observes|states)\b"
+)
+
+
+def _claim_speaker(evidence: str, claims: List[Dict[str, Any]]) -> Optional[str]:
+    """Recover a conservative speaker when a claim repeats the topic quote."""
+    evidence_tokens = set(re.findall(r"[a-z0-9]+", evidence.casefold()))
+    if len(evidence_tokens) < 5:
+        return None
+    best: tuple[float, Optional[str]] = (0.0, None)
+    for claim in claims:
+        claim_tokens = set(re.findall(
+            r"[a-z0-9]+", str(claim.get("evidence") or "").casefold()
+        ))
+        overlap = len(evidence_tokens & claim_tokens) / len(evidence_tokens)
+        match = _CLAIM_SPEAKER.match(str(claim.get("claim_text") or ""))
+        if match and overlap > best[0]:
+            best = (overlap, match.group(1))
+    return best[1] if best[0] >= 0.7 else None
+
+
 def norm_topic(name: Optional[str]) -> Optional[str]:
     return normalize_topic_surface(name)
 
@@ -621,7 +645,11 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         registered = topic_registry.get(topic)
         if registered:
             display = registered["display_name"]
-            topic_identity.setdefault(display, registered)
+            identity = topic_identity.setdefault(display, registered)
+            identity["aliases"] = sorted(set([
+                *identity.get("aliases", []),
+                *registered.get("aliases", []),
+            ]))
             return display
         display = topic_canon.get(topic, topic)
         topic_identity.setdefault(
@@ -648,6 +676,76 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         note_breadth(topic, m_i, episode_id, source_id)
         episode_topics[episode_id].add(topic)
         episode_shows[episode_id] = source_id
+
+    # A second, recent-only pass attaches source-grounded excerpts. Keeping
+    # these dictionaries out of the all-time frequency cache prevents a
+    # multi-gigabyte nightly build while preserving the complete chart series.
+    label_id_expr = "l.id" if _column_exists(conn, "labels", "id") \
+        else "(s.id || ':' || t.key)"
+    label_confidence_expr = "l.confidence" \
+        if _column_exists(conn, "labels", "confidence") else "1.0"
+    evidence_topic_candidates = {
+        display for raw_topic, _count in raw_counts.most_common(TOP_TOPICS * 5)
+        if (display := canon(raw_topic))
+    }
+    label_evidence_episodes: Dict[str, set[str]] = defaultdict(set)
+    last_label_id: Optional[str] = None
+    last_claims: List[Dict[str, Any]] = []
+    for r in conn.execute(
+            f"""
+            SELECT t.value AS topic_json, t.key AS topic_index,
+                   {label_id_expr} AS label_id,
+                   {label_confidence_expr} AS label_confidence,
+                   l.output_json, e.published_at, e.id AS episode_id,
+                   e.source_id, e.title AS episode_title,
+                   e.url AS episode_url, e.audio_url AS episode_audio_url
+            FROM labels l
+            JOIN segments s ON s.id = l.segment_id
+            JOIN episodes e ON e.id = s.episode_id,
+            json_each(l.output_json, '$.topics') t
+            WHERE e.published_at >= ?
+            """, (evidence_cutoff,)):
+        try:
+            item = json.loads(r["topic_json"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        topic = canon(norm_topic(item.get("topic")))
+        evidence_text = short_excerpt(item.get("evidence"))
+        if not topic or topic not in evidence_topic_candidates or not evidence_text:
+            continue
+        if r["episode_id"] in label_evidence_episodes[topic] \
+                or len(label_evidence_episodes[topic]) >= 48:
+            continue
+        label_evidence_episodes[topic].add(r["episode_id"])
+        if r["label_id"] != last_label_id:
+            try:
+                output = json.loads(r["output_json"])
+                claims = output.get("claims") if isinstance(output, dict) else []
+                last_claims = claims if isinstance(claims, list) else []
+            except (json.JSONDecodeError, TypeError):
+                last_claims = []
+            last_label_id = r["label_id"]
+        speaker = _claim_speaker(evidence_text, last_claims)
+        confidence = round(float(r["label_confidence"] or 0), 2)
+        topic_evidence_raw[topic].append({
+            "id": f"{r['label_id']}_topic_{r['topic_index']}",
+            "topic": topic, "stance": item.get("stance"),
+            "group": stance_group(item.get("stance")),
+            "claim_type": "topic_excerpt", "month": month_of(r["published_at"]),
+            "date": (r["published_at"] or "")[:10],
+            "show": r["source_id"], "episode": r["episode_title"],
+            "episode_id": r["episode_id"],
+            "source_url": r["episode_url"] or r["episode_audio_url"],
+            "confidence": confidence, "evidence": evidence_text,
+            "role": "source_excerpt",
+            "person": speaker or "Unattributed voice",
+            "speaker_attribution": {
+                "status": "claim_attributed" if speaker else "unresolved",
+                "confidence": confidence,
+                "basis": "label_claim_overlap" if speaker else "source_excerpt",
+                "role": "claim speaker" if speaker else None,
+            },
+        })
 
     # ---- concept-level positions also feed the topic series (deeper history)
     pos_rows = conn.execute(
