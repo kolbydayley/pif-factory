@@ -126,7 +126,10 @@ N_PARTITIONS = 8
 # tail; slice 7 (8k) would take the Go route a month. glm-zai takes it;
 # the Go lane becomes episodic on the shared slice (its continuous job is
 # retired — 50/hr vs glm-zai's 1,500/hr on identical segments).
-LANE_PARTITIONS = {"glm-zai": (0, 1, 2, 5, 7), "glm-zai-flash": (3, 4, 6),
+# 2026-08-31 final sweep: glm-zai's slices drafted out (192 left) while
+# ~2.1k sat in flash's; slice 6 moves to glm-zai so both lanes finish the
+# backlog together.
+LANE_PARTITIONS = {"glm-zai": (0, 1, 2, 5, 6, 7), "glm-zai-flash": (3, 4),
                    "grok": (5,), "codex": (6,), "glm": (7,)}
 
 
