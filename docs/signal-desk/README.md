@@ -18,9 +18,10 @@ with zero configuration (explicit Kolby requirement).
 
 | Piece | Path | Role |
 |---|---|---|
+| Topic registry | `research_factory/topic_canonicalizer.py` | Precision-first stable issue IDs, accepted aliases, versioned assignments, and reviewable issue relationships |
 | Aggregator | `research_factory/pif_discourse_aggregates.py` | Read-only over `data/factory.sqlite` → `work/pif-ops/dashboard/data.json` (~1MB) |
 | Renderer | `scripts/pif_dashboard_build.py` | Embeds research data into the HTML and emits a separate live funnel JSON resource beside it |
-| Nightly job (external) | codex-cron `pif-dashboard-refresh`, daily 21:30, cwd this repo | Runs aggregator then renderer; fires after `pif-canonical-promotion` (21:00) so each night's labels are included |
+| Nightly job (external) | codex-cron `pif-dashboard-refresh`, daily 21:30, cwd this repo | Refreshes the stable registry, aggregates, renders, and publishes; fires after `pif-canonical-promotion` (21:00) so each night's labels are included |
 
 ## Live dashboard
 
@@ -46,6 +47,7 @@ step of the `pif-dashboard-refresh` codex-cron job.
 
 Regenerate manually:
 
+    python3 -B -m research_factory.cli --db data/factory.sqlite canonicalize-topics --limit 5000
     python3 -B -m research_factory.pif_discourse_aggregates
     python3 -B scripts/pif_dashboard_build.py
 
@@ -57,12 +59,15 @@ Regenerate manually:
   with >= 50 labeled rows (`data_frontier()`), not the calendar. An
   ingestion freeze reads as a coverage gap, never as "everything faded".
   The dashboard shows an amber ingestion-lag chip when frontier > 21 days old.
-- **Open vocabulary**: topics come from label `topics[].topic` strings and
-  `actor_positions.concept_name`, normalized by `norm_topic()`. No enum
-  anywhere. The old `ai_discourse_v1` pack's hardcoded topic enum is data,
-  not schema. V3 removes junk buckets and clusters near-duplicates with a
-  bounded, volume-headed token-containment/Jaccard pass applied to both topic
-  series and people positions.
+- **Open vocabulary with stable issues**: topics come from label
+  `topics[].topic` strings and `actor_positions.concept_name`; there is no
+  subject enum. Migration V6 persists `canonical_issues`, accepted aliases,
+  versioned topic assignments, and explicit `same_issue`, `broader_than`,
+  `narrower_than`, `related_to`, `distinct_from`, or `uncertain`
+  relationships. Only exact normalized or plural/order-only identity matches
+  merge automatically. Token containment is a candidate hierarchy relation,
+  never permission to swallow a scoped issue. Signal Desk reads accepted
+  assignments first and uses the same precision-first rule for unseen terms.
 - **Stance collapsing**: supportive/promotional/bullish → positive;
   skeptical/warning/bearish → negative; else neutral (`stance_group()`).
 - **Sources**: labels (all packs incl. `ai_discourse_bulk_v1`) for topic
@@ -72,10 +77,10 @@ Regenerate manually:
   are whitespace-normalized and capped at 240 characters for public display.
 - **Related issues**: ranked from topics co-occurring in the same episodes,
   with shared-show breadth used before shared-episode count.
-- **Honest chart magnitude**: weekly chart height is the three-week smoothed
+- **Honest chart magnitude**: monthly chart height is the three-month smoothed
   share of all discourse mentions, not a raw count that inherits corpus
-  coverage swings. Exact counts remain in week labels; weeks with fewer than
-  150 total mentions are visibly de-emphasized.
+  coverage swings. Exact counts remain in month labels; months below the
+  corpus-derived coverage floor are visibly de-emphasized.
 - **Trust honesty**: authority-scored voices rank first. When no scored person
   is attached to a topic, the UI says so and presents evidence without making
   a trust claim.
@@ -98,7 +103,7 @@ stable browser-history state without needing a server-side router:
 - `#home/shifts`, `#home/people`, `#home/topics`
 - `#funnel` for the enrolled-show roster, episode processing funnel, and
   private show-enrollment intake
-- `#topic/<topic>` and topic slices for `stance/<group>` or `week/<week>`
+- `#topic/<topic>` and topic slices for `stance/<group>` or `month/<month>`
 - `#person/<person>` for recurring claims, meaningful cross-episode position
   changes, disagreements with the field, and evidence
 - `#evidence/<position-id>/<topic>` for excerpt context and the original link
@@ -118,9 +123,9 @@ enters production.
 
 `research_factory/discourse_stats.py` (pure stdlib) backs every detector:
 exact conditional binomial rate tests for emerging/fading (exposure =
-weekly labeled-mention totals, so corpus-coverage swings never read as
+monthly labeled-mention totals, so corpus-coverage swings never read as
 surges), permutation/chi-square stance-shift tests, a lopsided-null
-contested test, Wilson CIs on weekly stance shares (`pos_ci`/`neg_ci` in
+contested test, Wilson CIs on monthly stance shares (`pos_ci`/`neg_ci` in
 each series cell), and Benjamini-Hochberg FDR gating. Every detector hit
 carries `p_value`, an effect size with CI, and a `tier`
 (strong/moderate/weak). Weak = passes the legacy raw-count rule but fails
@@ -130,8 +135,8 @@ from the corpus (week_total < 0.25 x median) instead of the inert fixed
 
 ## Detectors (subject-blind statistics, in the aggregator)
 
-- **emerging**: pulse volume >= 8 in the last 4 anchored weeks with
-  baseline rate < 0.5/week over the prior 20.
+- **emerging**: pulse volume >= 8 in the last 3 anchored months with
+  baseline rate < 2/month over the prior 9.
 - **shifting**: total-variation divergence >= 0.3 between pulse and
   baseline stance distributions (needs >= 8 pulse, >= 10 baseline rows).
 - **contested**: within the pulse window, min(pos,neg)/max >= 0.5 with
@@ -139,7 +144,7 @@ from the corpus (week_total < 0.25 x median) instead of the inert fixed
 - **fading**: baseline peak week >= 8, pulse <= 2 mentions.
 
 Tuning lives in the constants at the top of the aggregator
-(`PULSE_WEEKS`, `BASELINE_WEEKS`, thresholds inline).
+(`PULSE_MONTHS`, `BASELINE_MONTHS`, thresholds inline).
 
 ## Design system (renderer)
 
@@ -151,16 +156,14 @@ Categorical hues are fixed, never cycled; colors follow entities.
 
 ## Known limits / roadmap (in priority order)
 
-1. **Cluster aliases are not yet displayed**: V3 resolves near-duplicates to
-   a volume-headed canonical topic, but the detail page does not yet expose
-   which raw terms were folded into that topic.
+1. **Accepted aliases are embedded but not yet labeled in the UI**: every
+   topic payload carries its stable `issue_id` and accepted `aliases`; the
+   detail page still needs a compact “also known as” treatment.
 2. **Bulk labels aren't in `actor_positions` yet** — the people board deepens
    automatically when the tier-100 intelligence campaign runs claim/position
    extraction over the `ai_discourse_bulk_v1` pack (8.5k+ labels waiting).
 3. Prediction track records / consensus-formation views once
    outcome-resolution data matures.
-4. Automate Railway publishing after the nightly local build once continuous
-   public publishing is explicitly authorized.
 
 ## Verification habits that caught real bugs during the build
 
