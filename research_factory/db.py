@@ -3126,12 +3126,117 @@ LABEL_METRIC_QUARANTINE_V5: tuple[str, ...] = (
 )
 
 
+TOPIC_ISSUE_REGISTRY_V6: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS canonical_issues (
+      id TEXT PRIMARY KEY,
+      display_name TEXT NOT NULL,
+      normalized_name TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'accepted'
+        CHECK(status IN ('candidate', 'accepted', 'needs_review', 'retired')),
+      description TEXT,
+      version INTEGER NOT NULL DEFAULT 1 CHECK(version > 0),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS canonical_issue_aliases (
+      id TEXT PRIMARY KEY,
+      issue_id TEXT NOT NULL REFERENCES canonical_issues(id),
+      alias TEXT NOT NULL,
+      normalized_alias TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'accepted'
+        CHECK(status IN ('candidate', 'accepted', 'rejected')),
+      confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1),
+      method TEXT NOT NULL,
+      evidence_count INTEGER NOT NULL DEFAULT 0 CHECK(evidence_count >= 0),
+      source_diversity INTEGER NOT NULL DEFAULT 0 CHECK(source_diversity >= 0),
+      first_seen_at TEXT,
+      last_seen_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(issue_id, normalized_alias)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS canonical_issue_relations (
+      id TEXT PRIMARY KEY,
+      subject_issue_id TEXT NOT NULL REFERENCES canonical_issues(id),
+      object_issue_id TEXT NOT NULL REFERENCES canonical_issues(id),
+      relation_type TEXT NOT NULL
+        CHECK(relation_type IN (
+          'same_issue', 'broader_than', 'narrower_than', 'related_to',
+          'distinct_from', 'uncertain'
+        )),
+      status TEXT NOT NULL DEFAULT 'candidate'
+        CHECK(status IN ('candidate', 'accepted', 'rejected', 'needs_review')),
+      confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1),
+      method TEXT NOT NULL,
+      evidence_json TEXT NOT NULL DEFAULT '{}',
+      version INTEGER NOT NULL DEFAULT 1 CHECK(version > 0),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      CHECK(subject_issue_id <> object_issue_id),
+      UNIQUE(subject_issue_id, object_issue_id, relation_type, version)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS topic_issue_assignments (
+      id TEXT PRIMARY KEY,
+      raw_topic TEXT NOT NULL,
+      normalized_topic TEXT NOT NULL,
+      issue_id TEXT NOT NULL REFERENCES canonical_issues(id),
+      relation_type TEXT NOT NULL DEFAULT 'same_issue'
+        CHECK(relation_type IN ('same_issue', 'uncertain')),
+      status TEXT NOT NULL DEFAULT 'accepted'
+        CHECK(status IN ('candidate', 'accepted', 'rejected', 'needs_review')),
+      confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1),
+      method TEXT NOT NULL,
+      evidence_count INTEGER NOT NULL DEFAULT 0 CHECK(evidence_count >= 0),
+      source_diversity INTEGER NOT NULL DEFAULT 0 CHECK(source_diversity >= 0),
+      decision_version INTEGER NOT NULL DEFAULT 1 CHECK(decision_version > 0),
+      evidence_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(normalized_topic, decision_version)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS topic_canonicalization_runs (
+      id TEXT PRIMARY KEY,
+      method TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('running', 'completed', 'failed')),
+      parameters_json TEXT NOT NULL DEFAULT '{}',
+      metrics_json TEXT NOT NULL DEFAULT '{}',
+      started_at TEXT NOT NULL,
+      completed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_canonical_issue_aliases_normalized
+    ON canonical_issue_aliases(normalized_alias, status)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_topic_issue_assignments_current
+    ON topic_issue_assignments(normalized_topic, status, decision_version)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_canonical_issue_relations_subject
+    ON canonical_issue_relations(subject_issue_id, status, relation_type)
+    """,
+)
+
+
 SCHEMA_MIGRATIONS: tuple[tuple[int, str, tuple[str, ...]], ...] = (
     (1, "versioned_intelligence_v1", INTELLIGENCE_SCHEMA_V1),
     (2, "archive_orphan_queue_envelopes_v2", QUEUE_ENVELOPE_ORPHAN_ARCHIVE_V2),
     (3, "semantic_scope_and_coverage_v3", SEMANTIC_SCOPE_AND_COVERAGE_V3),
     (4, "accepted_pipeline_run_authority_v4", ACCEPTED_PIPELINE_RUN_AUTHORITY_V4),
     (5, "label_metric_quarantine_v5", LABEL_METRIC_QUARANTINE_V5),
+    (6, "topic_issue_registry_v6", TOPIC_ISSUE_REGISTRY_V6),
 )
 
 VERSIONED_INTELLIGENCE_V1_SUPERSEDED_CHECKSUM = (

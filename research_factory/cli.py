@@ -19,6 +19,7 @@ from .app_server_evaluation import (
 )
 from .claim_canonicalizer import canonicalize_claims
 from .claim_subjects import build_claim_subjects
+from .topic_canonicalizer import canonicalize_topics
 from .daily_cycle import DEFAULT_DAILY_RUNTIME_SECONDS, run_daily_cycle
 from .exports import (
     export_actor_stance_report,
@@ -1145,6 +1146,13 @@ def build_parser() -> argparse.ArgumentParser:
     canonicalize_claims_parser.add_argument("--limit", type=int)
     canonicalize_claims_parser.add_argument("--mode", choices=["deterministic", "semantic"], default="deterministic")
     canonicalize_claims_parser.add_argument("--dry-run", action="store_true")
+
+    canonicalize_topics_parser = sub.add_parser(
+        "canonicalize-topics",
+        help="Build a precision-first stable issue registry for Signal Desk topics.",
+    )
+    canonicalize_topics_parser.add_argument("--limit", type=int, default=5000)
+    canonicalize_topics_parser.add_argument("--dry-run", action="store_true")
 
     claim_edges = sub.add_parser("judge-claim-edges", help="Create claim-edge candidates that require GPT-5.5 semantic confirmation.")
     claim_edges.add_argument("--pilot-id")
@@ -2437,6 +2445,15 @@ def main(argv: list[str] | None = None) -> int:
                 dry_run=args.dry_run,
             )
             print_json(result)
+        elif args.command == "canonicalize-topics":
+            db.init_db(conn)
+            print_json(
+                canonicalize_topics(
+                    conn,
+                    limit=args.limit,
+                    dry_run=args.dry_run,
+                )
+            )
         elif args.command == "judge-claim-edges":
             db.init_db(conn)
             print_json(judge_claim_edges(conn, pilot_id=args.pilot_id, model=args.model, limit=args.limit))

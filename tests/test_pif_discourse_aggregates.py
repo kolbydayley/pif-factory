@@ -177,14 +177,16 @@ class DiscourseAggregateBreadthTest(unittest.TestCase):
         canon = build_topic_canon(Counter({
             "other": 999,
             "agents": 100,
+            "agent": 40,
             "agentic ai systems": 30,
             "enterprise ai": 80,
             "enterprise ai adoption": 20,
         }))
 
         self.assertNotIn("other", canon)
-        self.assertEqual(canon["agentic ai systems"], "agents")
-        self.assertEqual(canon["enterprise ai adoption"], "enterprise ai")
+        self.assertEqual(canon["agent"], "agents")
+        self.assertEqual(canon["agentic ai systems"], "agentic ai systems")
+        self.assertEqual(canon["enterprise ai adoption"], "enterprise ai adoption")
         self.assertEqual(
             short_excerpt("Speaker 1: First line.\nSpeaker 2: Second line."),
             "First line. Second line.",

@@ -233,10 +233,10 @@ class IntelligenceSchemaTest(unittest.TestCase):
         }
 
     def test_migration_release_integrity_and_audited_projection_gate(self) -> None:
-        self.assertEqual(db.schema_migration_version(self.conn), 5)
+        self.assertEqual(db.schema_migration_version(self.conn), 6)
         db.init_db(self.conn)
         self.assertEqual(
-            self.conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0], 5
+            self.conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0], 6
         )
         attempt_columns = {
             row["name"]

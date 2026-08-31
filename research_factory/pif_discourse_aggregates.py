@@ -28,6 +28,13 @@ import sqlite3
 import statistics
 
 from research_factory import discourse_stats as ds
+from research_factory.topic_canonicalizer import (
+    JUNK_TOPICS,
+    build_precision_first_canon,
+    load_accepted_topic_registry,
+    normalize_topic_surface,
+)
+from research_factory.util import stable_id
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -83,11 +90,7 @@ def short_excerpt(value: Optional[str], limit: int = 240) -> Optional[str]:
 
 
 def norm_topic(name: Optional[str]) -> Optional[str]:
-    if not name:
-        return None
-    t = re.sub(r"[\s_/-]+", " ", str(name).lower()).strip()
-    t = re.sub(r"[^a-z0-9 .+#]", "", t)
-    return t or None
+    return normalize_topic_surface(name)
 
 
 def month_of(published_at: Optional[str]) -> Optional[str]:
@@ -127,62 +130,9 @@ def month_axis(earliest: Optional[str],
     return out
 
 
-JUNK_TOPICS = {"other", "misc", "miscellaneous", "unknown", "none", "n a",
-               "general"}
-_STOP = {"the", "of", "and", "vs", "a", "an", "in", "on", "for", "to", "as"}
-
-
-def _stem(tok: str) -> str:
-    for suf in ("ical", "ally", "ing", "ity", "ic", "s"):
-        if len(tok) > 4 and tok.endswith(suf):
-            return tok[: -len(suf)]
-    return tok
-
-
-def _topic_tokens(topic: str) -> frozenset:
-    return frozenset(_stem(w) for w in topic.split() if w not in _STOP)
-
-
 def build_topic_canon(counts: Counter) -> Dict[str, str]:
-    """Cluster near-duplicate open-vocabulary topics (quality audit item 3).
-
-    Merge rule: stemmed-token containment or Jaccard >= 0.6; the
-    highest-volume member names the cluster. A token inverted index keeps
-    each candidate comparing only against heads that share a token, so the
-    all-time vocabulary (~325k raw strings, 2026-08-31) clusters in ~10s
-    instead of the ~80s the naive head scan cost. MAX_HEADS is raised to
-    1500 now that matching is cheap, which consolidates more of the long
-    tail (the fragmentation Kolby flagged 2026-08-31).
-    """
-    MAX_HEADS = 1500
-    names = [n for n, _ in counts.most_common() if n not in JUNK_TOPICS]
-    toks = {n: _topic_tokens(n) for n in names}
-    heads: list = []
-    tok_to_heads: Dict[str, List[str]] = defaultdict(list)
-    canon: Dict[str, str] = {}
-    for name in names:
-        a = toks[name]
-        merged = None
-        if a:
-            seen: set = set()
-            for tk in a:
-                for head in tok_to_heads.get(tk, ()):
-                    if head in seen:
-                        continue
-                    seen.add(head)
-                    b = toks[head]
-                    if b and (a <= b or b <= a
-                              or len(a & b) / len(a | b) >= 0.6):
-                        merged = head
-                        break
-                if merged:
-                    break
-        if merged is None and len(heads) < MAX_HEADS:
-            heads.append(name)
-            for tk in a:
-                tok_to_heads[tk].append(name)
-        canon[name] = merged or name
-    return canon
+    """Compatibility wrapper for the precision-first fallback resolver."""
+    return build_precision_first_canon(counts)
 
 
 CTX_RAW_SPAN = 900     # transcript chars read on each side of the quote
@@ -578,11 +528,27 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         if nt:
             raw_counts[nt] += 1
     topic_canon = build_topic_canon(raw_counts)
+    topic_registry = load_accepted_topic_registry(conn)
+    topic_identity: Dict[str, Dict[str, Any]] = {}
 
     def canon(topic: Optional[str]) -> Optional[str]:
         if not topic or topic in JUNK_TOPICS:
             return None
-        return topic_canon.get(topic, topic)
+        registered = topic_registry.get(topic)
+        if registered:
+            display = registered["display_name"]
+            topic_identity.setdefault(display, registered)
+            return display
+        display = topic_canon.get(topic, topic)
+        topic_identity.setdefault(
+            display,
+            {
+                "issue_id": stable_id("canonical_issue", display, prefix="iss_"),
+                "display_name": display,
+                "aliases": [],
+            },
+        )
+        return display
 
     for nt, sg, intensity, m_i, episode_id, source_id in label_records:
         topic = canon(nt)
@@ -897,7 +863,10 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         last = next((i for i in range(len(series) - 1, -1, -1)
                      if series[i]["vol"]), len(series) - 1)
         trimmed = series[first:last + 1]
+        identity = topic_identity.get(topic, {})
         info = {"series": trimmed, "total": topic_total[topic],
+                "issue_id": identity.get("issue_id"),
+                "aliases": identity.get("aliases", []),
                 "pulse_vol": pulse_vol,
                 "pulse_rate": round(pulse_rate, 2),
                 "base_rate": round(base_rate, 2)}
