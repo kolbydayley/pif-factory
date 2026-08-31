@@ -36,9 +36,24 @@ PIF_ROOT = Path.home() / "pif-factory"
 CANONICAL_DB = PIF_ROOT / "data" / "factory.sqlite"
 OUT_DEFAULT = PIF_ROOT / "work" / "pif-ops" / "dashboard" / "data.json"
 
-RECENT_WEEKS = 26
-PULSE_WEEKS = 4          # "now" window for detectors
-BASELINE_WEEKS = 20      # trailing baseline behind the pulse window
+# Aggregation buckets are CALENDAR MONTHS (Kolby 2026-08-31: weekly buckets
+# were too thin — the corpus's 10x weekly coverage swings made evergreen
+# topics look spiky, and a weekly axis over the full history is unreadable).
+# The topic universe + per-topic series now span ALL-TIME so the dashboard
+# can zoom out across the whole backfill (130k labels, most on episodes
+# older than any recent window); the change-detectors still judge only the
+# recent monthly tail.
+MAX_AXIS_MONTHS = 120    # zoomable all-time axis cap (10 yrs; pre-2016 is thin)
+# The topic SERIES + totals span the whole axis (cheap counting off the dense
+# labels). The heavy machinery — per-position evidence parsing, transcript
+# context reads, the people board, detectors — is bounded to EVIDENCE_MONTHS
+# so an all-time build stays a nightly-affordable job (still far more history
+# than the old 26-week frame it replaces).
+EVIDENCE_MONTHS = 24
+DETECTOR_MONTHS = 12     # recent frame the change-detectors judge over
+PULSE_MONTHS = 3         # "now" window for detectors
+BASELINE_MONTHS = 9      # trailing baseline behind the pulse window (within
+                         # the detector frame: DETECTOR_MONTHS = PULSE+BASELINE)
 TOP_TOPICS = 90
 TOP_PEOPLE = 120
 
@@ -75,28 +90,40 @@ def norm_topic(name: Optional[str]) -> Optional[str]:
     return t or None
 
 
-def week_of(published_at: Optional[str]) -> Optional[str]:
-    if not published_at:
+def month_of(published_at: Optional[str]) -> Optional[str]:
+    """Calendar-month bucket key, 'YYYY-MM', or None if unparseable."""
+    if not published_at or len(published_at) < 7:
         return None
-    try:
-        d = dt.date.fromisoformat(published_at[:10])
-    except ValueError:
-        return None
-    iso = d.isocalendar()
-    return f"{iso[0]}-W{iso[1]:02d}"
+    ym = published_at[:7]
+    if len(ym) == 7 and ym[4] == "-" and ym[:4].isdigit() \
+            and ym[5:].isdigit():
+        return ym
+    return None
 
 
-def _week_index(weeks: List[str]) -> Dict[str, int]:
-    return {w: i for i, w in enumerate(weeks)}
+def _month_index(months: List[str]) -> Dict[str, int]:
+    return {m: i for i, m in enumerate(months)}
 
 
-def recent_weeks_list(now: Optional[dt.date] = None) -> List[str]:
-    today = now or dt.date.today()
-    out = []
-    for i in range(RECENT_WEEKS - 1, -1, -1):
-        d = today - dt.timedelta(weeks=i)
-        iso = d.isocalendar()
-        out.append(f"{iso[0]}-W{iso[1]:02d}")
+def _add_months(ym: str, delta: int) -> str:
+    y, m = int(ym[:4]), int(ym[5:7])
+    idx = (y * 12 + (m - 1)) + delta
+    return f"{idx // 12:04d}-{idx % 12 + 1:02d}"
+
+
+def month_axis(earliest: Optional[str],
+               frontier: Optional[dt.date] = None) -> List[str]:
+    """Contiguous 'YYYY-MM' list from the earliest labeled month (capped to
+    the last MAX_AXIS_MONTHS) up to and including the frontier month."""
+    end = month_of((frontier or dt.date.today()).isoformat())
+    if not end:
+        return []
+    floor = _add_months(end, -(MAX_AXIS_MONTHS - 1))
+    start = max(earliest, floor) if earliest else floor
+    out, cur = [], start
+    while cur <= end and len(out) <= MAX_AXIS_MONTHS:
+        out.append(cur)
+        cur = _add_months(cur, 1)
     return out
 
 
@@ -120,28 +147,40 @@ def build_topic_canon(counts: Counter) -> Dict[str, str]:
     """Cluster near-duplicate open-vocabulary topics (quality audit item 3).
 
     Merge rule: stemmed-token containment or Jaccard >= 0.6; the
-    highest-volume member names the cluster. BOUNDED: only the top
-    MAX_HEADS topics may found clusters and everything else matches
-    against those heads — the all-pairs version is quadratic over the
-    10k+ raw vocabulary and took minutes (measured 2026-08-26).
+    highest-volume member names the cluster. A token inverted index keeps
+    each candidate comparing only against heads that share a token, so the
+    all-time vocabulary (~325k raw strings, 2026-08-31) clusters in ~10s
+    instead of the ~80s the naive head scan cost. MAX_HEADS is raised to
+    1500 now that matching is cheap, which consolidates more of the long
+    tail (the fragmentation Kolby flagged 2026-08-31).
     """
-    MAX_HEADS = 400
+    MAX_HEADS = 1500
     names = [n for n, _ in counts.most_common() if n not in JUNK_TOPICS]
     toks = {n: _topic_tokens(n) for n in names}
     heads: list = []
+    tok_to_heads: Dict[str, List[str]] = defaultdict(list)
     canon: Dict[str, str] = {}
     for name in names:
         a = toks[name]
         merged = None
         if a:
-            for head in heads:
-                b = toks[head]
-                if b and (a <= b or b <= a
-                          or len(a & b) / len(a | b) >= 0.6):
-                    merged = head
+            seen: set = set()
+            for tk in a:
+                for head in tok_to_heads.get(tk, ()):
+                    if head in seen:
+                        continue
+                    seen.add(head)
+                    b = toks[head]
+                    if b and (a <= b or b <= a
+                              or len(a & b) / len(a | b) >= 0.6):
+                        merged = head
+                        break
+                if merged:
                     break
         if merged is None and len(heads) < MAX_HEADS:
             heads.append(name)
+            for tk in a:
+                tok_to_heads[tk].append(name)
         canon[name] = merged or name
     return canon
 
@@ -200,23 +239,23 @@ def attach_context(entries: List[Dict[str, Any]],
 
 
 def find_inflections(series: List[Dict[str, Any]],
-                     week_totals: List[int]) -> List[Dict[str, Any]]:
-    """Weeks where a topic's discourse crossed a significance boundary.
+                     month_totals: List[int]) -> List[Dict[str, Any]]:
+    """Months where a topic's discourse crossed a significance boundary.
 
-    Slides the 4-week pulse window across the frame and records the FIRST
-    week each kind of change (surge / fade / stance shift) becomes
-    significant — the renderer draws these as inflection markers, which is
-    the literal answer to "show me how the narratives are shifting"
+    Slides the pulse window across the all-time monthly frame and records
+    the FIRST month each kind of change (surge / fade / stance shift)
+    becomes significant — the renderer draws these as inflection markers,
+    which is the literal answer to "show me how the narratives are shifting"
     (Kolby 2026-08-27). Same tests and floors as the live detectors.
     """
     out: List[Dict[str, Any]] = []
     prev_kinds: set = set()
-    for o in range(PULSE_WEEKS * 2, len(series) + 1):
-        pulse, base = series[o - PULSE_WEEKS:o], series[:o - PULSE_WEEKS]
+    for o in range(PULSE_MONTHS * 2, len(series) + 1):
+        pulse, base = series[o - PULSE_MONTHS:o], series[:o - PULSE_MONTHS]
         pv = sum(s["vol"] for s in pulse)
         bv = sum(s["vol"] for s in base)
-        pe = sum(week_totals[o - PULSE_WEEKS:o])
-        be = sum(week_totals[:o - PULSE_WEEKS])
+        pe = sum(month_totals[o - PULSE_MONTHS:o])
+        be = sum(month_totals[:o - PULSE_MONTHS])
         kinds: Dict[str, str] = {}
         if pe > 0 and be > 0 and pv + bv >= 8:
             rt = ds.poisson_rate_test(pv, pe, bv, be)
@@ -230,19 +269,27 @@ def find_inflections(series: List[Dict[str, Any]],
                 kinds["fade"] = ("strong" if ft["p_value"] < ds.ALPHA_STRONG
                                  else "moderate")
         if pv >= 8 and bv >= 10:
-            sh = ds.stance_shift_test(
-                [sum(s["pos"] for s in pulse), sum(s["neg"] for s in pulse),
-                 sum(s["neu"] for s in pulse)],
-                [sum(s["pos"] for s in base), sum(s["neg"] for s in base),
-                 sum(s["neu"] for s in base)],
-                n_permutations=300, n_bootstrap=0)
-            if sh["p_value"] < ds.ALPHA_MODERATE \
-                    and sh["tv_distance"] >= ds.SHIFT_TV_FLOOR:
-                kinds["shift"] = ("strong" if sh["p_value"] < ds.ALPHA_STRONG
-                                  else "moderate")
+            pv3 = [sum(s["pos"] for s in pulse), sum(s["neg"] for s in pulse),
+                   sum(s["neu"] for s in pulse)]
+            bv3 = [sum(s["pos"] for s in base), sum(s["neg"] for s in base),
+                   sum(s["neu"] for s in base)]
+            # Cheap TV-distance precheck before the permutation test — over an
+            # all-time monthly frame this runs at ~100 offsets/topic, so skip
+            # the expensive test unless the mix actually moved (mirrors the
+            # live shifting detector's divergence gate).
+            dp = [x / pv for x in pv3]
+            db = [x / bv for x in bv3]
+            if sum(abs(a - b) for a, b in zip(dp, db)) / 2 >= ds.SHIFT_TV_FLOOR:
+                sh = ds.stance_shift_test(pv3, bv3, n_permutations=200,
+                                          n_bootstrap=0)
+                if sh["p_value"] < ds.ALPHA_MODERATE \
+                        and sh["tv_distance"] >= ds.SHIFT_TV_FLOOR:
+                    kinds["shift"] = ("strong"
+                                      if sh["p_value"] < ds.ALPHA_STRONG
+                                      else "moderate")
         for kind, tier in kinds.items():
             if kind not in prev_kinds:  # record the crossing, not the run
-                out.append({"week": series[o - 1]["week"], "kind": kind,
+                out.append({"month": series[o - 1]["month"], "kind": kind,
                             "tier": tier})
         prev_kinds = set(kinds)
     return out[-6:]
@@ -440,10 +487,21 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
     conn.row_factory = sqlite3.Row
     if now is None:
         now = data_frontier(conn)
-    weeks = recent_weeks_list(now)
-    widx = _week_index(weeks)
-    cutoff = (now or dt.date.today()) - dt.timedelta(weeks=RECENT_WEEKS)
-    cutoff_iso = cutoff.isoformat()
+    # All-time monthly axis: earliest labeled month (capped) -> frontier.
+    earliest_row = conn.execute(
+        "SELECT MIN(substr(e.published_at, 1, 7)) AS m FROM labels l"
+        " JOIN segments s ON s.id = l.segment_id"
+        " JOIN episodes e ON e.id = s.episode_id").fetchone()
+    months = month_axis(earliest_row["m"] if earliest_row else None, now)
+    midx = _month_index(months)
+    n_months = len(months)
+    pulse_lo = max(0, n_months - PULSE_MONTHS)
+    detector_lo = max(0, n_months - DETECTOR_MONTHS)
+    # Everything from the first axis month forward feeds the topic universe.
+    cutoff_iso = (months[0] + "-01") if months else "9999-01-01"
+    # The evidence/people/detector machinery reads only the recent tail.
+    evidence_cutoff = (months[max(0, n_months - EVIDENCE_MONTHS)] + "-01") \
+        if months else "9999-01-01"
 
     # ---- corpus coverage timeline (per source, monthly, last 3 years)
     coverage = defaultdict(lambda: defaultdict(int))
@@ -453,8 +511,8 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             " GROUP BY source_id, month"):
         coverage[r["source_id"]][r["month"]] = r["n"]
 
-    # ---- topic series from labels (all packs; open vocabulary)
-    topic_weekly: Dict[str, Dict[int, Dict[str, Any]]] = defaultdict(dict)
+    # ---- topic series from labels (all packs; open vocabulary; all-time)
+    topic_monthly: Dict[str, Dict[int, Dict[str, Any]]] = defaultdict(dict)
     topic_total: Counter = Counter()
     episode_topics: Dict[str, set] = defaultdict(set)
     episode_shows: Dict[str, str] = {}
@@ -466,29 +524,56 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         lambda: {"pulse_eps": set(), "pulse_shows": set(),
                  "base_eps": set(), "base_shows": set()})
 
-    def note_breadth(topic: str, wk_i: int, episode_id: str, show: str) -> None:
-        zone = "pulse" if wk_i >= RECENT_WEEKS - PULSE_WEEKS else "base"
+    def note_breadth(topic: str, m_i: int, episode_id: str, show: str) -> None:
+        # Breadth only feeds the recent detectors: pulse = last PULSE_MONTHS,
+        # base = the BASELINE_MONTHS before it. Older months don't count.
+        if m_i >= pulse_lo:
+            zone = "pulse"
+        elif m_i >= detector_lo:
+            zone = "base"
+        else:
+            return
         breadth[topic][f"{zone}_eps"].add(episode_id)
         breadth[topic][f"{zone}_shows"].add(show)
-    # ---- pre-pass: raw topic frequencies -> canonical cluster map
+    # ---- single pass over all-time label topics: parse each topic JSON once
+    # (there are ~360k of them), caching a lightweight record so the raw
+    # frequencies (for canonicalization) and the monthly series come from ONE
+    # scan instead of two (the double scan was the build's dominant cost).
     raw_counts: Counter = Counter()
+    label_records: List[tuple] = []
     for r in conn.execute(
-            """SELECT t.value AS tj FROM labels l
-               JOIN segments s ON s.id = l.segment_id
-               JOIN episodes e ON e.id = s.episode_id,
-               json_each(l.output_json, '$.topics') t
-               WHERE e.published_at >= ?""", (cutoff_iso,)):
+            """
+            SELECT t.value AS topic_json, e.published_at,
+                   e.id AS episode_id, e.source_id
+            FROM labels l
+            JOIN segments s ON s.id = l.segment_id
+            JOIN episodes e ON e.id = s.episode_id,
+            json_each(l.output_json, '$.topics') t
+            WHERE e.published_at >= ?
+            """, (cutoff_iso,)):
+        mo = month_of(r["published_at"])
+        m_i = midx.get(mo)
+        if m_i is None:
+            continue
         try:
-            nt = norm_topic(json.loads(r["tj"]).get("topic"))
+            item = json.loads(r["topic_json"])
         except (json.JSONDecodeError, TypeError):
             continue
-        if nt:
-            raw_counts[nt] += 1
+        nt = norm_topic(item.get("topic"))
+        if not nt:
+            continue
+        raw_counts[nt] += 1
+        try:
+            intensity = float(item.get("intensity") or 0)
+        except (TypeError, ValueError):
+            intensity = 0.0
+        label_records.append((nt, stance_group(item.get("stance")), intensity,
+                              m_i, r["episode_id"], r["source_id"]))
     for r in conn.execute(
             """SELECT ap.concept_name AS c FROM actor_positions ap
                JOIN segments s ON s.id = ap.segment_id
                JOIN episodes e ON e.id = s.episode_id
-               WHERE e.published_at >= ?""", (cutoff_iso,)):
+               WHERE e.published_at >= ?""", (evidence_cutoff,)):
         nt = norm_topic(r["c"])
         if nt:
             raw_counts[nt] += 1
@@ -499,38 +584,20 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             return None
         return topic_canon.get(topic, topic)
 
-    rows = conn.execute(
-        """
-        SELECT t.value AS topic_json, e.published_at,
-               e.id AS episode_id, e.source_id
-        FROM labels l
-        JOIN segments s ON s.id = l.segment_id
-        JOIN episodes e ON e.id = s.episode_id,
-        json_each(l.output_json, '$.topics') t
-        WHERE e.published_at >= ?
-        """, (cutoff_iso,))
-    for r in rows:
-        try:
-            item = json.loads(r["topic_json"])
-        except (json.JSONDecodeError, TypeError):
+    for nt, sg, intensity, m_i, episode_id, source_id in label_records:
+        topic = canon(nt)
+        if not topic:
             continue
-        topic = canon(norm_topic(item.get("topic")))
-        wk = week_of(r["published_at"])
-        if not topic or wk not in widx:
-            continue
-        cell = topic_weekly[topic].setdefault(
-            widx[wk], {"vol": 0, "positive": 0, "negative": 0, "neutral": 0,
-                       "intensity_sum": 0.0})
+        cell = topic_monthly[topic].setdefault(
+            m_i, {"vol": 0, "positive": 0, "negative": 0, "neutral": 0,
+                  "intensity_sum": 0.0})
         cell["vol"] += 1
-        cell[stance_group(item.get("stance"))] += 1
-        try:
-            cell["intensity_sum"] += float(item.get("intensity") or 0)
-        except (TypeError, ValueError):
-            pass
+        cell[sg] += 1
+        cell["intensity_sum"] += intensity
         topic_total[topic] += 1
-        note_breadth(topic, widx[wk], r["episode_id"], r["source_id"])
-        episode_topics[r["episode_id"]].add(topic)
-        episode_shows[r["episode_id"]] = r["source_id"]
+        note_breadth(topic, m_i, episode_id, source_id)
+        episode_topics[episode_id].add(topic)
+        episode_shows[episode_id] = source_id
 
     # ---- concept-level positions also feed the topic series (deeper history)
     pos_rows = conn.execute(
@@ -544,21 +611,21 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         JOIN segments s ON s.id = ap.segment_id
         JOIN episodes e ON e.id = s.episode_id
         WHERE e.published_at >= ?
-        """, (cutoff_iso,)).fetchall()
+        """, (evidence_cutoff,)).fetchall()
     people_positions: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     concept_field: Dict[str, Counter] = defaultdict(Counter)
     ctx_map: Dict[str, tuple] = {}
     for r in pos_rows:
         topic = canon(norm_topic(r["concept_name"]))
-        wk = week_of(r["published_at"])
-        if topic and wk in widx:
-            cell = topic_weekly[topic].setdefault(
-                widx[wk], {"vol": 0, "positive": 0, "negative": 0,
+        mo = month_of(r["published_at"])
+        if topic and mo in midx:
+            cell = topic_monthly[topic].setdefault(
+                midx[mo], {"vol": 0, "positive": 0, "negative": 0,
                            "neutral": 0, "intensity_sum": 0.0})
             cell["vol"] += 1
             cell[stance_group(r["stance"])] += 1
             topic_total[topic] += 1
-            note_breadth(topic, widx[wk], r["episode_id"], r["source_id"])
+            note_breadth(topic, midx[mo], r["episode_id"], r["source_id"])
             episode_topics[r["episode_id"]].add(topic)
             episode_shows[r["episode_id"]] = r["source_id"]
         name = (r["actor_name"] or "").strip()
@@ -580,7 +647,7 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             "id": r["id"],
             "topic": topic, "stance": r["stance"],
             "group": stance_group(r["stance"]),
-            "claim_type": r["claim_type"], "week": wk,
+            "claim_type": r["claim_type"], "month": mo,
             "date": (r["published_at"] or "")[:10],
             "show": r["source_id"], "episode": r["episode_title"],
             "episode_id": r["episode_id"],
@@ -599,7 +666,7 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         if not name or r["actor_type"] not in ("guest", "host", "person"):
             continue
         people_positions[name].append(entry)
-        if topic and wk in widx and widx[wk] >= RECENT_WEEKS - PULSE_WEEKS:
+        if topic and mo in midx and midx[mo] >= pulse_lo:
             concept_field[topic][entry["group"]] += 1
 
     # ---- authority scores (latest accepted per person name)
@@ -662,8 +729,8 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
                                 "evidence": e["evidence"],
                                 "date": e["date"]})
         recent = [e for e in entries
-                  if e["week"] in widx
-                  and widx[e["week"]] >= RECENT_WEEKS - PULSE_WEEKS * 2]
+                  if e["month"] in midx
+                  and midx[e["month"]] >= detector_lo]
         evidence = []
         seen_evidence = set()
         for entry in reversed(entries):
@@ -762,10 +829,10 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             key=lambda e: -e["w"])[:400],
     }
 
-    week_totals = [0] * RECENT_WEEKS
-    for cells in topic_weekly.values():
+    month_totals = [0] * n_months
+    for cells in topic_monthly.values():
         for i, c in cells.items():
-            week_totals[i] += c["vol"]
+            month_totals[i] += c["vol"]
 
     # ---- topic table + detectors
     _ctx_cache: Dict[str, Optional[str]] = {}
@@ -773,39 +840,40 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         attach_context(p["evidence"], ctx_map, _ctx_cache)
     topics_out = {}
     detectors = {"emerging": [], "shifting": [], "contested": [], "fading": []}
-    pulse_lo = RECENT_WEEKS - PULSE_WEEKS
     # Exposure = total labeled mentions per window. Rate tests condition on
-    # it, so a week where the corpus simply covered 3x the ground does not
+    # it, so a month where the corpus simply covered 3x the ground does not
     # read as a topic surge (Kolby 2026-08-27: the spikes were coverage
-    # artifacts, not trends).
-    pulse_exposure = sum(week_totals[pulse_lo:])
-    base_exposure = sum(week_totals[:pulse_lo])
-    # The fixed low_sample cutoff of 150 never fired on live data (weekly
-    # totals 544-4634 measured 2026-08-27); derive it from the corpus.
-    week_median = statistics.median(week_totals) if week_totals else 0
-    low_sample_floor = 0.25 * week_median
+    # artifacts, not trends). Detectors judge the recent tail only: the pulse
+    # is the last PULSE_MONTHS, the baseline the BASELINE_MONTHS before it.
+    pulse_exposure = sum(month_totals[pulse_lo:])
+    base_exposure = sum(month_totals[detector_lo:pulse_lo])
+    # low_sample dims months too thin to trust for the share line; derive the
+    # floor from typical RECENT monthly coverage (old backfill months are
+    # genuinely thin and should read as such).
+    recent_totals = month_totals[detector_lo:] or month_totals
+    month_median = statistics.median(recent_totals) if recent_totals else 0
+    low_sample_floor = 0.25 * month_median
     for topic, _n in topic_total.most_common(TOP_TOPICS * 3):
-        cells = topic_weekly[topic]
+        cells = topic_monthly[topic]
         series = []
-        for i in range(RECENT_WEEKS):
+        for i in range(n_months):
             c = cells.get(i)
             series.append({
-                "week": weeks[i], "vol": c["vol"] if c else 0,
+                "month": months[i], "vol": c["vol"] if c else 0,
                 "pos": c["positive"] if c else 0,
                 "neg": c["negative"] if c else 0,
                 "neu": c["neutral"] if c else 0,
                 "intensity": round(c["intensity_sum"] / c["vol"], 2)
                 if c and c["vol"] else 0,
             })
-        # Share-of-discourse per week: raw counts inherit the corpus's 10x
-        # weekly coverage swings (81..923 labeled mentions/wk measured
-        # 2026-08-26), which makes evergreen topics look spiky. share is the
-        # honest trend line; low_sample flags weeks too thin to trust.
+        # Share-of-discourse per month: raw counts inherit the corpus's
+        # coverage swings, which makes evergreen topics look spiky. share is
+        # the honest trend line; low_sample flags months too thin to trust.
         for i, s in enumerate(series):
-            wk_total = week_totals[i]
-            s["share"] = round(s["vol"] / wk_total, 4) if wk_total else 0
-            s["week_total"] = wk_total
-            s["low_sample"] = bool(wk_total < low_sample_floor)
+            m_total = month_totals[i]
+            s["share"] = round(s["vol"] / m_total, 4) if m_total else 0
+            s["month_total"] = m_total
+            s["low_sample"] = bool(m_total < low_sample_floor)
             s["thin"] = s["vol"] < 3
             if s["vol"]:
                 s["pos_ci"] = [round(x, 3)
@@ -817,17 +885,24 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
             window = [series[j]["share"] for j in range(lo, hi)]
             s["share_smooth"] = round(sum(window) / len(window), 4)
         pulse = series[pulse_lo:]
-        base = series[:pulse_lo]
+        base = series[detector_lo:pulse_lo]
         pulse_vol = sum(s["vol"] for s in pulse)
         base_vol = sum(s["vol"] for s in base)
-        base_rate = base_vol / max(1, BASELINE_WEEKS)
-        pulse_rate = pulse_vol / PULSE_WEEKS
-        info = {"series": series, "total": topic_total[topic],
+        base_rate = base_vol / max(1, BASELINE_MONTHS)
+        pulse_rate = pulse_vol / max(1, PULSE_MONTHS)
+        # Trim empty leading/trailing months so a recent-only topic doesn't
+        # carry a decade of zero buckets (payload + readable trend). The
+        # global `months` axis and per-bucket `month` keep zoom alignment.
+        first = next((i for i, s in enumerate(series) if s["vol"]), 0)
+        last = next((i for i in range(len(series) - 1, -1, -1)
+                     if series[i]["vol"]), len(series) - 1)
+        trimmed = series[first:last + 1]
+        info = {"series": trimmed, "total": topic_total[topic],
                 "pulse_vol": pulse_vol,
                 "pulse_rate": round(pulse_rate, 2),
                 "base_rate": round(base_rate, 2)}
         if len(topics_out) < TOP_TOPICS or pulse_vol > 0:
-            info["inflections"] = find_inflections(series, week_totals)
+            info["inflections"] = find_inflections(series, month_totals)
             topics_out[topic] = info
 
         def stance_dist(rows_):
@@ -844,7 +919,8 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         b_eps = len(br.get("base_eps", ()))
         info["pulse_episodes"] = p_eps
         info["pulse_shows"] = p_shows
-        if pulse_vol >= 8 and base_rate < 0.5 and p_eps >= 3 and p_shows >= 2:
+        # base_rate is now per-MONTH; "near-zero baseline" ~ under 2/month.
+        if pulse_vol >= 8 and base_rate < 2.0 and p_eps >= 3 and p_shows >= 2:
             rt = ds.poisson_rate_test(pulse_vol, pulse_exposure,
                                       base_vol, base_exposure)
             effect_ok = rt["rate_ratio"] >= ds.EMERGING_RATE_RATIO_FLOOR
@@ -906,7 +982,7 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
                                 base_vol, base_exposure)
             effect_ok = ft["rate_ratio"] <= ds.FADING_RATE_RATIO_CEIL
             detectors["fading"].append(
-                {"topic": topic, "peak_week_vol": peak,
+                {"topic": topic, "peak_month_vol": peak,
                  "pulse_vol": pulse_vol, "base_episodes": b_eps,
                  "shows": b_shows,
                  "p_value": round(ft["p_value"], 5),
@@ -1016,10 +1092,11 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
         "latest_episode": (counts["latest"] or "")[:10] or None,
         "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
         "data_through": (now or dt.date.today()).isoformat(),
-        "window_weeks": RECENT_WEEKS,
-        "pulse_weeks": PULSE_WEEKS,
-        "weeks": weeks,
-        "week_totals": week_totals,
+        "bucket": "month",
+        "detector_months": DETECTOR_MONTHS,
+        "pulse_months": PULSE_MONTHS,
+        "months": months,
+        "month_totals": month_totals,
         "corpus": {"episodes": counts["ep"], "labels": counts["lab"],
                    "shows": counts["shows"],
                    "coverage": {k: dict(v) for k, v in coverage.items()}},

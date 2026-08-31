@@ -31,7 +31,7 @@ class RendererTierTest(unittest.TestCase):
             "schema_version": "signal_desk_v4",
             "data_through": "2026-07-01",
             "generated_at": "2026-08-27T00:00:00",
-            "weeks": ["2026-W26"], "week_totals": [100],
+            "months": ["2026-07"], "month_totals": [100],
             "corpus": {"episodes": 1, "labels": 1, "shows": 1,
                        "coverage": {}},
             "topics": {}, "people": [],
@@ -92,10 +92,10 @@ class ReviewPolishTest(unittest.TestCase):
         self.assertIn("ctx-toggle", build.TEMPLATE)
         self.assertIn("function toggleCtx", build.TEMPLATE)
 
-    def test_inflection_markers_deep_link_to_week(self):
-        # markers carry a week deep-link like the trend bars do
-        self.assertIn('data-tail="week/', build.TEMPLATE.replace(
-            "data-tail=\"week/${esc(s.week)}\"", "", 1))
+    def test_inflection_markers_deep_link_to_month(self):
+        # markers carry a month deep-link like the trend bars do
+        self.assertIn('data-tail="month/', build.TEMPLATE.replace(
+            "data-tail=\"month/${esc(s.month)}\"", "", 1))
 
     def test_topic_titles_uppercase_acronyms(self):
         self.assertIn("function tTitle", build.TEMPLATE)
@@ -140,7 +140,7 @@ class ComputeDiffTest(unittest.TestCase):
 
     def test_top_movers_by_share_delta(self):
         def topic(share):
-            return {"series": [{"week": "2026-W26", "vol": 10,
+            return {"series": [{"month": "2026-07", "vol": 10,
                                 "share_smooth": share}]}
         prev = _payload(topics={"a": topic(0.10), "b": topic(0.10)})
         cur = _payload(topics={"a": topic(0.30), "b": topic(0.11)})

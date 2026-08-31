@@ -420,14 +420,14 @@ def run(start: dt.date, end: dt.date, stride: int, offline: bool,
         payload = collect(conn, now=end)
     finally:
         conn.close()
-    t_weeks = payload["weeks"]
+    t_periods = payload["months"]
     for topic, truth in truths.items():
         info = payload["topics"].get(topic)
         if not info:
             continue
         ours = [s.get("share_smooth", 0.0) for s in info["series"]]
-        # align: our series covers the last len(t_weeks) weeks of timeline
-        tail = truth[-len(t_weeks):]
+        # align: our series covers the last len(t_periods) buckets of timeline
+        tail = truth[-len(t_periods):]
         if len(tail) >= 8:
             corr[topic] = best_lag_correlation(ours[-len(tail):], tail)
     meta = {"generated_at": dt.datetime.now().isoformat(timespec="seconds"),
