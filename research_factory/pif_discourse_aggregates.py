@@ -870,9 +870,12 @@ def collect(conn: sqlite3.Connection, now: Optional[dt.date] = None) -> Dict[str
                 "pulse_vol": pulse_vol,
                 "pulse_rate": round(pulse_rate, 2),
                 "base_rate": round(base_rate, 2)}
-        if len(topics_out) < TOP_TOPICS or pulse_vol > 0:
-            info["inflections"] = find_inflections(series, month_totals)
-            topics_out[topic] = info
+        # Every topic considered by a detector must have a corresponding
+        # detail page. Previously a strong fading signal with zero pulse
+        # volume could be omitted here, then crash the Shifts renderer when
+        # it tried to draw that signal's series.
+        info["inflections"] = find_inflections(series, month_totals)
+        topics_out[topic] = info
 
         def stance_dist(rows_):
             tot = sum(r["pos"] + r["neg"] + r["neu"] for r in rows_)

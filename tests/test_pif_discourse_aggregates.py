@@ -123,6 +123,12 @@ class DiscourseAggregateBreadthTest(unittest.TestCase):
         self.assertTrue(all(s["month_total"] >= s["vol"]
                             for s in active_months))
         self.assertEqual(len(topic["evidence"]), 8)
+        detector_topics = {
+            item["topic"]
+            for family in payload["detectors"].values()
+            for item in family
+        }
+        self.assertLessEqual(detector_topics, set(payload["topics"]))
         self.assertEqual(
             {item["source_url"] for item in topic["evidence"]},
             {"https://example.com/episode-one",
