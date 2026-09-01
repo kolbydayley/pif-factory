@@ -66,8 +66,11 @@ and late windows under the frozen character contract; pass the shared ingest
 plausibility rule (`words >= duration_seconds / 6` when duration is known);
 and collectively span at least three publication months and 60 days. Episodes
 are selected across publication periods rather than from one convenient
-cluster. A show whose four candidates all require flattened sentence fallback
-is reported but does not pass the qualifying-show gate.
+cluster. The benchmark mirrors production's best-available transcript policy:
+`speaker_turn`, `paragraph`, `flattened`, and `asr_diarized` are all eligible
+and reported as separate strata. On flattened or ASR text, gold attribution is
+indeterminable unless the text itself names the speaker; the hard gate is at
+least 99% supported attribution rather than fabricated speaker recovery.
 
 Each qualified show may be frozen and sent through Gold A/B/C independently.
 Its artifact binds episode IDs, transcript and window hashes, split membership,
@@ -100,10 +103,49 @@ not a full-catalog transcription project.
   25% of a 40-episode catalog sample title-matches and each chosen upload is at
   least 1,500 seconds; otherwise use ASR.
 
-ASR uses Groq `whisper-large-v3-turbo` only after the owner-provided
-`GROQ_API_KEY` is present. The authorized benchmark scope is approximately 20
-audio-hours (about $1); full-rump ASR is a separate decision and is not
-authorized by this campaign.
+### Frozen xAI ASR contract
+
+The 16 acquired ASR fixtures are bound to
+`config/signal_desk_rebuild_xai_asr_contract.json` (contract SHA-256
+`92893c6a67d487a57b6fa2d322be377d94f4993f391f4a40920914aaec8a10f3`).
+The provider exposes no versioned STT model selector, so the recorded model
+identifier is `xai_speech_to_text_endpoint_unversioned`. Requests use
+`POST https://api.x.ai/v1/stt` with URL input, English, diarization on,
+formatting on, filler words off, VAD threshold 0.5, no keyterms, and word-level
+timestamps. Post-processing only strips response-edge whitespace, appends one
+newline, and performs no case, punctuation, or name normalization. The
+resulting benchmark stratum is `asr_diarized`. Production's best-available
+policy selects 14 of those fixtures (42 windows); two Gradient episodes retain
+better canonical transcripts. The unused ASR fixtures remain contract-frozen
+for reproducibility but do not displace higher-quality production text.
+
+Before gold authoring, every ASR episode must pass the deterministic receipt
+gate: 80-220 words/minute, monotonic word timestamps, integer speaker labels,
+no text gap over 30 seconds, no repeated identical-word run over ten, exact
+response/text hash binding, and a metadata-name spelling report. Missing or
+phonetic proper nouns are retained as production-shaped ASR, but gold is told
+not to split identities solely on an ASR spelling variant. The current frozen
+set passes 16/16. A future production rump must use this exact contract; any
+provider-contract drift stops the lane and requires re-freezing the four ASR
+benchmark shows.
+
+The production rump is not authorized by this benchmark campaign. Its planning
+ledger records approximately 3,000 episodes at 0.67 audio-hour/episode and
+$0.10/audio-hour, or roughly $200 on xAI. It also preserves the earlier Groq
+estimate of roughly $45 at $0.04/audio-hour as an unproven legacy estimate for
+the owner's later decision.
+
+### OOD acquisition and isolation
+
+The complete OOD cohort is four to six official first-party episodes per show,
+with four publication-stratified episodes frozen into 12 windows per show.
+Freakonomics, Hidden Brain, On Being, 99% Invisible, The Allusionist, and
+Gastropod are visible development/validation fixtures. Fresh Air, This American
+Life, Ear Hustle, and The Moth are whole-show sealed fixtures. Sealed acquisition
+prints only aggregate counts and hashes; transcript text never appears in logs
+or receipts, and sealed gold packets are written to a distinct private sealed
+input tree. CMS migration dates are ignored when the publisher prints an
+original air date.
 
 ## Tournament
 

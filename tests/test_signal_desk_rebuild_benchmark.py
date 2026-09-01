@@ -125,16 +125,18 @@ def test_ood_sentinel_is_physically_and_logically_invisible_to_signal_desk(
     benchmark_path = tmp_path / "private-benchmark" / "fixtures.sqlite"
     benchmark = initialize_benchmark_store(benchmark_path, canonical_path)
     sentinel = "OOD_SENTINEL_MUST_NEVER_REACH_SIGNAL_DESK"
-    put_benchmark_transcript(
-        benchmark,
-        show_id="ood_fresh_air",
-        show_name=sentinel,
-        cohort="claim_dense",
-        episode_id="ood_ep_1",
-        title="OOD fixture",
-        official_url="https://example.org/ood-transcript",
-        transcript_text=f"Private fixture text containing {sentinel}.",
-    )
+    cohorts = ["claim_dense"] * 5 + ["narrative"] * 3 + ["format_stress"] * 2
+    for index, cohort in enumerate(cohorts):
+        put_benchmark_transcript(
+            benchmark,
+            show_id=f"ood_show_{index}",
+            show_name=f"{sentinel}_{index}",
+            cohort=cohort,
+            episode_id=f"ood_ep_{index}",
+            title="OOD fixture",
+            official_url=f"https://example.org/ood-transcript-{index}",
+            transcript_text=f"Private fixture text containing {sentinel}_{index}.",
+        )
 
     # Substantive boundary check: the real aggregate and presentation builder
     # run over the canonical connection while an OOD fixture exists beside it.
@@ -151,7 +153,8 @@ def test_ood_sentinel_is_physically_and_logically_invisible_to_signal_desk(
     assert aggregate["corpus"]["episodes"] == 1
 
     inventory = benchmark_manifest(benchmark)
-    assert inventory["episodes"][0]["display_name"] == sentinel
-    assert "transcript_text" not in inventory["episodes"][0]
+    assert len(inventory["episodes"]) == 10
+    assert all(row["display_name"].startswith(sentinel) for row in inventory["episodes"])
+    assert all("transcript_text" not in row for row in inventory["episodes"])
     canonical.close()
     benchmark.close()

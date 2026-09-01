@@ -1,0 +1,83 @@
+{
+  "schema_version": "pif_signal_desk_rebuild_ood_manifest_v1",
+  "shows": [
+    {
+      "show_id": "ood-freakonomics-radio",
+      "show_name": "Freakonomics Radio",
+      "source_shape": "claim_dense",
+      "sealed": false,
+      "first_party_host": "freakonomics.com",
+      "official_urls": [
+        "https://freakonomics.com/podcast/who-owns-the-words-that-come-out-of-your-mouth/",
+        "https://freakonomics.com/podcast/the-1-5-trillion-question-how-to-fix-student-loan-debt-ep-377/",
+        "https://freakonomics.com/podcast/make-me-a-match-update/",
+        "https://freakonomics.com/podcast/sludge-part-2-is-government-the-problem-or-the-solution/"
+      ]
+    },
+    {
+      "show_id": "ood-hidden-brain",
+      "show_name": "Hidden Brain",
+      "source_shape": "claim_dense",
+      "sealed": false,
+      "first_party_host": "www.hiddenbrain.org",
+      "official_urls": [
+        "https://www.hiddenbrain.org/podcast/regrets-i-have-a-few/",
+        "https://www.hiddenbrain.org/podcast/playing-favorites/",
+        "https://www.hiddenbrain.org/podcast/the-snowball-effect/",
+        "https://www.hiddenbrain.org/podcast/winning-the-battle-against-yourself/"
+      ]
+    },
+    {
+      "show_id": "ood-on-being",
+      "show_name": "On Being",
+      "source_shape": "claim_dense",
+      "sealed": false,
+      "first_party_host": "onbeing.org",
+      "official_urls": [
+        "https://onbeing.org/programs/vincent-cornell-violence-and-crisis-in-islam/",
+        "https://onbeing.org/programs/darius-rejali-the-long-shadow-of-torture/",
+        "https://onbeing.org/programs/fiona-benson-mama-cockroach-i-love-you/",
+        "https://onbeing.org/programs/foundations-for-the-art-of-living-taking-a-long-view-of-time/"
+      ]
+    },
+    {
+      "show_id": "ood-99-percent-invisible",
+      "show_name": "99% Invisible",
+      "source_shape": "narrative",
+      "sealed": false,
+      "first_party_host": "99percentinvisible.org",
+      "official_urls": [
+        "https://99percentinvisible.org/episode/show-of-force/transcript/",
+        "https://99percentinvisible.org/episode/cautionary-tales/transcript/",
+        "https://99percentinvisible.org/episode/554-devil-in-the-details/transcript/",
+        "https://99percentinvisible.org/episode/636-quiet-storm/transcript/"
+      ]
+    },
+    {
+      "show_id": "ood-the-allusionist",
+      "show_name": "The Allusionist",
+      "source_shape": "format_stress",
+      "sealed": false,
+      "first_party_host": "www.theallusionist.org",
+      "official_urls": [
+        "https://www.theallusionist.org/transcripts/puns",
+        "https://www.theallusionist.org/transcripts/epitaph",
+        "https://www.theallusionist.org/transcripts/box",
+        "https://www.theallusionist.org/transcripts/vega"
+      ]
+    },
+    {
+      "show_id": "ood-gastropod",
+      "show_name": "Gastropod",
+      "source_shape": "format_stress",
+      "sealed": false,
+      "first_party_host": "gastropod.com",
+      "official_urls": [
+        "https://gastropod.com/transcript-everything-old-is-brew-again/",
+        "https://gastropod.com/transcript-the-hangover-part-gastropod/",
+        "https://gastropod.com/transcript-wed-like-to-teach-the-world-to-slurp/",
+        "https://gastropod.com/transcript-tomatoes-a-love-story/"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,352 @@
+{
+  "asr_contract_sha256": "92893c6a67d487a57b6fa2d322be377d94f4993f391f4a40920914aaec8a10f3",
+  "created_at": "2026-09-01T11:38:17+00:00",
+  "episode_count": 16,
+  "episodes": [
+    {
+      "duration_seconds": 1970.73,
+      "episode_id": "ep_50dc9e86b6d51623bf6d8ee6",
+      "failures": [],
+      "long_gaps": [],
+      "max_identical_word_run": 3,
+      "max_text_gap_seconds": 19.26,
+      "metadata_terms_checked": [
+        "Sara",
+        "Blakely",
+        "Spanx"
+      ],
+      "metadata_terms_matched": [
+        "Blakely",
+        "Spanx"
+      ],
+      "metadata_terms_missing_or_phonetic": [
+        "Sara"
+      ],
+      "passed": true,
+      "source_id": "how-i-built-this",
+      "speaker_label_count": 4,
+      "text_sha256": "549096af7b1469a93273f5f76b4303540c0a16095d61438a6a291fe18082c35f",
+      "word_count": 6029,
+      "words_per_minute": 183.56
+    },
+    {
+      "duration_seconds": 5248.11,
+      "episode_id": "ep_b02aba014687b638c0fc3e2c",
+      "failures": [],
+      "long_gaps": [],
+      "max_identical_word_run": 4,
+      "max_text_gap_seconds": 19.93,
+      "metadata_terms_checked": [
+        "Nicole",
+        "Bernard",
+        "Dawes",
+        "Late July"
+      ],
+      "metadata_terms_matched": [
+        "Nicole",
+        "Bernard",
+        "Dawes",
+        "Late July"
+      ],
+      "metadata_terms_missing_or_phonetic": [],
+      "passed": true,
+      "source_id": "how-i-built-this",
+      "speaker_label_count": 4,
+      "text_sha256": "ef980eacf01045ecfb042b721b2f635d2943168a7e60fa6e51b2005ec194b85d",
+      "word_count": 16173,
+      "words_per_minute": 184.9
+    },
+    {
+      "duration_seconds": 1563.38,
+      "episode_id": "ep_b5ceefe446a979a38ae078c2",
+      "failures": [],
+      "long_gaps": [],
+      "max_identical_word_run": 3,
+      "max_text_gap_seconds": 6.04,
+      "metadata_terms_checked": [
+        "Sonia",
+        "Gil",
+        "Fluenz"
+      ],
+      "metadata_terms_matched": [
+        "Sonia"
+      ],
+      "metadata_terms_missing_or_phonetic": [
+        "Gil",
+        "Fluenz"
+      ],
+      "passed": true,
+      "source_id": "how-i-built-this",
+      "speaker_label_count": 4,
+      "text_sha256": "d0e01d40da4008d88b3a5673cbda7f04ee148bbc83ef88709b137bb5a26b9e7e",
+      "word_count": 4500,
+      "words_per_minute": 172.7
+    },
+    {
+      "duration_seconds": 4987.72,
+      "episode_id": "ep_f1a84a99329b71b67d90d8db",
+      "failures": [],
+      "long_gaps": [],
+      "max_identical_word_run": 4,
+      "max_text_gap_seconds": 9.33,
+      "metadata_terms_checked": [
+        "Hernan",
+        "Lopez",
+        "Wondery"
+      ],
+      "metadata_terms_matched": [
+        "Hernan",
+        "Lopez",
+        "Wondery"
+      ],
+      "metadata_terms_missing_or_phonetic": [],
+      "passed": true,
+      "source_id": "how-i-built-this",
+      "speaker_label_count": 5,
+      "text_sha256": "de77a369b29ac6a9d7b21a184313f5b93696132261799461e9623d4aceeec692",
+      "word_count": 13764,
+      "words_per_minute": 165.57
+    },
+    {
+      "duration_seconds": 999.11,
+      "episode_id": "ep_2bd8b06ae867e3779eb2f395",
+      "failures": [],
+      "long_gaps": [],
+      "max_identical_word_run": 3,
+      "max_text_gap_seconds": 28.73,
+      "metadata_terms_checked": [],
+      "metadata_terms_matched": [],
+      "metadata_terms_missing_or_phonetic": [],
+      "passed": true,
+      "source_id": "search-engine",
+      "speaker_label_count": 7,
+      "text_sha256": "05c28702952e99b42bb049098a1b3fcb48a5334d24fff5f08f8f60b726ac5904",
+      "word_count": 2723,
+      "words_per_minute": 163.53
+    },
+    {
+      "duration_seconds": 2091.89,
+      "episode_id": "ep_ad51f9afb62e6bf6f612695c",
+      "failures": [],
+      "long_gaps": [],
+      "max_identical_word_run": 2,
+      "max_text_gap_seconds": 16.12,
+      "metadata_terms_checked": [],
+      "metadata_terms_matched": [],
+      "metadata_terms_missing_or_phonetic": [],
+      "passed": true,
+      "source_id": "search-engine",
+      "speaker_label_count": 5,
+      "text_sha256": "1073bbf9c164082f4a99144c5f515f7179547489ab13d036d426a677cf234f7f",
+      "word_count": 5020,
+      "words_per_minute": 143.98
+    },
+    {
+      "duration_seconds": 3446.36,
+      "episode_id": "ep_cff5972c06474b74e2609370",
+      "failures": [],
+      "long_gaps": [],
+      "max_identical_word_run": 3,
+      "max_text_gap_seconds": 27.74,
+      "metadata_terms_checked": [],
+      "metadata_terms_matched": [],
+      "metadata_terms_missing_or_phonetic": [],
+      "passed": true,
+      "source_id": "search-engine",
+      "speaker_label_count": 6,
+      "text_sha256": "621f3d696294f1efe1cb33f9a6aa3222ce4318e712631492d4206c73463dbc16",
+      "word_count": 10051,
+      "words_per_minute": 174.98
+    },
+    {
+      "duration_seconds": 2340.0,
+      "episode_id": "ep_e03636db3d60b3daa2ca97e0",
+      "failures": [],
+      "long_gaps": [],
+      "max_identical_word_run": 5,
+      "max_text_gap_seconds": 26.95,
+      "metadata_terms_checked": [],
+      "metadata_terms_matched": [],
+      "metadata_terms_missing_or_phonetic": [],
+      "passed": true,
+      "source_id": "search-engine",
+      "speaker_label_count": 3,
+      "text_sha256": "66db9c8a423ab7d469d3223de016fb51c5951dc1861bf6181f8242771cd6ab03",
+      "word_count": 6847,
+      "words_per_minute": 175.56
+    },
+    {
+      "duration_seconds": 989.88,
+      "episode_id": "ep_5686a3c3b4d10322a7376d64",
+      "failures": [],
+      "long_gaps": [],
+      "max_identical_word_run": 2,
+      "max_text_gap_seconds": 7.66,
+      "metadata_terms_checked": [],
+      "metadata_terms_matched": [],
+      "metadata_terms_missing_or_phonetic": [],
+      "passed": true,
+      "source_id": "tech-brew-ride-home",
+      "speaker_label_count": 1,
+      "text_sha256": "bde3176292b50515e88ae5b20db59f83bb39dd0dd8b276946f3b4c73804d1376",
+      "word_count": 2844,
+      "words_per_minute": 172.38
+    },
+    {
+      "duration_seconds": 834.2,
+      "episode_id": "ep_674dbccb38bd457c0a81a0f2",
+      "failures": [],
+      "long_gaps": [],
+      "max_identical_word_run": 2,
+      "max_text_gap_seconds": 4.95,
+      "metadata_terms_checked": [],
+      "metadata_terms_matched": [],
+      "metadata_terms_missing_or_phonetic": [],
+      "passed": true,
+      "source_id": "tech-brew-ride-home",
+      "speaker_label_count": 1,
+      "text_sha256": "01d8aad0aeba7bbbca5ef116c999bb5be743e576cd3c8108a5252b99d289e433",
+      "word_count": 1969,
+      "words_per_minute": 141.62
+    },
+    {
+      "duration_seconds": 1064.2,
+      "episode_id": "ep_a9d126655cb3a3a17d68bcdd",
+      "failures": [],
+      "long_gaps": [],
+      "max_identical_word_run": 2,
+      "max_text_gap_seconds": 8.89,
+      "metadata_terms_checked": [],
+      "metadata_terms_matched": [],
+      "metadata_terms_missing_or_phonetic": [],
+      "passed": true,
+      "source_id": "tech-brew-ride-home",
+      "speaker_label_count": 1,
+      "text_sha256": "d7e4a8402690d08d149d422bf25cd0bfe409681b65babfa7df4b0158376e797b",
+      "word_count": 2901,
+      "words_per_minute": 163.56
+    },
+    {
+      "duration_seconds": 1130.89,
+      "episode_id": "ep_d167ab0d58f67c62ecb23b28",
+      "failures": [],
+      "long_gaps": [],
+      "max_identical_word_run": 2,
+      "max_text_gap_seconds": 10.28,
+      "metadata_terms_checked": [],
+      "metadata_terms_matched": [],
+      "metadata_terms_missing_or_phonetic": [],
+      "passed": true,
+      "source_id": "tech-brew-ride-home",
+      "speaker_label_count": 1,
+      "text_sha256": "eacf4a5450fc523c27286aba1dac19ef0254f1a4c14ba2821314d1efe3d5b6c7",
+      "word_count": 3165,
+      "words_per_minute": 167.92
+    },
+    {
+      "duration_seconds": 3674.91,
+      "episode_id": "ep_3888bcb569f926b8f467717d",
+      "failures": [],
+      "long_gaps": [],
+      "max_identical_word_run": 3,
+      "max_text_gap_seconds": 4.08,
+      "metadata_terms_checked": [
+        "Nathan",
+        "Benaich"
+      ],
+      "metadata_terms_matched": [
+        "Nathan"
+      ],
+      "metadata_terms_missing_or_phonetic": [
+        "Benaich"
+      ],
+      "passed": true,
+      "source_id": "the-gradient",
+      "speaker_label_count": 2,
+      "text_sha256": "2e67920661504372718bc446eb45dfd6980d06f58c6418425ce77a1549f4eadb",
+      "word_count": 11601,
+      "words_per_minute": 189.41
+    },
+    {
+      "duration_seconds": 3028.32,
+      "episode_id": "ep_388c26306754fc6ef3b07c63",
+      "failures": [],
+      "long_gaps": [],
+      "max_identical_word_run": 7,
+      "max_text_gap_seconds": 4.78,
+      "metadata_terms_checked": [
+        "Laurence",
+        "Liew",
+        "AI Singapore"
+      ],
+      "metadata_terms_matched": [
+        "AI Singapore"
+      ],
+      "metadata_terms_missing_or_phonetic": [
+        "Laurence",
+        "Liew"
+      ],
+      "passed": true,
+      "source_id": "the-gradient",
+      "speaker_label_count": 2,
+      "text_sha256": "48ee047b99899aa2c209bcb706a6a022b35b527ee1426de689a8dd0de30e7285",
+      "word_count": 7897,
+      "words_per_minute": 156.46
+    },
+    {
+      "duration_seconds": 4730.83,
+      "episode_id": "ep_59e954ffc06e20f696f92b86",
+      "failures": [],
+      "long_gaps": [],
+      "max_identical_word_run": 4,
+      "max_text_gap_seconds": 5.4,
+      "metadata_terms_checked": [
+        "Nathan",
+        "Benaich"
+      ],
+      "metadata_terms_matched": [
+        "Nathan"
+      ],
+      "metadata_terms_missing_or_phonetic": [
+        "Benaich"
+      ],
+      "passed": true,
+      "source_id": "the-gradient",
+      "speaker_label_count": 2,
+      "text_sha256": "4e29d75b723cf99e3a1de942de943aeed2b7d1fde270e90e0cf57c2682f5511c",
+      "word_count": 12661,
+      "words_per_minute": 160.58
+    },
+    {
+      "duration_seconds": 1336.27,
+      "episode_id": "ep_6780bbcf62cbb5c421d5be9f",
+      "failures": [],
+      "long_gaps": [],
+      "max_identical_word_run": 3,
+      "max_text_gap_seconds": 21.16,
+      "metadata_terms_checked": [],
+      "metadata_terms_matched": [],
+      "metadata_terms_missing_or_phonetic": [],
+      "passed": true,
+      "source_id": "the-gradient",
+      "speaker_label_count": 3,
+      "text_sha256": "c366d07827038e4456b603eee4c6f167d9d7116b02fbd14f4a48a90e3de9e99f",
+      "word_count": 3228,
+      "words_per_minute": 144.94
+    }
+  ],
+  "failed_count": 0,
+  "passed": true,
+  "passed_count": 16,
+  "privacy": "sanitized_metrics_hashes_and_metadata_terms_only_no_transcript_text",
+  "receipt_sha256": "37d86ad5f7fadc105891d348b204ac9fdb510715213ae7465979e856bf3d9601",
+  "schema_version": "pif_signal_desk_rebuild_asr_sanity_v1",
+  "thresholds": {
+    "max_identical_word_run": 10,
+    "max_text_gap_seconds": 30.0,
+    "words_per_minute": [
+      80.0,
+      220.0
+    ]
+  }
+}

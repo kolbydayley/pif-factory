@@ -1,0 +1,41 @@
+{
+  "asr_contract": {
+    "contract_sha256": "92893c6a67d487a57b6fa2d322be377d94f4993f391f4a40920914aaec8a10f3",
+    "endpoint": "https://api.x.ai/v1/stt",
+    "model_selection_surface": "none_exposed_by_provider",
+    "post_processing": [
+      "read_response_text_field",
+      "strip_leading_and_trailing_whitespace",
+      "append_single_newline",
+      "no_case_punctuation_or_name_normalization"
+    ],
+    "provider": "xai",
+    "provider_model": "xai_speech_to_text_endpoint_unversioned",
+    "request": {
+      "diarize": true,
+      "filler_words": false,
+      "format": true,
+      "input": "url",
+      "keyterms": [],
+      "language": "en",
+      "vad_threshold": 0.5
+    },
+    "response": {
+      "required_top_level_fields": ["duration", "language", "text", "words"],
+      "speaker_label_location": "words[].speaker",
+      "timestamp_granularity": "word"
+    },
+    "schema_version": "pif_signal_desk_xai_asr_contract_v1"
+  },
+  "benchmark_episode_count": 16,
+  "best_available_selected_episode_count": 14,
+  "best_available_selected_window_count": 42,
+  "frozen_at": "2026-09-01T00:00:00Z",
+  "production_requirement": {
+    "contract_mismatch_action": "stop_and_refreeze_all_asr_benchmark_shows",
+    "provider_model_drift_detection": "response_shape_and_contract_canary_required_because_provider_exposes_no_versioned_model_selector",
+    "rump_must_match_contract_sha256": true
+  },
+  "schema_version": "pif_signal_desk_xai_asr_contract_receipt_v1",
+  "transcript_structure": "asr_diarized"
+}

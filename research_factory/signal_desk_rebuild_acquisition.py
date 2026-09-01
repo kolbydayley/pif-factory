@@ -325,6 +325,9 @@ def load_browser_acquisition_overlay(receipt_path: Path) -> dict[str, object]:
                 "episode_id": str(row["id"]),
                 "transcript_path": str(path),
                 "transcript_sha256": digest,
+                "source_kind": str(row.get("source_kind") or "browser_official_transcript"),
+                "transcript_structure": str(row.get("transcript_structure") or ""),
+                "asr_contract_sha256": str(payload.get("asr_contract_sha256") or ""),
             }
         )
     if len(episodes) != EPISODES_PER_SHOW:

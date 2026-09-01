@@ -1,0 +1,55 @@
+{
+  "schema_version": "pif_signal_desk_rebuild_preflight_receipt_v1",
+  "created_on": "2026-09-01",
+  "campaign_id": "signal-desk-clean-corpus-2026-08-31",
+  "complete_frozen_benchmark": {
+    "manifest_sha256": "063294a0fa721e522c873e228e8f4c3be0cc7d21341a518c820faff8ceb18a8e",
+    "shows": 67,
+    "in_domain_shows": 57,
+    "ood_shows": 10,
+    "windows": 804,
+    "in_domain_windows": 684,
+    "ood_windows": 120,
+    "transcript_structure_windows": {
+      "speaker_turn": 255,
+      "paragraph": 129,
+      "flattened": 378,
+      "asr_diarized": 42
+    }
+  },
+  "asr": {
+    "contract_sha256": "92893c6a67d487a57b6fa2d322be377d94f4993f391f4a40920914aaec8a10f3",
+    "sanity_receipt_sha256": "37d86ad5f7fadc105891d348b204ac9fdb510715213ae7465979e856bf3d9601",
+    "acquired_and_screened_episodes": 16,
+    "screened_passed": 16,
+    "screened_failed": 0,
+    "best_available_selected_episodes": 14,
+    "best_available_selected_windows": 42,
+    "future_production_contract_required": true,
+    "contract_mismatch_action": "stop_and_refreeze_the_four_asr_shows"
+  },
+  "ood": {
+    "official_first_party_episodes_acquired": 40,
+    "visible_shows": 6,
+    "sealed_shows": 4,
+    "sealed_transcript_text_logged": false,
+    "public_aggregation_access": false,
+    "show_receipts": {
+      "ood-99-percent-invisible": "2281dd797f88b215fc99376a018260d3bd923f90f11996aee7f6c6b69a17e94b",
+      "ood-ear-hustle": "982310564ff654cdc40959638e7fe94efe4bdac1cd752d8afa84ecfffa569ae9",
+      "ood-freakonomics-radio": "2ccbe44446349849ba9b98eb424bb5ff678b69e1f5d057d15691f8fc9c7acc3b",
+      "ood-fresh-air": "f3fd684f1e0b9df00aba72bf7a7d33a403d45b956e9398143d41180795b4343e",
+      "ood-gastropod": "3843dcf59d8449f3a2e63d2bd267d064fded041d00aaeb218e1988ab2fc69cc5",
+      "ood-hidden-brain": "010ab86be00cefe617a39d0fddee9458e7b1edc209573057870ae6e6e5eae30e",
+      "ood-on-being": "9103a34fbb6bd9caa9ab9092b9d79f93421191d265846be4dd9623cb4dd8609e",
+      "ood-the-allusionist": "9075b45cd46f46e90c38ac6d4bd21422f0635c33706a31c05fddb22ee5b863d0",
+      "ood-the-moth": "90bb344186b7358ef5eae143d6f9799c8b12cb29f9e687dd999d49cd606da2f8",
+      "ood-this-american-life": "542ca164884724f2575d4ac3dcad5828af66f25c8052a8799a8038d359ccb807"
+    }
+  },
+  "authorization": {
+    "prompt_tournament_allowed": false,
+    "reason": "A1 gate calibration and A2 scorer qualification still precede round 1",
+    "production_asr_rump_allowed": false
+  }
+}

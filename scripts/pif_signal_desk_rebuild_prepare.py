@@ -45,6 +45,7 @@ def prepare(
     freeze: bool,
     materialize_gold_packets: bool,
     acquisition_receipts: Sequence[Path] = (),
+    ood_receipts: Sequence[Path] = (),
     refreeze_current_transcript_bytes: bool = False,
 ) -> dict[str, Any]:
     aliases_payload = json.loads(show_alias_path.read_text(encoding="utf-8"))
@@ -52,18 +53,25 @@ def prepare(
     conn = sqlite3.connect(database)
     conn.row_factory = sqlite3.Row
     overlays = [load_browser_acquisition_overlay(path) for path in acquisition_receipts]
+    ood_entries = [json.loads(path.read_text(encoding="utf-8")) for path in ood_receipts]
     try:
         manifest = build_split_manifest(
             conn,
             project_root=project_root,
             show_aliases=aliases,
             in_domain_entries=overlays,
+            ood_entries=ood_entries,
+            expected_in_domain_shows=57 if ood_entries else None,
+            expected_ood_shows=10 if ood_entries else None,
             refreeze_current_transcript_bytes=refreeze_current_transcript_bytes,
         )
     finally:
         conn.close()
 
     artifacts = freeze_per_show_artifacts(manifest)
+    in_domain_artifacts = [
+        row for row in artifacts if row.get("show", {}).get("corpus") == "in_domain"
+    ]
     blocked = [row for row in manifest["coverage_diagnostics"] if not row["covered"]]
     stale_refrozen = sorted(
         {
@@ -73,7 +81,7 @@ def prepare(
         }
     )
     blocker_counts = {
-        "qualified": len(artifacts),
+        "qualified": len(in_domain_artifacts),
         "blocked_flattened": sum(
             "all_selected_transcripts_are_flattened" in row.get("blocking_reasons", [])
             for row in blocked
@@ -102,12 +110,12 @@ def prepare(
     summary = {
         "schema_version": "pif_signal_desk_rebuild_partial_freeze_v2",
         "manifest_sha256": manifest["manifest_sha256"],
-        "covered_current_shows": len(artifacts),
+        "covered_current_shows": len(in_domain_artifacts),
         "blocked_current_shows": len(blocked),
-        "ood_shows": 0,
+        "ood_shows": len([row for row in manifest["shows"] if row.get("corpus") == "ood"]),
         "windows": manifest["counts"]["windows"],
         "authoring_allowed_per_show": True,
-        "complete_benchmark": False,
+        "complete_benchmark": manifest["counts"]["windows"] == 804,
         "tournament_allowed": False,
         "dev_error_reading_allowed": False,
         "gold_reliability_audit_allowed": False,
@@ -144,8 +152,14 @@ def prepare(
             for packet in packets:
                 by_show.setdefault(str(packet["input"]["show_id"]), []).append(packet)
             for show_id, show_packets in by_show.items():
+                destination = (
+                    "private-gold-sealed-inputs"
+                    if any(packet["input"].get("split") == "sealed_holdout" for packet in show_packets)
+                    and all(packet["input"].get("split") == "sealed_holdout" for packet in show_packets)
+                    else "private-gold-inputs"
+                )
                 _write_json(
-                    output_root / "private-gold-inputs" / show_id / f"gold-{gold_pass}.json",
+                    output_root / destination / show_id / f"gold-{gold_pass}.json",
                     show_packets,
                 )
         summary["private_gold_packets_materialized"] = True
@@ -181,6 +195,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=[],
         help="Private browser acquisition receipt to overlay without canonical ingest",
     )
+    parser.add_argument(
+        "--ood-receipt",
+        action="append",
+        type=Path,
+        default=[],
+        help="Private isolated OOD show receipt; exactly ten are required for complete freeze",
+    )
     args = parser.parse_args(argv)
     result = prepare(
         database=args.database.resolve(),
@@ -190,6 +211,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         freeze=args.freeze_qualified,
         materialize_gold_packets=args.materialize_gold_packets,
         acquisition_receipts=tuple(path.resolve() for path in args.acquisition_receipt),
+        ood_receipts=tuple(path.resolve() for path in args.ood_receipt),
         refreeze_current_transcript_bytes=args.refreeze_current_transcript_bytes,
     )
     print(json.dumps(result, indent=2, sort_keys=True))

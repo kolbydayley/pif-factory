@@ -1,0 +1,75 @@
+{
+  "schema_version": "pif_signal_desk_rebuild_ood_manifest_v1",
+  "shows": [
+    {
+      "show_id": "ood-this-american-life",
+      "show_name": "This American Life",
+      "source_shape": "claim_dense",
+      "sealed": true,
+      "first_party_host": "www.thisamericanlife.org",
+      "official_urls": [
+        "https://www.thisamericanlife.org/397/transcript",
+        "https://www.thisamericanlife.org/405/transcript",
+        "https://www.thisamericanlife.org/177/transcript",
+        "https://www.thisamericanlife.org/418/transcript"
+      ]
+    },
+    {
+      "show_id": "ood-fresh-air",
+      "show_name": "Fresh Air",
+      "source_shape": "claim_dense",
+      "sealed": true,
+      "first_party_host": "www.npr.org",
+      "official_urls": [
+        "https://www.npr.org/2010/08/09/128872365/what-you-didnt-know-about-gangster-al-capone",
+        "https://www.npr.org/2020/11/09/933018609/soccer-star-megan-rapinoe-on-equal-pay-and-what-the-u-s-flag-means-to-her",
+        "https://www.npr.org/2024/05/07/1249594071/brittney-griner-wnba-russia-coming-home",
+        "https://www.npr.org/2025/06/02/nx-s1-5417932/with-i-love-lucy-desi-arnaz-changed-tv-forever"
+      ]
+    },
+    {
+      "show_id": "ood-ear-hustle",
+      "show_name": "Ear Hustle",
+      "source_shape": "narrative",
+      "sealed": true,
+      "first_party_host": "www.earhustlesq.com",
+      "allowed_redirect_hosts": ["static1.squarespace.com"],
+      "official_urls": [
+        {
+          "url": "https://www.earhustlesq.com/s/82_Wishful-Thinking-Transcript.pdf",
+          "title": "Wishful Thinking",
+          "published_at": "2022-11-16T00:00:00Z"
+        },
+        {
+          "url": "https://www.earhustlesq.com/s/92_Articles-of-Hustle-Transcript.pdf",
+          "title": "Articles of Hustle",
+          "published_at": "2023-06-07T00:00:00Z"
+        },
+        {
+          "url": "https://www.earhustlesq.com/s/102_Whats-Up-Michael-Freeman-Transcript-revised.pdf",
+          "title": "What's Up, Michael Freeman?",
+          "published_at": "2024-03-20T00:00:00Z"
+        },
+        {
+          "url": "https://www.earhustlesq.com/s/109_Comfortable-Inside-Transcript.pdf",
+          "title": "Comfortable Inside",
+          "published_at": "2024-09-04T00:00:00Z"
+        }
+      ]
+    },
+    {
+      "show_id": "ood-the-moth",
+      "show_name": "The Moth",
+      "source_shape": "narrative",
+      "sealed": true,
+      "first_party_host": "themoth.org",
+      "allowed_redirect_hosts": ["www.themoth.org"],
+      "official_urls": [
+        "https://themoth.org/story-transcripts/what-its-all-about-transcript",
+        "https://themoth.org/story-transcripts/wall-of-sound-transcript",
+        "https://themoth.org/story-transcripts/what-can-i-bring-transcript",
+        "https://themoth.org/story-transcripts/a-knitted-peace-transcript"
+      ]
+    }
+  ]
+}

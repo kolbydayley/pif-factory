@@ -229,7 +229,7 @@ def event_eligibility(
         or "speaker_turn"
     )
     flattened_indeterminable = (
-        structure == "flattened"
+        structure in {"flattened", "asr_diarized"}
         and g["speaker_role"] == "unresolved_speaker"
         and not g["speaker"]
     )
@@ -394,6 +394,10 @@ def scorer_specification() -> dict[str, Any]:
             "flattened": (
                 "gold speaker is indeterminable unless named in text; any asserted unsupported "
                 "speaker is an attribution error"
+            ),
+            "asr_diarized": (
+                "reported separately; window text may omit speaker labels, so unsupported named "
+                "attribution is an error and proper-name variants must not create new entities"
             ),
         },
         "claim_text": {

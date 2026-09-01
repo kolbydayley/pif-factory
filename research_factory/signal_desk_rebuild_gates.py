@@ -21,6 +21,7 @@ ALPHA = 0.05
 BOOTSTRAP_ITERATIONS = 10_000
 PER_SHOW_EVENT_FLOOR = 50
 FLATTENED_SUPPORTED_ATTRIBUTION_MINIMUM = 0.99
+INDETERMINABLE_ATTRIBUTION_STRATA = frozenset({"flattened", "asr_diarized"})
 GOLD_AUDIT_INITIAL_WINDOWS = 120
 GOLD_AUDIT_WINDOW_BLOCK = 40
 GOLD_AUDIT_MIN_EVENTS = 1_000
@@ -264,10 +265,14 @@ def evaluate_attribution_strata(
     totals: dict[str, dict[str, int]] = defaultdict(lambda: {"successes": 0, "total": 0})
     for row in rows:
         structure = str(row.get("transcript_structure") or "")
-        if structure not in {"speaker_turn", "paragraph", "flattened"}:
+        if structure not in {"speaker_turn", "paragraph", *INDETERMINABLE_ATTRIBUTION_STRATA}:
             raise SignalDeskGateError("unknown transcript structure")
         total = int(row.get("attribution_total", 0))
-        success_key = "attribution_supported" if structure == "flattened" else "attribution_correct"
+        success_key = (
+            "attribution_supported"
+            if structure in INDETERMINABLE_ATTRIBUTION_STRATA
+            else "attribution_correct"
+        )
         successes = int(row.get(success_key, 0))
         if total < 0 or successes < 0 or successes > total:
             raise SignalDeskGateError("attribution counts must satisfy 0 <= successes <= total")
@@ -275,18 +280,18 @@ def evaluate_attribution_strata(
         totals[structure]["total"] += total
 
     results: dict[str, Any] = {}
-    for structure in ("speaker_turn", "paragraph", "flattened"):
+    for structure in ("speaker_turn", "paragraph", "flattened", "asr_diarized"):
         values = totals[structure]
         threshold = (
             flattened_supported_threshold
-            if structure == "flattened"
+            if structure in INDETERMINABLE_ATTRIBUTION_STRATA
             else speaker_turn_threshold
         )
         results[structure] = {
             **values,
             "metric": (
                 "supported_attribution_rate"
-                if structure == "flattened"
+                if structure in INDETERMINABLE_ATTRIBUTION_STRATA
                 else "attribution_accuracy"
             ),
             "gate": evaluate_rate_gate(
@@ -299,7 +304,7 @@ def evaluate_attribution_strata(
         }
     return {
         "alpha": alpha,
-        "flattened_policy": "no_fabricated_attribution",
+        "indeterminable_attribution_policy": "no_fabricated_attribution",
         "strata": results,
         "passed": all(row["gate"]["passed"] for row in results.values() if row["total"]),
     }

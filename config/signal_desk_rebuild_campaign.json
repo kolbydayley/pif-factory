@@ -41,7 +41,7 @@
       "minimum_words_when_duration_known": "duration_seconds / 6",
       "transcript_selection_policy": "same_best_available_policy_as_production",
       "flattened_transcripts_are_eligible": true,
-      "transcript_structure_strata": ["speaker_turn", "paragraph", "flattened"],
+      "transcript_structure_strata": ["speaker_turn", "paragraph", "flattened", "asr_diarized"],
       "flattened_gold_attribution": "indeterminable_unless_the_text_names_the_speaker",
       "flattened_attribution_gate": "at_least_99_percent_supported"
     },
@@ -75,10 +75,24 @@
       "minimum_duration_seconds": 1500
     },
     "xai_rest_stt": {
-      "role": "bounded_private_benchmark_acquisition_only",
+      "role": "frozen_benchmark_and_future_production_rump_contract",
       "rate_usd_per_audio_hour": 0.10,
       "maximum_concurrency": 4,
-      "diarization_requested": true,
+      "contract_sha256": "92893c6a67d487a57b6fa2d322be377d94f4993f391f4a40920914aaec8a10f3",
+      "endpoint": "https://api.x.ai/v1/stt",
+      "provider_model": "xai_speech_to_text_endpoint_unversioned",
+      "model_selection_surface": "none_exposed_by_provider",
+      "request": {
+        "language": "en",
+        "diarize": true,
+        "format": true,
+        "filler_words": false,
+        "vad_threshold": 0.5,
+        "keyterms": []
+      },
+      "timestamp_granularity": "word",
+      "transcript_structure": "asr_diarized",
+      "future_rump_contract_mismatch_action": "stop_and_refreeze_the_four_asr_shows",
       "exact_source_queue": [
         "how-i-built-this",
         "search-engine",
@@ -86,6 +100,15 @@
         "the-gradient"
       ],
       "full_catalog_use_authorized": false
+    },
+    "full_rump_cost_ledger": {
+      "authorized": false,
+      "estimated_episodes": 3000,
+      "measured_audio_hours_per_episode": 0.67,
+      "xai_estimated_cost_usd": 200,
+      "legacy_groq_estimate_usd": 45,
+      "legacy_groq_rate_usd_per_audio_hour": 0.04,
+      "legacy_groq_lane_proven": false
     },
     "groq": {
       "status": "unavailable_developer_tier_upgrade_high_demand",
@@ -111,8 +134,8 @@
     "format_stress": ["Gastropod", "The Allusionist"],
     "sealed_source_shape_counts": {
       "claim_dense": 2,
-      "narrative": 1,
-      "format_stress": 1
+      "narrative": 2,
+      "format_stress": 0
     }
   },
   "concurrency": {

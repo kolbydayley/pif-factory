@@ -8,8 +8,41 @@ from research_factory.signal_desk_rebuild_xai_asr import (
     MIN_DURATION_SECONDS,
     XaiAsrError,
     _content_verified_duration_overage,
+    asr_contract,
+    select_exact_asr_plan,
     select_asr_plan,
 )
+
+
+def test_frozen_asr_contract_is_explicit_and_hash_stable() -> None:
+    contract = asr_contract()
+    assert contract["contract_sha256"] == (
+        "92893c6a67d487a57b6fa2d322be377d94f4993f391f4a40920914aaec8a10f3"
+    )
+    assert contract["provider_model"] == "xai_speech_to_text_endpoint_unversioned"
+    assert contract["request"] == {
+        "input": "url",
+        "format": True,
+        "language": "en",
+        "diarize": True,
+        "filler_words": False,
+        "vad_threshold": 0.5,
+        "keyterms": [],
+    }
+    assert contract["response"]["timestamp_granularity"] == "word"
+
+
+def test_exact_replacement_plan_is_bounded_to_six_per_show() -> None:
+    conn = _database()
+    plan = select_exact_asr_plan(
+        conn, [f"search-engine-{index}" for index in range(6)]
+    )
+    assert plan["replacement_acquisition"] is True
+    assert len(plan["shows"]["search-engine"]) == 6
+    with pytest.raises(XaiAsrError, match="capped at six"):
+        select_exact_asr_plan(
+            conn, [f"search-engine-{index}" for index in range(7)]
+        )
 
 
 def _database() -> sqlite3.Connection:

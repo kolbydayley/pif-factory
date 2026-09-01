@@ -38,7 +38,10 @@ OOD_SHAPES = frozenset({"claim_dense", "narrative", "format_stress"})
 GOLD_PASSES = frozenset({"A", "B", "C"})
 MIN_DISTINCT_PUBLICATION_MONTHS = 3
 MIN_PUBLICATION_SPAN_DAYS = 60
-TRANSCRIPT_STRUCTURES = frozenset({"speaker_turn", "paragraph", "flattened"})
+TRANSCRIPT_STRUCTURES = frozenset(
+    {"speaker_turn", "paragraph", "flattened", "asr_diarized"}
+)
+INDETERMINABLE_ATTRIBUTION_STRUCTURES = frozenset({"flattened", "asr_diarized"})
 
 
 class SignalDeskGoldError(RuntimeError):
@@ -269,6 +272,8 @@ def _qualify_transcript(
             "recorded_sha256": str(expected or ""),
             "frozen_sha256": digest,
             "stale_hash_refrozen": bool(expected and digest != str(expected)),
+            "source_kind": str(row.get("source_kind") or "canonical_transcript"),
+            "asr_contract_sha256": str(row.get("asr_contract_sha256") or ""),
         }
     words = _word_count(text)
     try:
@@ -433,6 +438,13 @@ def _canonical_transcript_rows(
                     "preparation_quality": 1.0,
                     "preparation_status": None,
                     "use_prepared": False,
+                    "transcript_structure_override": str(
+                        episode.get("transcript_structure") or ""
+                    ),
+                    "source_kind": str(episode.get("source_kind") or ""),
+                    "asr_contract_sha256": str(
+                        episode.get("asr_contract_sha256") or ""
+                    ),
                 }
             )
             selected.append(metadata_dict)
@@ -456,8 +468,16 @@ def _window_records(
     text: str,
     project_root: Path,
     max_chars: int,
+    transcript_structure_override: str = "",
 ) -> list[dict[str, Any]]:
     windows = turn_aligned_windows(text, max_chars=max_chars)
+    if transcript_structure_override:
+        if transcript_structure_override not in TRANSCRIPT_STRUCTURES:
+            raise SignalDeskGoldError("unknown transcript structure override")
+        windows = tuple(
+            {**window, "transcript_structure": transcript_structure_override}
+            for window in windows
+        )
     records = []
     for index, window in enumerate(windows):
         identity = f"{corpus}|{show_id}|{episode_id}|{index}|{window['text_sha256']}"
@@ -594,6 +614,9 @@ def _build_in_domain(
                     text=text,
                     project_root=project_root,
                     max_chars=max_chars,
+                    transcript_structure_override=str(
+                        row.get("transcript_structure_override") or ""
+                    ),
                 )
             )
         shows.append(
@@ -1042,8 +1065,14 @@ def _packet_for_window(
             "attribution_instruction": (
                 "Speaker identity is indeterminable unless the text itself names the speaker; "
                 "never infer a speaker from show or episode metadata."
-                if window["transcript_structure"] == "flattened"
+                if window["transcript_structure"] in INDETERMINABLE_ATTRIBUTION_STRUCTURES
                 else "Use only speaker identity supported by the transcript text."
+            ),
+            "source_quality_instruction": (
+                "This window is ASR-derived. Proper nouns may be phonetic variants; do not "
+                "create different people or entities solely from spelling variants."
+                if window["transcript_structure"] == "asr_diarized"
+                else ""
             ),
         },
         "output_schema": GLM_OUTPUT_SCHEMA,
