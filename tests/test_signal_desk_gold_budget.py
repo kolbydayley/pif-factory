@@ -43,6 +43,11 @@ def test_grant_has_no_daily_cap_and_expires_on_completion(tmp_path):
         gold.load_gold_grant(_grant(tmp_path), at=datetime(2026, 9, 2, tzinfo=timezone.utc), completion_receipt=_complete())
 
 
+def test_weekly_reset_estimate_is_minute_stable():
+    assert gold.normalize_weekly_reset(1788748267) == 1788748260
+    assert gold.normalize_weekly_reset(1788748268) == 1788748260
+
+
 def test_wrong_model_or_concurrency_is_rejected(tmp_path):
     with pytest.raises(gold.GoldBudgetError, match="scope or model"):
         gold.load_gold_grant(_grant(tmp_path, model="gpt-5.5"), at=datetime(2026, 9, 2, tzinfo=timezone.utc))
@@ -72,14 +77,14 @@ def test_missing_snapshot_notifies_and_fails_closed(tmp_path, monkeypatch):
 
 def test_reservation_and_settlement_are_weekly_lane_metered(tmp_path, monkeypatch):
     conn = _conn()
-    monkeypatch.setattr(gold, "read_weekly_snapshot", lambda _root: {"used_percent": 14.0, "resets_at": 99})
+    monkeypatch.setattr(gold, "read_weekly_snapshot", lambda _root: {"used_percent": 14.0, "resets_at": 1788748267})
     reserved = gold.reserve_gold_call(conn, grant_path=_grant(tmp_path), session_root=tmp_path,
         budget_dir=tmp_path, task_key="dev:w1:A", turn_type="A", reserve_tokens=40_000,
         at=datetime(2026, 9, 2, tzinfo=timezone.utc))
     gold.mark_provider_started(conn, reserved["reservation_id"])
     gold.settle_gold_call(conn, reservation_id=reserved["reservation_id"], actual_tokens=35_000)
     row = conn.execute("SELECT day,lane,tokens FROM pif_subscription_budget_ledger").fetchone()
-    assert tuple(row) == ("weekly:99", gold.EXPECTED_SCOPE, 35_000)
+    assert tuple(row) == ("weekly:1788748260", gold.EXPECTED_SCOPE, 35_000)
 
 
 def test_started_reservation_cannot_be_released(tmp_path, monkeypatch):

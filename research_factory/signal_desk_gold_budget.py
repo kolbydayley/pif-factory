@@ -33,6 +33,14 @@ class GoldBudgetError(RuntimeError):
     pass
 
 
+def normalize_weekly_reset(value: int) -> int:
+    """Stabilize provider reset estimates that drift by a few seconds."""
+
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise GoldBudgetError("weekly reset timestamp is invalid")
+    return int((value + 30) // 60 * 60)
+
+
 def _instant(value: str | datetime) -> datetime:
     parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     if parsed.tzinfo is None:
@@ -179,6 +187,11 @@ def weekly_health(
                 next_step="Restore a fresh Codex weekly usage snapshot; authoring resumes automatically afterward.",
             )
         return {"allowed": False, "reason": "weekly_snapshot_missing", "notified": notify}
+    snapshot = {
+        **snapshot,
+        "provider_resets_at": int(snapshot["resets_at"]),
+        "resets_at": normalize_weekly_reset(int(snapshot["resets_at"])),
+    }
     used = float(snapshot["used_percent"])
     kill_path = gold_kill_path(budget_dir)
     if used >= KILL_PERCENT and not kill_path.exists():
