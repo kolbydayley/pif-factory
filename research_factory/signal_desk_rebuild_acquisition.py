@@ -36,6 +36,7 @@ class Candidate:
     published_at: str
     duration_seconds: int | None
     audio_url: str | None
+    episode_url: str | None
     transcript_url: str | None
     primary_lane: str
     fallback_lane: str | None = None
@@ -62,7 +63,7 @@ def _rows(conn: sqlite3.Connection, source_id: str) -> list[sqlite3.Row]:
     conn.row_factory = sqlite3.Row
     try:
         return conn.execute(
-            """SELECT id, title, published_at, duration_seconds, audio_url,
+            """SELECT id, title, published_at, duration_seconds, audio_url, url,
                       verified_transcript_url
                  FROM episodes
                 WHERE source_id = ? AND published_at IS NOT NULL
@@ -150,6 +151,7 @@ def _candidate(row: sqlite3.Row, primary: str, fallback: str | None = None, *,
         published_at=row["published_at"],
         duration_seconds=row["duration_seconds"],
         audio_url=row["audio_url"],
+        episode_url=row["url"],
         transcript_url=transcript_url,
         primary_lane=primary,
         fallback_lane=fallback,
@@ -198,7 +200,12 @@ def plan_blocked_show_acquisition(
 
     marketplace_rows = _rows(conn, "marketplace-tech")
     marketplace = _require_exact_four(
-        (_candidate(row, "browser_marketplace", "groq_asr")
+        (_candidate(
+            row,
+            "browser_marketplace",
+            "groq_asr",
+            transcript_url=row["url"],
+        )
          for row in select_period_spread(marketplace_rows)),
         "marketplace-tech",
     )

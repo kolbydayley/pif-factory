@@ -29,7 +29,7 @@ def database() -> sqlite3.Connection:
     conn.execute(
         """CREATE TABLE episodes (
             id TEXT PRIMARY KEY, source_id TEXT, title TEXT, published_at TEXT,
-            duration_seconds INTEGER, audio_url TEXT,
+            duration_seconds INTEGER, audio_url TEXT, url TEXT,
             verified_transcript_url TEXT
         )"""
     )
@@ -40,12 +40,13 @@ def database() -> sqlite3.Connection:
                 if show == "how-i-built-this" else None
             )
             conn.execute(
-                "INSERT INTO episodes VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO episodes VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     f"{show}-{index:02d}", show,
                     f"companytoken{index} executiveword{index} subjectword{index}",
                     f"20{20 + index // 12:02d}-{index % 12 + 1:02d}-01",
-                    3600, f"https://audio.test/{show}/{index}.mp3", transcript,
+                    3600, f"https://audio.test/{show}/{index}.mp3",
+                    f"https://example.test/{show}/{index}", transcript,
                 ),
             )
     return conn
@@ -98,6 +99,8 @@ def test_hibt_is_browser_only_marketplace_browser_then_asr_and_ben_caption_first
     marketplace = plan["shows"]["marketplace-tech"]
     assert all(row["primary_lane"] == "browser_marketplace" and
                row["fallback_lane"] == "groq_asr" for row in marketplace["candidates"])
+    assert all(row["transcript_url"].startswith("https://example.test/")
+               for row in marketplace["candidates"])
     ben = plan["shows"]["the-ben-and-marc-show"]
     assert ben["channel_sanity"]["passed"] is True
     assert all(row["primary_lane"] == "youtube_caption_browser" for row in ben["candidates"])
