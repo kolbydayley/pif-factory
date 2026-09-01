@@ -20,6 +20,7 @@ GATE_MANIFEST_VERSION = "signal-desk-rebuild-gates-v1"
 ALPHA = 0.05
 BOOTSTRAP_ITERATIONS = 10_000
 PER_SHOW_EVENT_FLOOR = 50
+FLATTENED_SUPPORTED_ATTRIBUTION_MINIMUM = 0.99
 GOLD_AUDIT_INITIAL_WINDOWS = 120
 GOLD_AUDIT_WINDOW_BLOCK = 40
 GOLD_AUDIT_MIN_EVENTS = 1_000
@@ -243,6 +244,64 @@ def evaluate_per_show_validation(
             if powered_results
             else None
         ),
+    }
+
+
+def evaluate_attribution_strata(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    speaker_turn_threshold: float,
+    flattened_supported_threshold: float = FLATTENED_SUPPORTED_ATTRIBUTION_MINIMUM,
+    alpha: float = ALPHA,
+) -> dict[str, Any]:
+    """Apply full attribution accuracy only where speaker structure exists.
+
+    Flattened transcripts instead gate the absence of fabricated attribution.
+    Each row supplies ``transcript_structure``, ``attribution_total`` and either
+    ``attribution_correct`` or ``attribution_supported`` as appropriate.
+    """
+
+    totals: dict[str, dict[str, int]] = defaultdict(lambda: {"successes": 0, "total": 0})
+    for row in rows:
+        structure = str(row.get("transcript_structure") or "")
+        if structure not in {"speaker_turn", "paragraph", "flattened"}:
+            raise SignalDeskGateError("unknown transcript structure")
+        total = int(row.get("attribution_total", 0))
+        success_key = "attribution_supported" if structure == "flattened" else "attribution_correct"
+        successes = int(row.get(success_key, 0))
+        if total < 0 or successes < 0 or successes > total:
+            raise SignalDeskGateError("attribution counts must satisfy 0 <= successes <= total")
+        totals[structure]["successes"] += successes
+        totals[structure]["total"] += total
+
+    results: dict[str, Any] = {}
+    for structure in ("speaker_turn", "paragraph", "flattened"):
+        values = totals[structure]
+        threshold = (
+            flattened_supported_threshold
+            if structure == "flattened"
+            else speaker_turn_threshold
+        )
+        results[structure] = {
+            **values,
+            "metric": (
+                "supported_attribution_rate"
+                if structure == "flattened"
+                else "attribution_accuracy"
+            ),
+            "gate": evaluate_rate_gate(
+                values["successes"],
+                values["total"],
+                threshold=threshold,
+                direction="minimum",
+                alpha=alpha,
+            ),
+        }
+    return {
+        "alpha": alpha,
+        "flattened_policy": "no_fabricated_attribution",
+        "strata": results,
+        "passed": all(row["gate"]["passed"] for row in results.values() if row["total"]),
     }
 
 

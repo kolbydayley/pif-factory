@@ -75,13 +75,13 @@ def test_period_spread_is_episode_disjoint_and_reaches_catalog_extremes() -> Non
 
 def test_plan_is_bounded_and_missing_key_names_only_unavoidable_asr_blockers() -> None:
     plan = plan_blocked_show_acquisition(database(), youtube_listing=passing_listing(),
-                                         groq_api_key="")
+                                         xai_api_key="")
     assert plan["full_catalog_asr_allowed"] is False
     assert plan["ready_for_all_five"] is False
     assert set(plan["shows"]) == set(SHOWS)
     assert all(len(show["candidates"]) == 4 for show in plan["shows"].values())
     blocker = plan["prerequisites"][0]
-    assert blocker["code"] == "missing_groq_api_key"
+    assert blocker["code"] == "missing_xai_api_key"
     assert blocker["blocks"] == ["search-engine", "tech-brew-ride-home"]
     assert blocker["conditionally_blocks_fallback_for"] == [
         "how-i-built-this", "marketplace-tech", "the-ben-and-marc-show",
@@ -91,15 +91,15 @@ def test_plan_is_bounded_and_missing_key_names_only_unavoidable_asr_blockers() -
 
 def test_hibt_is_browser_only_marketplace_browser_then_asr_and_ben_caption_first() -> None:
     plan = plan_blocked_show_acquisition(database(), youtube_listing=passing_listing(),
-                                         groq_api_key="test-key")
+                                         xai_api_key="test-key")
     assert plan["asr_credential_available"] is True
     assert plan["ready_for_all_five"] is False
     hibt = plan["shows"]["how-i-built-this"]
     assert {row["primary_lane"] for row in hibt["candidates"]} == {"browser_npr"}
-    assert all(row["fallback_lane"] == "groq_asr" for row in hibt["candidates"])
+    assert all(row["fallback_lane"] == "xai_rest_stt" for row in hibt["candidates"])
     marketplace = plan["shows"]["marketplace-tech"]
     assert all(row["primary_lane"] == "browser_marketplace" and
-               row["fallback_lane"] == "groq_asr" for row in marketplace["candidates"])
+               row["fallback_lane"] == "xai_rest_stt" for row in marketplace["candidates"])
     assert all(row["transcript_url"].startswith("https://example.test/")
                for row in marketplace["candidates"])
     ben = plan["shows"]["the-ben-and-marc-show"]

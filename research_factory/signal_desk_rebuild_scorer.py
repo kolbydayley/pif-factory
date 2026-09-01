@@ -18,8 +18,8 @@ from statistics import NormalDist
 from typing import Any, Mapping, Optional, Sequence
 
 
-SCORER_VERSION = "signal-desk-rebuild-scorer-v1"
-SPEC_VERSION = "signal-desk-rebuild-scorer-spec-v1"
+SCORER_VERSION = "signal-desk-rebuild-scorer-v2"
+SPEC_VERSION = "signal-desk-rebuild-scorer-spec-v2"
 EVIDENCE_OVERLAP_FLOOR = 0.50
 CLAIM_TEXT_F1_FLOOR = 0.30
 QUALIFICATION_ALPHA = 0.05
@@ -75,6 +75,10 @@ _ROLE_ALIASES = {
     "third party": "third_party_mention",
     "third-party mention": "third_party_mention",
     "third_party_mention": "third_party_mention",
+    "unresolved": "unresolved_speaker",
+    "indeterminable": "unresolved_speaker",
+    "unresolved speaker": "unresolved_speaker",
+    "unresolved_speaker": "unresolved_speaker",
 }
 
 _STANCE_ALIASES = {
@@ -208,6 +212,7 @@ def event_eligibility(
     *,
     issue_registry: Optional[Mapping[str, Any]] = None,
     evidence_overlap_floor: float = EVIDENCE_OVERLAP_FLOOR,
+    transcript_structure: str | None = None,
 ) -> dict[str, Any]:
     """Return a fully explained eligibility decision and deterministic weight."""
 
@@ -217,7 +222,23 @@ def event_eligibility(
     p = event_surface(predicted, issue_registry=issue_registry)
     overlap = evidence_overlap(gold, predicted)
     failures: list[str] = []
+    structure = str(
+        transcript_structure
+        or gold.get("transcript_structure")
+        or predicted.get("transcript_structure")
+        or "speaker_turn"
+    )
+    flattened_indeterminable = (
+        structure == "flattened"
+        and g["speaker_role"] == "unresolved_speaker"
+        and not g["speaker"]
+    )
+    if flattened_indeterminable:
+        if p["speaker"] or p["speaker_role"] != "unresolved_speaker":
+            failures.append("unsupported_attribution")
     for field in ("speaker", "speaker_role", "subject", "issue", "stance"):
+        if flattened_indeterminable and field in {"speaker", "speaker_role"}:
+            continue
         if not g[field] or not p[field]:
             failures.append(f"missing_{field}")
         elif g[field] != p[field]:
@@ -239,6 +260,8 @@ def event_eligibility(
         "weight": round(weight, 6),
         "gold_surface": g,
         "predicted_surface": p,
+        "transcript_structure": structure,
+        "unsupported_attribution": "unsupported_attribution" in failures,
     }
 
 
@@ -301,11 +324,20 @@ def match_events(
     predicted_events: Sequence[Mapping[str, Any]],
     *,
     issue_registry: Optional[Mapping[str, Any]] = None,
+    transcript_structure: str | None = None,
 ) -> dict[str, Any]:
     """Return optimal eligible one-to-one matches and event-level counts."""
 
     decisions = [
-        [event_eligibility(gold, predicted, issue_registry=issue_registry) for predicted in predicted_events]
+        [
+            event_eligibility(
+                gold,
+                predicted,
+                issue_registry=issue_registry,
+                transcript_structure=transcript_structure,
+            )
+            for predicted in predicted_events
+        ]
         for gold in gold_events
     ]
     matrix = [[cell["weight"] for cell in row] for row in decisions]
@@ -321,6 +353,16 @@ def match_events(
                 }
             )
     matched = len(matches)
+    unsupported_prediction_indexes = sorted(
+        {
+            predicted_index
+            for row in decisions
+            for predicted_index, decision in enumerate(row)
+            if decision.get("unsupported_attribution")
+            and decision.get("evidence_overlap", 0) >= EVIDENCE_OVERLAP_FLOOR
+            and decision.get("claim_text_f1", 0) >= CLAIM_TEXT_F1_FLOOR
+        }
+    )
     return {
         "gold_events": len(gold_events),
         "predicted_events": len(predicted_events),
@@ -328,6 +370,8 @@ def match_events(
         "false_negatives": len(gold_events) - matched,
         "false_positives": len(predicted_events) - matched,
         "matches": matches,
+        "transcript_structure": transcript_structure,
+        "unsupported_attributions": len(unsupported_prediction_indexes),
     }
 
 
@@ -344,6 +388,14 @@ def scorer_specification() -> dict[str, Any]:
             "text_fallback": "multiset_token_overlap_coefficient",
         },
         "hard_agreement_fields": ["speaker", "speaker_role", "subject", "issue", "stance"],
+        "transcript_structure_policy": {
+            "speaker_turn": "full_speaker_and_role_agreement",
+            "paragraph": "full_speaker_and_role_agreement_when_present",
+            "flattened": (
+                "gold speaker is indeterminable unless named in text; any asserted unsupported "
+                "speaker is an attribution error"
+            ),
+        },
         "claim_text": {
             "kind": "multiset_token_f1",
             "minimum": CLAIM_TEXT_F1_FLOOR,

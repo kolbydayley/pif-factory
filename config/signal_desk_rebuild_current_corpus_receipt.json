@@ -1,0 +1,25 @@
+{
+  "blocked_current_shows": 0,
+  "blocker_counts": {
+    "blocked_flattened": 0,
+    "blocked_insufficient_episodes": 0,
+    "blocked_no_transcript": 0,
+    "blocked_stale_hash": 0,
+    "qualified": 57
+  },
+  "canonical_database_mutated_by_acquisition": false,
+  "covered_current_shows": 57,
+  "manifest_sha256": "ff09785f8abb1f20976c3f91ca0eb2e40c739d5f3d5cfff08896f3948eee1ca2",
+  "private_gold_packets_materialized": true,
+  "schema_version": "pif_signal_desk_rebuild_current_corpus_receipt_v1",
+  "tournament_allowed": false,
+  "tournament_blocker": "ten_ood_shows_not_yet_frozen",
+  "windows": 684,
+  "xai_asr": {
+    "audio_hours": 10.6639,
+    "estimated_cost_usd": 1.1045,
+    "episodes": 16,
+    "full_catalog_asr_allowed": false,
+    "shows": 4
+  }
+}

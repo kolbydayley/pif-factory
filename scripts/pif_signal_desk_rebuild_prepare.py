@@ -45,6 +45,7 @@ def prepare(
     freeze: bool,
     materialize_gold_packets: bool,
     acquisition_receipts: Sequence[Path] = (),
+    refreeze_current_transcript_bytes: bool = False,
 ) -> dict[str, Any]:
     aliases_payload = json.loads(show_alias_path.read_text(encoding="utf-8"))
     aliases = aliases_payload.get("aliases") or {}
@@ -57,14 +58,49 @@ def prepare(
             project_root=project_root,
             show_aliases=aliases,
             in_domain_entries=overlays,
+            refreeze_current_transcript_bytes=refreeze_current_transcript_bytes,
         )
     finally:
         conn.close()
 
     artifacts = freeze_per_show_artifacts(manifest)
     blocked = [row for row in manifest["coverage_diagnostics"] if not row["covered"]]
+    stale_refrozen = sorted(
+        {
+            str(window["show_id"])
+            for window in manifest["windows"]
+            if bool((window.get("transcript_revision") or {}).get("stale_hash_refrozen"))
+        }
+    )
+    blocker_counts = {
+        "qualified": len(artifacts),
+        "blocked_flattened": sum(
+            "all_selected_transcripts_are_flattened" in row.get("blocking_reasons", [])
+            for row in blocked
+        ),
+        "blocked_insufficient_episodes": sum(
+            any(
+                reason in {
+                    "fewer_than_four_dated_qualifying_episodes",
+                    "fewer_than_four_qualifying_episodes",
+                    "publication_period_bins_not_distinct",
+                    "insufficient_distinct_publication_months",
+                    "insufficient_publication_span",
+                }
+                for reason in row.get("blocking_reasons", [])
+            )
+            for row in blocked
+        ),
+        "blocked_stale_hash": sum(
+            any(str(reason).startswith("stale_transcript_hash:") for reason in row.get("rejection_counts", {}))
+            for row in blocked
+        ),
+        "blocked_no_transcript": sum(
+            "no_ready_local_transcripts" in row.get("blocking_reasons", []) for row in blocked
+        ),
+    }
     summary = {
-        "schema_version": "pif_signal_desk_rebuild_partial_freeze_v1",
+        "schema_version": "pif_signal_desk_rebuild_partial_freeze_v2",
         "manifest_sha256": manifest["manifest_sha256"],
         "covered_current_shows": len(artifacts),
         "blocked_current_shows": len(blocked),
@@ -75,6 +111,9 @@ def prepare(
         "tournament_allowed": False,
         "dev_error_reading_allowed": False,
         "gold_reliability_audit_allowed": False,
+        "refreeze_current_transcript_bytes": refreeze_current_transcript_bytes,
+        "stale_hash_refrozen_show_ids": stale_refrozen,
+        "blocker_counts": blocker_counts,
         "blocked": [
             {
                 "show_id": row["show_id"],
@@ -131,6 +170,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--freeze-qualified", action="store_true")
     parser.add_argument("--materialize-gold-packets", action="store_true")
     parser.add_argument(
+        "--refreeze-current-transcript-bytes",
+        action="store_true",
+        help="Explicitly bind stale transcript rows to current local bytes before gold authoring",
+    )
+    parser.add_argument(
         "--acquisition-receipt",
         action="append",
         type=Path,
@@ -146,6 +190,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         freeze=args.freeze_qualified,
         materialize_gold_packets=args.materialize_gold_packets,
         acquisition_receipts=tuple(path.resolve() for path in args.acquisition_receipt),
+        refreeze_current_transcript_bytes=args.refreeze_current_transcript_bytes,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0

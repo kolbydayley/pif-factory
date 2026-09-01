@@ -4,6 +4,7 @@ import pytest
 
 from research_factory.signal_desk_rebuild_gates import (
     SignalDeskGateError,
+    evaluate_attribution_strata,
     evaluate_gold_audit,
     evaluate_per_show_validation,
     evaluate_rate_gate,
@@ -85,6 +86,28 @@ def test_per_show_validation_gates_only_powered_shows() -> None:
             [{"split": "sealed_holdout", "show_id": "x", "gold_events": 50, "matched_events": 50}],
             recall_threshold=0.9,
         )
+
+
+def test_attribution_gates_are_structure_specific() -> None:
+    report = evaluate_attribution_strata(
+        [
+            {
+                "transcript_structure": "speaker_turn",
+                "attribution_total": 100,
+                "attribution_correct": 100,
+            },
+            {
+                "transcript_structure": "flattened",
+                "attribution_total": 1000,
+                "attribution_supported": 1000,
+            },
+        ],
+        speaker_turn_threshold=0.90,
+    )
+    assert report["passed"] is True
+    assert report["strata"]["speaker_turn"]["metric"] == "attribution_accuracy"
+    assert report["strata"]["flattened"]["metric"] == "supported_attribution_rate"
+    assert report["strata"]["flattened"]["gate"]["threshold"] == 0.99
 
 
 def test_holdout_is_aggregate_only_and_metric_limited() -> None:

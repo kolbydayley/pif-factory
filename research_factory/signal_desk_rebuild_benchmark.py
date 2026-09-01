@@ -31,6 +31,7 @@ TRACKING_WRAPPER_HOSTS = frozenset({
     "www.podtrac.com",
     "pdcst.fm",
     "mgln.ai",
+    "tracking.swap.fm",
 })
 _CANONICAL_TABLE_NAMES = frozenset({"episodes", "segments", "transcripts"})
 _URL_QUERY_KEYS = ("url", "u", "target", "redirect", "destination", "dest")

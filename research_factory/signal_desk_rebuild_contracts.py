@@ -8,7 +8,7 @@ import re
 from typing import Any, Mapping, Sequence
 
 
-SCHEMA_VERSION = "pif_signal_desk_clean_event_v1"
+SCHEMA_VERSION = "pif_signal_desk_clean_event_v2"
 ATTRIBUTION_TYPES = (
     "direct_speech",
     "quoted_speech",
@@ -70,7 +70,7 @@ def event_schema() -> dict[str, Any]:
         "properties": {
             "event_id": {"type": "string", "minLength": 1},
             "claim_text": {"type": "string", "minLength": 1},
-            "speech_act": {"enum": list(SPEECH_ACTS)},
+            "speech_act": {"type": "string", "enum": list(SPEECH_ACTS)},
             "evidence_text": {"type": "string", "minLength": 1},
             "evidence_start": {"type": "integer", "minimum": 0},
             "evidence_end": {"type": "integer", "minimum": 1},
@@ -79,20 +79,22 @@ def event_schema() -> dict[str, Any]:
             "mentioned_person_ids": {
                 "type": "array",
                 "items": {"type": "string", "minLength": 1},
-                "uniqueItems": True,
             },
-            "attribution_type": {"enum": list(ATTRIBUTION_TYPES)},
+            "attribution_type": {"type": "string", "enum": list(ATTRIBUTION_TYPES)},
             "attribution_confidence": {"type": "number", "minimum": 0, "maximum": 1},
             "issue_label": {"type": "string", "minLength": 1},
             "issue_aliases": {
                 "type": "array",
                 "items": {"type": "string", "minLength": 1},
-                "uniqueItems": True,
             },
             "stance": {
+                "type": "string",
                 "enum": ["supportive", "skeptical", "neutral", "mixed", "warning", "unknown"]
             },
-            "publishability_state": {"enum": list(PUBLISHABILITY_STATES)},
+            "publishability_state": {
+                "type": "string",
+                "enum": list(PUBLISHABILITY_STATES),
+            },
         },
     }
     return {
@@ -102,9 +104,10 @@ def event_schema() -> dict[str, Any]:
         "additionalProperties": False,
         "required": ["schema_version", "window_id", "window_disposition", "events"],
         "properties": {
-            "schema_version": {"const": SCHEMA_VERSION},
+            "schema_version": {"type": "string", "const": SCHEMA_VERSION},
             "window_id": {"type": "string", "minLength": 1},
             "window_disposition": {
+                "type": "string",
                 "enum": ["claims_found", "no_consequential_claims", "unusable_input"]
             },
             "events": {"type": "array", "items": event},
@@ -156,6 +159,8 @@ def validate_event(
     mentioned = event.get("mentioned_person_ids")
     if not isinstance(mentioned, Sequence) or isinstance(mentioned, (str, bytes)):
         raise EvidenceContractError("mentioned_person_ids must be an array")
+    if len(list(mentioned)) != len(set(str(item) for item in mentioned)):
+        raise EvidenceContractError("mentioned_person_ids must be unique")
     if attribution in {"direct_speech", "quoted_speech", "reported_paraphrase"} and not speaker:
         raise EvidenceContractError("speech attribution requires the actual speaker")
     if attribution == "quoted_speech" and not quoted:
@@ -176,6 +181,11 @@ def validate_event(
         raise EvidenceContractError("attribution confidence must be in [0, 1]")
     if event["speech_act"] not in SPEECH_ACTS:
         raise EvidenceContractError("questions and unsupported speech acts are not claims")
+    aliases = event.get("issue_aliases")
+    if not isinstance(aliases, Sequence) or isinstance(aliases, (str, bytes)):
+        raise EvidenceContractError("issue_aliases must be an array")
+    if len(list(aliases)) != len(set(str(item) for item in aliases)):
+        raise EvidenceContractError("issue_aliases must be unique")
     result = dict(event)
     result["evidence_start"] = start
     result["evidence_end"] = end

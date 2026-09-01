@@ -25,9 +25,9 @@ from .signal_desk_rebuild_contracts import SCHEMA_VERSION as GLM_CONTRACT_VERSIO
 from .signal_desk_rebuild_contracts import event_schema
 
 
-MANIFEST_SCHEMA_VERSION = "pif_signal_desk_rebuild_split_manifest_v1"
-SHOW_ARTIFACT_SCHEMA_VERSION = "pif_signal_desk_rebuild_show_artifact_v1"
-GOLD_PACKET_SCHEMA_VERSION = "pif_signal_desk_rebuild_gold_packet_v1"
+MANIFEST_SCHEMA_VERSION = "pif_signal_desk_rebuild_split_manifest_v2"
+SHOW_ARTIFACT_SCHEMA_VERSION = "pif_signal_desk_rebuild_show_artifact_v2"
+GOLD_PACKET_SCHEMA_VERSION = "pif_signal_desk_rebuild_gold_packet_v2"
 DEFAULT_SEED = "signal-desk-clean-corpus-2026-08-31-v1"
 DEFAULT_WINDOW_CHARS = 6_000
 WINDOWS_PER_EPISODE = 3
@@ -38,6 +38,7 @@ OOD_SHAPES = frozenset({"claim_dense", "narrative", "format_stress"})
 GOLD_PASSES = frozenset({"A", "B", "C"})
 MIN_DISTINCT_PUBLICATION_MONTHS = 3
 MIN_PUBLICATION_SPAN_DAYS = 60
+TRANSCRIPT_STRUCTURES = frozenset({"speaker_turn", "paragraph", "flattened"})
 
 
 class SignalDeskGoldError(RuntimeError):
@@ -77,15 +78,21 @@ def _recorded_path(path: Path, project_root: Path) -> str:
         return str(path)
 
 
-def _verified_text(path_value: str, expected_sha: str | None, project_root: Path) -> tuple[Path, str, str]:
+def _verified_text(
+    path_value: str,
+    expected_sha: str | None,
+    project_root: Path,
+    *,
+    allow_stale_hash_refreeze: bool = False,
+) -> tuple[Path, str, str]:
     path = _resolve_local_path(path_value, project_root)
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
         raise SignalDeskGoldError(f"unreadable local transcript: {path}") from exc
     observed = _sha(text)
-    if expected_sha and observed != expected_sha:
-        raise SignalDeskGoldError(f"transcript hash mismatch: {path}")
+    if expected_sha and observed != expected_sha and not allow_stale_hash_refreeze:
+        raise SignalDeskGoldError(f"stale_transcript_hash:{path}")
     if not text.strip():
         raise SignalDeskGoldError(f"empty local transcript: {path}")
     return path, text, observed
@@ -154,7 +161,7 @@ def _turn_spans(text: str, limit: int) -> tuple[list[tuple[int, int]], str]:
         spans = _paragraph_spans(text)
         if len(spans) < 3:
             spans = _sentence_spans(text)
-            alignment = "sentence_fallback"
+            alignment = "flattened"
         else:
             alignment = "paragraph"
     expanded: list[tuple[int, int]] = []
@@ -209,7 +216,10 @@ def turn_aligned_windows(
                 "end_char": end,
                 "char_count": len(window_text),
                 "text_sha256": _sha(window_text),
+                # ``alignment`` is retained for packet compatibility. The
+                # structure field is the benchmark stratum used by scoring.
                 "alignment": alignment,
+                "transcript_structure": alignment,
             }
         )
     if len({row["text_sha256"] for row in results}) != count:
@@ -241,11 +251,25 @@ def _qualify_transcript(
     *,
     project_root: Path,
     max_chars: int,
+    allow_stale_hash_refreeze: bool = False,
 ) -> tuple[Path, str, str, tuple[dict[str, Any], ...], list[str]]:
     reasons: list[str] = []
     path_value = row["cleaned_text_path"] if row["use_prepared"] else row["raw_text_path"]
     expected = row["cleaned_text_sha256"] if row["use_prepared"] else row["raw_text_sha256"]
-    path, text, digest = _verified_text(str(path_value), str(expected or ""), project_root)
+    path, text, digest = _verified_text(
+        str(path_value),
+        str(expected or ""),
+        project_root,
+        allow_stale_hash_refreeze=allow_stale_hash_refreeze,
+    )
+    if isinstance(row, dict):
+        row["_transcript_revision"] = {
+            "selection_policy": "production_best_available_prepared_then_raw",
+            "selected_artifact": "prepared" if row["use_prepared"] else "raw",
+            "recorded_sha256": str(expected or ""),
+            "frozen_sha256": digest,
+            "stale_hash_refrozen": bool(expected and digest != str(expected)),
+        }
     words = _word_count(text)
     try:
         assert_transcript_plausible(
@@ -295,13 +319,6 @@ def _publication_period_choice(
         reasons.append("insufficient_distinct_publication_months")
     if span_days < MIN_PUBLICATION_SPAN_DAYS:
         reasons.append("insufficient_publication_span")
-    alignments = {
-        window["alignment"]
-        for _row, _path, _text, _digest, windows in chosen
-        for window in windows
-    }
-    if alignments == {"sentence_fallback"}:
-        reasons.append("all_selected_transcripts_are_flattened")
     return ([] if reasons else chosen), reasons
 
 
@@ -435,6 +452,7 @@ def _window_records(
     transcript_id: str,
     transcript_path: Path,
     transcript_sha: str,
+    transcript_revision: Mapping[str, Any],
     text: str,
     project_root: Path,
     max_chars: int,
@@ -457,6 +475,7 @@ def _window_records(
                 "transcript_id": transcript_id,
                 "transcript_path": _recorded_path(transcript_path, project_root),
                 "transcript_sha256": transcript_sha,
+                "transcript_revision": dict(transcript_revision),
                 "window_index": index,
                 **window,
             }
@@ -492,6 +511,7 @@ def _build_in_domain(
     max_chars: int,
     show_aliases: Mapping[str, str] | None = None,
     external_entries: Sequence[Mapping[str, Any]] = (),
+    refreeze_current_transcript_bytes: bool = False,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     rows = _canonical_transcript_rows(conn, external_entries)
     by_feed = _validate_unique_feeds(rows, show_aliases)
@@ -528,7 +548,10 @@ def _build_in_domain(
         for row in ranked_candidates:
             try:
                 path, text, digest, episode_windows, _ = _qualify_transcript(
-                    row, project_root=project_root, max_chars=max_chars
+                    row,
+                    project_root=project_root,
+                    max_chars=max_chars,
+                    allow_stale_hash_refreeze=refreeze_current_transcript_bytes,
                 )
             except SignalDeskGoldError as exc:
                 rejection_counts[str(exc)] += 1
@@ -567,6 +590,7 @@ def _build_in_domain(
                     transcript_id=str(row["transcript_id"]),
                     transcript_path=path,
                     transcript_sha=digest,
+                    transcript_revision=dict(row.get("_transcript_revision") or {}),
                     text=text,
                     project_root=project_root,
                     max_chars=max_chars,
@@ -585,6 +609,8 @@ def _build_in_domain(
                     "minimum_distinct_publication_months": MIN_DISTINCT_PUBLICATION_MONTHS,
                     "minimum_publication_span_days": MIN_PUBLICATION_SPAN_DAYS,
                     "duration_word_plausibility": "words >= duration_seconds / 6 when known",
+                    "transcript_selection": "production_best_available_prepared_then_raw",
+                    "flattened_transcripts": "eligible_and_reported_as_a_structure_stratum",
                 },
             }
         )
@@ -596,6 +622,7 @@ def _build_in_domain(
                 "covered": True,
                 "candidate_episodes": len(candidate_by_guid),
                 "qualifying_transcripts": len(eligible),
+                "rejection_counts": dict(sorted(rejection_counts.items())),
                 "selected_episode_ids": show_episode_ids,
                 "blocking_reasons": [],
             }
@@ -713,6 +740,13 @@ def _build_ood(
                     transcript_id=transcript_id,
                     transcript_path=path,
                     transcript_sha=digest,
+                    transcript_revision={
+                        "selection_policy": "benchmark_official_source_best_available",
+                        "selected_artifact": "official_transcript",
+                        "recorded_sha256": str(episode.get("transcript_sha256") or digest),
+                        "frozen_sha256": digest,
+                        "stale_hash_refrozen": False,
+                    },
                     text=text,
                     project_root=project_root,
                     max_chars=max_chars,
@@ -749,6 +783,11 @@ def validate_split_manifest(manifest: Mapping[str, Any]) -> None:
         episode_counts[episode] += 1
         if int(row.get("char_count") or 0) > int(manifest["window_contract"]["max_chars"]):
             raise SignalDeskGoldError("manifest contains an oversized window")
+        if row.get("transcript_structure") not in TRANSCRIPT_STRUCTURES:
+            raise SignalDeskGoldError("manifest contains an unknown transcript structure")
+        revision = row.get("transcript_revision")
+        if not isinstance(revision, Mapping) or revision.get("frozen_sha256") != row.get("transcript_sha256"):
+            raise SignalDeskGoldError("manifest transcript revision is not bound to frozen bytes")
     if any(len(splits) != 1 for splits in episode_splits.values()):
         raise SignalDeskGoldError("episode leakage across splits")
     if any(count != WINDOWS_PER_EPISODE for count in episode_counts.values()):
@@ -774,6 +813,7 @@ def build_split_manifest(
     expected_ood_shows: int | None = None,
     show_aliases: Mapping[str, str] | None = None,
     in_domain_entries: Sequence[Mapping[str, Any]] = (),
+    refreeze_current_transcript_bytes: bool = False,
 ) -> dict[str, Any]:
     """Build and hash-freeze a deterministic split manifest."""
 
@@ -784,6 +824,7 @@ def build_split_manifest(
         max_chars=max_chars,
         show_aliases=show_aliases,
         external_entries=in_domain_entries,
+        refreeze_current_transcript_bytes=refreeze_current_transcript_bytes,
     )
     ood_shows, ood_windows = _build_ood(
         ood_entries, project_root=project_root, seed=seed, max_chars=max_chars
@@ -799,8 +840,10 @@ def build_split_manifest(
     windows = sorted(in_windows + ood_windows, key=lambda row: str(row["window_id"]))
     shows = sorted(in_shows + ood_shows, key=lambda row: (str(row["corpus"]), str(row["show_id"])))
     counts: dict[str, int] = defaultdict(int)
+    structure_counts: dict[str, int] = defaultdict(int)
     for row in windows:
         counts[str(row["split"])] += 1
+        structure_counts[str(row["transcript_structure"])] += 1
     payload: dict[str, Any] = {
         "schema_version": MANIFEST_SCHEMA_VERSION,
         "seed": seed,
@@ -812,6 +855,8 @@ def build_split_manifest(
             "max_chars": max_chars,
             "windows_per_episode": WINDOWS_PER_EPISODE,
             "representation": "turn_aligned_contiguous_private_text",
+            "transcript_structures": sorted(TRANSCRIPT_STRUCTURES),
+            "flattened_attribution_rule": "speaker_indeterminable_unless_named_in_text",
             "glm_contract_version": GLM_CONTRACT_VERSION,
         },
         "counts": {
@@ -819,6 +864,7 @@ def build_split_manifest(
             "episodes": len({row["episode_id"] for row in windows}),
             "windows": len(windows),
             "by_split": dict(sorted(counts.items())),
+            "by_transcript_structure": dict(sorted(structure_counts.items())),
         },
         "shows": shows,
         "show_aliases": dict(sorted((show_aliases or {}).items())),
@@ -992,6 +1038,13 @@ def _packet_for_window(
             "episode_id": window["episode_id"],
             "split": window["split"],
             "window_text": window_text,
+            "transcript_structure": window["transcript_structure"],
+            "attribution_instruction": (
+                "Speaker identity is indeterminable unless the text itself names the speaker; "
+                "never infer a speaker from show or episode metadata."
+                if window["transcript_structure"] == "flattened"
+                else "Use only speaker identity supported by the transcript text."
+            ),
         },
         "output_schema": GLM_OUTPUT_SCHEMA,
         "privacy": "private_local_transcript_text_never_public_payload",

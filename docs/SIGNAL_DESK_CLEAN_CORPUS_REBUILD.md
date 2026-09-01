@@ -159,24 +159,39 @@ opened holdout.
 
 ## Current pre-tournament coverage result
 
-The original row-count preflight reported 52/57, but the amended qualifying
-episode contract disproved that number. Read-only validation on 2026-08-31
-found only 31 canonical current shows with four publication-spread,
-episode-disjoint, structurally usable transcripts. The rendered Marketplace
-lane then acquired and hash-froze four qualifying episodes without inserting
-them into canonical production tables, bringing the authorable current set to
-32 shows / 384 windows.
+The benchmark now mirrors production's best-available transcript selection.
+Flattened caption text is an explicit benchmark stratum, not a disqualifier.
+Every window records `speaker_turn`, `paragraph`, or `flattened`. On flattened
+text, gold attribution is indeterminable unless the text itself names a
+speaker; invented names are attribution errors. The full attribution gate
+applies to structured text, while flattened text must achieve at least 99%
+supported attribution.
 
-Twenty-five current shows remain blocked: 20 contain only flattened selected
-transcripts (Security Now also lacks temporal breadth), The Gradient has fewer
-than four qualifying dated transcripts, The Ben and Marc Show's nine local
-records fail their frozen hash checks, and How I Built This, Search Engine, and
-Tech Brew Ride Home have no ready local transcript. The same audit found stale
-transcript hashes in several other blocked shows; those files are rejected,
-never silently re-hashed.
+That correction first changed current-show qualification from 32/57 to 53/57.
+After bounded private acquisition, the final current-show accounting is 57
+qualified and zero blocked for flattened text, insufficient episodes, stale
+hashes, or missing transcripts. Equity, Me Myself and AI, Security Now, and
+The Ben and Marc Show were re-selected and frozen against current transcript
+bytes before gold authoring. Each window records both the selected transcript
+revision and the frozen hash. The in-domain side is now frozen at 684 windows.
 
-The 32 per-show artifacts and private Gold A/B inputs are frozen locally, but
-no tournament, development-error inspection, or full reliability audit is
-authorized. GPT-5.6-sol execution is additionally blocked until the verified
-Codex app-server protocol pin (0.144.1) is reconciled with the installed CLI
-(0.147.0); model calls do not bypass that attestation.
+A real-browser sweep checked 261 of the indexed NPR-era How I Built This pages
+and found only three genuine long transcripts; the rest were shell pages and
+were rejected by the plausibility guard. Because that is fewer than the four
+episode-disjoint benchmark inputs required, the remaining exact private ASR
+queue was How I Built This, Search Engine, Tech Brew Ride Home, and The
+Gradient. Groq was removed from the critical path because its developer-tier
+upgrade is unavailable. The bounded xAI REST speech-to-text run processed
+exactly four duration-qualified, publication-spread episodes per queued show:
+10.66 audio hours at an estimated $1.10. Two HIBT catalog-duration mismatches
+were accepted only after a bounded inserted-audio check and multiple
+episode-title-token matches. The lane may not expand to a catalog run and did
+not write canonical production tables.
+
+Codex CLI 0.147.0 is no longer a blocker. A ten-window structure-stratified
+canary passed schema validation, deterministic envelope shape, complete token
+accounting, and compatible error handling on all ten windows. The protocol
+schema and sanitized receipt are frozen in the repository. No tournament,
+development-error inspection, or complete gold-reliability audit is authorized
+until all 57 current and 10 OOD shows are frozen into the complete 804-window
+benchmark.

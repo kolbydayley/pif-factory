@@ -19,7 +19,7 @@ from .signal_desk_rebuild_tournament import ensure_tournament_schema, hash_promp
 from .util import dumps_json, sha256_text
 
 
-CAMPAIGN_SCHEMA_VERSION = "pif_signal_desk_rebuild_campaign_v1"
+CAMPAIGN_SCHEMA_VERSION = "pif_signal_desk_rebuild_campaign_v2"
 DEFAULT_CAMPAIGN_PATH = Path("config/signal_desk_rebuild_campaign.json")
 DEFAULT_GRANT_PATH = Path("config/signal_desk_rebuild_budget_grant.json")
 DEFAULT_PROMPT_PATH = Path("config/signal_desk_rebuild_system_prompt_v1.txt")

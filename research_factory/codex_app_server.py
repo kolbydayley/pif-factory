@@ -13,18 +13,18 @@ from typing import Any
 from .util import now_iso, sha256_text, write_text_atomic
 
 
-PINNED_CODEX_CLI_VERSION = "0.144.1"
+PINNED_CODEX_CLI_VERSION = "0.147.0"
 APP_SERVER_CLIENT_VERSION = "pif-codex-app-server-v4"
 TURN_SIDECAR_SCHEMA_VERSION = "pif_codex_app_server_turn_v2"
-PROTOCOL_SCHEMA_SHA256 = "312b90372fd7a03423df7f46c60d623ada3ed066abcc5af2e6144bfa83b62026"
+PROTOCOL_SCHEMA_SHA256 = "ff10829cd75b67297019b39ab508ac699198574663579aa18336b7dc55ea178f"
 PROTOCOL_SCHEMA_PATH = (
     Path(__file__).resolve().parent
     / "protocol"
-    / "codex_app_server_0_144_1"
+    / "codex_app_server_0_147_0"
     / "codex_app_server_protocol.v2.schemas.json"
 )
 PROTOCOL_SCHEMA_RESOURCE = (
-    "protocol/codex_app_server_0_144_1/"
+    "protocol/codex_app_server_0_147_0/"
     "codex_app_server_protocol.v2.schemas.json"
 )
 THREAD_GOAL_STATUSES = frozenset(
@@ -216,11 +216,15 @@ def protocol_schema_sha256(path: str | Path | None = None) -> str:
     return hashlib.sha256(_protocol_schema_bytes(path)).hexdigest()
 
 
-def verify_protocol_schema(path: str | Path | None = None) -> str:
+def verify_protocol_schema(
+    path: str | Path | None = None,
+    *,
+    expected_sha256: str = PROTOCOL_SCHEMA_SHA256,
+) -> str:
     observed = protocol_schema_sha256(path)
-    if observed != PROTOCOL_SCHEMA_SHA256:
+    if observed != expected_sha256:
         raise AppServerProtocolError(
-            f"app-server protocol schema drift: expected {PROTOCOL_SCHEMA_SHA256}, observed {observed}"
+            f"app-server protocol schema drift: expected {expected_sha256}, observed {observed}"
         )
     return observed
 
@@ -242,11 +246,15 @@ def installed_codex_version(binary: str = "codex") -> str:
     return version[len(prefix) :]
 
 
-def verify_codex_version(binary: str = "codex") -> str:
+def verify_codex_version(
+    binary: str = "codex",
+    *,
+    expected_version: str = PINNED_CODEX_CLI_VERSION,
+) -> str:
     observed = installed_codex_version(binary)
-    if observed != PINNED_CODEX_CLI_VERSION:
+    if observed != expected_version:
         raise AppServerProtocolError(
-            f"Codex CLI drift: expected {PINNED_CODEX_CLI_VERSION}, observed {observed}"
+            f"Codex CLI drift: expected {expected_version}, observed {observed}"
         )
     return observed
 
@@ -311,6 +319,9 @@ class CodexAppServerClient:
         usage_grace_seconds: float = 1.0,
         max_message_bytes: int = 32 * 1024 * 1024,
         synthetic_debug_errors: bool = False,
+        expected_cli_version: str = PINNED_CODEX_CLI_VERSION,
+        protocol_schema_path: str | Path | None = None,
+        expected_protocol_schema_sha256: str = PROTOCOL_SCHEMA_SHA256,
     ):
         if max_message_bytes < 64 * 1024:
             raise ValueError("app-server message limit must be at least 64 KiB")
@@ -321,6 +332,9 @@ class CodexAppServerClient:
         self.usage_grace_seconds = usage_grace_seconds
         self.max_message_bytes = max_message_bytes
         self.synthetic_debug_errors = synthetic_debug_errors
+        self.expected_cli_version = expected_cli_version
+        self.protocol_schema_path = protocol_schema_path
+        self.expected_protocol_schema_sha256 = expected_protocol_schema_sha256
         self.process: asyncio.subprocess.Process | None = None
         self.account_summary: dict[str, Any] | None = None
         self.models: list[dict[str, Any]] = []
@@ -350,11 +364,18 @@ class CodexAppServerClient:
     async def start(self) -> None:
         if self.process is not None:
             return
-        self.protocol_schema_sha256 = verify_protocol_schema()
+        self.protocol_schema_sha256 = verify_protocol_schema(
+            self.protocol_schema_path,
+            expected_sha256=self.expected_protocol_schema_sha256,
+        )
         if self.verify_cli:
-            self.cli_version = await asyncio.to_thread(verify_codex_version, self.command[0])
+            self.cli_version = await asyncio.to_thread(
+                verify_codex_version,
+                self.command[0],
+                expected_version=self.expected_cli_version,
+            )
         else:
-            self.cli_version = PINNED_CODEX_CLI_VERSION
+            self.cli_version = self.expected_cli_version
         self.process = await asyncio.create_subprocess_exec(
             *self.command,
             stdin=asyncio.subprocess.PIPE,

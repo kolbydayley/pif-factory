@@ -1,5 +1,5 @@
 {
-  "schema_version": "pif_signal_desk_rebuild_campaign_v1",
+  "schema_version": "pif_signal_desk_rebuild_campaign_v2",
   "campaign_id": "signal-desk-clean-corpus-2026-08-31",
   "public_intelligence_state": "withdrawn_until_clean_release",
   "window_contract": {
@@ -39,7 +39,11 @@
       "minimum_distinct_publication_months": 3,
       "minimum_publication_span_days": 60,
       "minimum_words_when_duration_known": "duration_seconds / 6",
-      "all_sentence_fallback_episodes_block_show": true
+      "transcript_selection_policy": "same_best_available_policy_as_production",
+      "flattened_transcripts_are_eligible": true,
+      "transcript_structure_strata": ["speaker_turn", "paragraph", "flattened"],
+      "flattened_gold_attribution": "indeterminable_unless_the_text_names_the_speaker",
+      "flattened_attribution_gate": "at_least_99_percent_supported"
     },
     "freeze_protocol": {
       "per_show_authoring_may_start_when_qualified": true,
@@ -60,21 +64,32 @@
     "full_catalog_asr_authorized": false,
     "episodes_per_blocked_show": 4,
     "transcript_plausibility": "words >= duration_seconds / 6",
-    "how_i_built_this": ["rendered_npr_transcript", "groq_asr"],
-    "marketplace_tech": ["rendered_first_party_transcript", "groq_asr"],
-    "search_engine": ["groq_asr"],
-    "tech_brew_ride_home": ["groq_asr"],
-    "the_ben_and_marc_show": ["youtube_caption_after_channel_gate", "groq_asr"],
+    "how_i_built_this": ["rendered_npr_transcript", "xai_rest_stt"],
+    "marketplace_tech": ["rendered_first_party_transcript", "xai_rest_stt"],
+    "search_engine": ["xai_rest_stt"],
+    "tech_brew_ride_home": ["xai_rest_stt"],
+    "the_ben_and_marc_show": ["youtube_caption_after_channel_gate", "xai_rest_stt"],
     "youtube_channel_gate": {
       "catalog_sample": 40,
       "minimum_title_match_rate": 0.25,
       "minimum_duration_seconds": 1500
     },
+    "xai_rest_stt": {
+      "role": "bounded_private_benchmark_acquisition_only",
+      "rate_usd_per_audio_hour": 0.10,
+      "maximum_concurrency": 4,
+      "diarization_requested": true,
+      "exact_source_queue": [
+        "how-i-built-this",
+        "search-engine",
+        "tech-brew-ride-home",
+        "the-gradient"
+      ],
+      "full_catalog_use_authorized": false
+    },
     "groq": {
-      "model": "whisper-large-v3-turbo",
-      "requires_owner_key": true,
-      "estimated_benchmark_audio_hours": 20,
-      "estimated_benchmark_cost_usd": 1
+      "status": "unavailable_developer_tier_upgrade_high_demand",
+      "on_critical_path": false
     }
   },
   "ood_storage": {

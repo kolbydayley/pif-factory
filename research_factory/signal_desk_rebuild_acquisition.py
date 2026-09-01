@@ -171,10 +171,10 @@ def plan_blocked_show_acquisition(
     conn: sqlite3.Connection,
     *,
     youtube_listing: Sequence[Mapping[str, object]] | None = None,
-    groq_api_key: str | None = None,
+    xai_api_key: str | None = None,
 ) -> dict[str, object]:
     """Return the bounded five-show benchmark plan without performing I/O."""
-    key_available = bool(groq_api_key or os.environ.get("GROQ_API_KEY"))
+    key_available = bool(xai_api_key or os.environ.get("XAI_API_KEY"))
     plans: dict[str, dict[str, object]] = {}
 
     hibt_rows = [
@@ -185,7 +185,7 @@ def plan_blocked_show_acquisition(
         (_candidate(
             row,
             "browser_npr",
-            "groq_asr",
+            "xai_rest_stt",
             transcript_url=row["verified_transcript_url"],
         )
          for row in select_period_spread(hibt_rows)),
@@ -194,7 +194,7 @@ def plan_blocked_show_acquisition(
     plans["how-i-built-this"] = {
         "candidates": [asdict(c) for c in hibt],
         "browser_required": True,
-        "asr_fallback_requires_groq": True,
+        "asr_fallback_requires_xai": True,
         "index_artifact": str(NPR_HIBT_INDEX),
         "notes": "Client-rendered NPR transcript pages; plain HTTP fetch is forbidden.",
     }
@@ -204,7 +204,7 @@ def plan_blocked_show_acquisition(
         (_candidate(
             row,
             "browser_marketplace",
-            "groq_asr",
+            "xai_rest_stt",
             transcript_url=row["url"],
         )
          for row in select_period_spread(marketplace_rows)),
@@ -213,18 +213,18 @@ def plan_blocked_show_acquisition(
     plans["marketplace-tech"] = {
         "candidates": [asdict(c) for c in marketplace],
         "browser_required": True,
-        "asr_fallback_requires_groq": True,
+        "asr_fallback_requires_xai": True,
     }
 
     for source_id in ("search-engine", "tech-brew-ride-home"):
         audio_rows = [row for row in _rows(conn, source_id) if row["audio_url"]]
         chosen = _require_exact_four(
-            (_candidate(row, "groq_asr") for row in select_period_spread(audio_rows)),
+            (_candidate(row, "xai_rest_stt") for row in select_period_spread(audio_rows)),
             source_id,
         )
         plans[source_id] = {
             "candidates": [asdict(c) for c in chosen],
-            "asr_requires_groq": True,
+            "asr_requires_xai": True,
         }
 
     ben_rows = _rows(conn, "the-ben-and-marc-show")
@@ -237,7 +237,7 @@ def plan_blocked_show_acquisition(
             (_candidate(
                 row,
                 "youtube_caption_browser",
-                "groq_asr",
+                "xai_rest_stt",
                 transcript_url=f"https://www.youtube.com/watch?v={by_episode[row['id']]['id']}",
                 video_id=str(by_episode[row["id"]]["id"]),
             ) for row in spread),
@@ -245,7 +245,7 @@ def plan_blocked_show_acquisition(
         )
     else:
         ben = _require_exact_four(
-            (_candidate(row, "youtube_caption_discovery", "groq_asr")
+            (_candidate(row, "youtube_caption_discovery", "xai_rest_stt")
              for row in select_period_spread(ben_rows)),
             "the-ben-and-marc-show",
         )
@@ -254,21 +254,21 @@ def plan_blocked_show_acquisition(
         "channel": BEN_MARC_CHANNEL,
         "channel_sanity": sanity,
         "caption_first": True,
-        "asr_fallback_requires_groq": True,
+        "asr_fallback_requires_xai": True,
     }
 
     asr_only = ["search-engine", "tech-brew-ride-home"]
     prerequisites = []
     if not key_available:
         prerequisites.append({
-            "code": "missing_groq_api_key",
-            "environment_variable": "GROQ_API_KEY",
+            "code": "missing_xai_api_key",
+            "environment_variable": "XAI_API_KEY",
             "blocks": asr_only,
             "conditionally_blocks_fallback_for": [
                 "how-i-built-this", "marketplace-tech", "the-ben-and-marc-show",
             ],
             "message": (
-                "GROQ_API_KEY is required for the two ASR-only benchmark shows. "
+                "XAI_API_KEY is required for the two ASR-only benchmark shows. "
                 "It is also required if HIBT or Marketplace browser acquisition, "
                 "or the Ben and Marc caption lane, fails. "
                 "Acquire exactly four episodes per show; full-catalog ASR is out of scope."
@@ -301,7 +301,10 @@ def validate_transcript_ingest(*, text: str, duration_seconds: int | None,
 def load_browser_acquisition_overlay(receipt_path: Path) -> dict[str, object]:
     """Load a hash-frozen browser receipt as a private in-domain overlay."""
     payload = json.loads(receipt_path.read_text(encoding="utf-8"))
-    if payload.get("schema_version") != "pif_marketplace_benchmark_browser_receipt_v2":
+    if payload.get("schema_version") not in {
+        "pif_marketplace_benchmark_browser_receipt_v2",
+        "pif_benchmark_acquisition_receipt_v1",
+    }:
         raise ValueError("unsupported browser acquisition receipt")
     if payload.get("ready_for_benchmark_overlay") is not True:
         raise ValueError("browser acquisition receipt is not benchmark-ready")

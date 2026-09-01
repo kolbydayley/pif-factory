@@ -82,6 +82,21 @@ def test_numeric_spans_from_different_sources_never_match() -> None:
     assert result["evidence_overlap"] == 0.0
 
 
+def test_flattened_gold_rewards_indeterminable_and_penalizes_fabricated_speaker() -> None:
+    gold = _event(speaker="", role="unresolved_speaker")
+    indeterminable = _event(speaker="", role="unresolved_speaker")
+    correct = event_eligibility(gold, indeterminable, transcript_structure="flattened")
+    assert correct["eligible"] is True
+    assert correct["unsupported_attribution"] is False
+
+    fabricated = _event(speaker="Famous Host", role="direct_speech")
+    wrong = event_eligibility(gold, fabricated, transcript_structure="flattened")
+    assert wrong["eligible"] is False
+    assert "unsupported_attribution" in wrong["failures"]
+    scored = match_events([gold], [fabricated], transcript_structure="flattened")
+    assert scored["unsupported_attributions"] == 1
+
+
 def test_split_and_merge_credit_is_strictly_one_to_one() -> None:
     gold = [_event(start=0, end=100), _event(start=0, end=100)]
     merged_prediction = [_event(start=0, end=100)]

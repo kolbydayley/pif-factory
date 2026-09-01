@@ -1,0 +1,21 @@
+{
+  "assertions": {
+    "deterministic_envelope_shape": true,
+    "error_classes_compatible": true,
+    "schema_valid": true,
+    "token_accounting_complete": true
+  },
+  "cli_version": "0.147.0",
+  "counts": {
+    "envelope_shapes": 1,
+    "errors": 0,
+    "schema_valid": 10,
+    "token_accounted": 10
+  },
+  "manifest_sha256": "78864faef866f6cedd6e16ee072f1e9017c494d97ca5f80e3ef4168c0173d8ff",
+  "passed": true,
+  "privacy": "sanitized aggregate receipt; no transcript or model output text",
+  "protocol_schema_sha256": "ff10829cd75b67297019b39ab508ac699198574663579aa18336b7dc55ea178f",
+  "sample_size": 10,
+  "schema_version": "pif_signal_desk_rebuild_codex_protocol_pin_receipt_v1"
+}

@@ -231,7 +231,7 @@ def test_coverage_requires_temporal_breadth_and_reports_reason(tmp_path):
     assert "insufficient_publication_span" in diagnostic["blocking_reasons"]
 
 
-def test_duration_plausibility_and_all_flattened_are_not_covered(tmp_path):
+def test_duration_plausibility_and_flattened_transcripts_are_a_stratum(tmp_path):
     conn = _database(tmp_path)
     # Three episodes fail the shell-page plausibility guard. The remaining two
     # cannot satisfy the four-episode coverage contract.
@@ -261,7 +261,41 @@ def test_duration_plausibility_and_all_flattened_are_not_covered(tmp_path):
         )
     manifest = build_split_manifest(conn, project_root=tmp_path / "flat", ood_entries=_ood(tmp_path))
     diagnostic = next(row for row in manifest["coverage_diagnostics"] if row["show_id"] == "show-a")
-    assert diagnostic["blocking_reasons"] == ["all_selected_transcripts_are_flattened"]
+    assert diagnostic["covered"] is True
+    flat_windows = [row for row in manifest["windows"] if row["show_id"] == "show-a"]
+    assert {row["transcript_structure"] for row in flat_windows} == {"flattened"}
+    assert manifest["counts"]["by_transcript_structure"]["flattened"] == 12
+    packet = build_gold_packets(
+        manifest,
+        project_root=tmp_path / "flat",
+        gold_pass="A",
+        splits=("development",),
+    )[0]
+    assert packet["input"]["transcript_structure"] == "flattened"
+    assert "never infer a speaker" in packet["input"]["attribution_instruction"]
+
+
+def test_stale_hash_requires_explicit_refreeze_and_binds_current_revision(tmp_path):
+    conn = _database(tmp_path)
+    path = tmp_path / "show-a-ep-0.txt"
+    path.write_text(path.read_text(encoding="utf-8") + "\nCurrent revision.", encoding="utf-8")
+
+    blocked = build_split_manifest(conn, project_root=tmp_path)
+    diagnostic = next(row for row in blocked["coverage_diagnostics"] if row["show_id"] == "show-a")
+    assert any(key.startswith("stale_transcript_hash:") for key in diagnostic["rejection_counts"])
+
+    frozen = build_split_manifest(
+        conn,
+        project_root=tmp_path,
+        refreeze_current_transcript_bytes=True,
+    )
+    selected = [row for row in frozen["windows"] if row["episode_id"] == "show-a-ep-0"]
+    assert selected
+    for window in selected:
+        revision = window["transcript_revision"]
+        assert revision["stale_hash_refrozen"] is True
+        assert revision["recorded_sha256"] != revision["frozen_sha256"]
+        assert revision["frozen_sha256"] == window["transcript_sha256"]
 
 
 def test_partial_show_artifact_is_frozen_but_cannot_start_tournament(tmp_path):
