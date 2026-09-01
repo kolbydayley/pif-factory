@@ -38,7 +38,7 @@ def test_validation_holdout_and_audit_are_item_level_sealed() -> None:
 
 
 def test_plan_rejects_bad_concurrency_and_tampering() -> None:
-    with pytest.raises(GoldAuthoringPlanError, match="between 4 and 8"):
+    with pytest.raises(GoldAuthoringPlanError, match="between 2 and 8"):
         build_authoring_plan(_manifest(), concurrency=9)
     plan = build_authoring_plan(_manifest())
     plan["budget"]["eligible_for_gpt_5_5_rebuild_grant"] = True

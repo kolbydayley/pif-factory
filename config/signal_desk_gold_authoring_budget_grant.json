@@ -1,0 +1,17 @@
+{
+  "schema_version": "pif_signal_desk_gold_authoring_grant_v2",
+  "granted_at": "2026-09-01T12:46:17Z",
+  "expires_at": "2026-10-01T12:46:17Z",
+  "expiry_conditions": ["benchmark_gold_complete", "30_days"],
+  "scope": "gpt_5_6_sol_gold_authoring",
+  "model": "gpt-5.6-sol",
+  "purpose": "frozen_804_benchmark_gold_a_b_c_and_blind_audit_only",
+  "authorized_by": "Kolby",
+  "campaign_id": "signal-desk-clean-corpus-2026-08-31",
+  "benchmark_manifest_sha256": "063294a0fa721e522c873e228e8f4c3be0cc7d21341a518c820faff8ceb18a8e",
+  "binding_constraint": "provider_weekly_subscription_window",
+  "warning_percent": 85.0,
+  "kill_percent": 120.0,
+  "adaptive_concurrency": [2, 8],
+  "grant_sha256": "8b9879c092582d1589efe1d7600768af726d58625264414378a08260b64f8d8e"
+}

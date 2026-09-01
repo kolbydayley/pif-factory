@@ -188,18 +188,32 @@ the first clean release. It does not change the ordinary 5M global default.
 It is a GPT-5.5 publication-approval grant and is categorically unavailable to
 GPT-5.6-sol gold authoring.
 
-Gold authoring has its own measured preflight. The transport canary averaged
-25,654.2 tokens/call. Semantic prompt v1 then failed closed because it produced
-`quoted_speech` without a `quoted_person_id`; no output was accepted. Prompt v2
-made the field coupling explicit and passed all ten structure-stratified calls:
-345,403 tokens total, 34,540.3 mean, and 39,657 maximum. The 2,493 Gold
-A/B/C/audit calls therefore project to 86.1M tokens at the semantic mean and
-98.9M at the observed maximum. That does not fit the ordinary 5M/day governor.
-Using the maximum as a reserve and leaving a 10% daily safety margin permits at
-most 113 calls/day, or 23 days. The successful canary's 345,403 tokens are
-recorded in the shared ledger under `gpt_5_6_sol_gold_authoring`; no GPT-5.5
-grant was used. Bulk authoring remains fail-closed until the leased dispatcher
-reserves and records every call under that same lane.
+Gold authoring has its own owner-authorized grant at
+`config/signal_desk_gold_authoring_budget_grant.json`. It is restricted to
+GPT-5.6-sol medium Gold A/B/C and blind-audit calls for the frozen 804-window
+benchmark and cannot fund GPT-5.5 approval or any other work. The grant has no
+daily ceiling: the provider weekly subscription window is binding, with
+per-call reservations and usage settlement still mandatory. Concurrency adapts
+within 2-8 and begins at the measured-safe concurrency four. At 85% weekly
+consumption the lane notifies Kolby but continues. Actual provider exhaustion
+fails closed on a clean leased checkpoint and notifies the exact unblock; the
+supervisor resumes after calls succeed following a reset. A persistent kill at
+120% protects against ledger/provider drift. The grant expires automatically
+when all 804 A/B/C outputs and the three sealed audit slices complete, or after
+30 days, whichever comes first.
+
+The transport canary averaged 25,654.2 tokens/call. Semantic prompt v1 failed
+closed because it produced `quoted_speech` without a `quoted_person_id`; no
+output was accepted. Prompt v2 passed all ten structure-stratified Gold A
+calls. The J2/J3 measurement then used the same ten windows for B, C, and the
+independent audit: A mean/p90 34,540.3/39,288; B 34,983.6/40,725.1; C
+40,545.5/47,078.8; and audit 34,317.7/39,774.4 tokens. The revised full program
+estimate is 91,275,531 tokens, or 18.255 days at the ordinary 5M policy, so the
+weekly-window grant materially shortens the critical path. The dominant A/B/
+audit outlier was an ASR-diarized input; the C outlier was a flattened window
+with 56 events and was 82.7% input tokens. These are production-shaped strata,
+not benchmark exclusions. Every bulk call is leased, reserved, and recorded
+under `gpt_5_6_sol_gold_authoring`.
 
 Before corpus rebuild, useful campaign work must demonstrate five consecutive
 days (seven preferred) between 18M and 20M tokens without provider quota

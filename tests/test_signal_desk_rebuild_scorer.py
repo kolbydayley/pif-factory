@@ -82,6 +82,51 @@ def test_numeric_spans_from_different_sources_never_match() -> None:
     assert result["evidence_overlap"] == 0.0
 
 
+def test_clean_event_v2_fields_match_without_legacy_subject() -> None:
+    gold = {
+        "speaker_id": "Ajeya Cotra",
+        "attribution_type": "direct_speech",
+        "issue_label": "AI impact on employment",
+        "stance": "warning",
+        "evidence_start": 10,
+        "evidence_end": 80,
+        "claim_text": "AI deployment could displace some categories of work.",
+    }
+    predicted = dict(gold)
+    result = event_eligibility(gold, predicted)
+    assert result["eligible"] is True
+    assert result["gold_surface"]["issue"] == "ai impact on employment"
+    assert result["gold_surface"]["subject"] == ""
+
+
+def test_clean_event_role_entities_are_binding() -> None:
+    quoted = {
+        **_event(subject=""),
+        "speaker_role": "quoted_speech",
+        "quoted_person_id": "Dario Amodei",
+    }
+    wrong_quote = {**quoted, "quoted_person_id": "Sam Altman"}
+    assert "quoted_person_disagreement" in event_eligibility(quoted, wrong_quote)["failures"]
+
+    mentioned = {
+        **_event(subject=""),
+        "speaker_role": "third_party_mention",
+        "mentioned_person_ids": ["Dario Amodei", "Sam Altman"],
+    }
+    missing_person = {**mentioned, "mentioned_person_ids": ["Dario Amodei"]}
+    assert "mentioned_people_disagreement" in event_eligibility(
+        mentioned, missing_person
+    )["failures"]
+
+
+def test_issue_is_scored_after_matching_not_used_to_hide_event_recall() -> None:
+    gold = _event(issue="AI impact on employment")
+    predicted = _event(issue="automation and jobs")
+    result = event_eligibility(gold, predicted)
+    assert result["eligible"] is True
+    assert result["field_agreement"]["issue"] is False
+
+
 def test_flattened_gold_rewards_indeterminable_and_penalizes_fabricated_speaker() -> None:
     gold = _event(speaker="", role="unresolved_speaker")
     indeterminable = _event(speaker="", role="unresolved_speaker")

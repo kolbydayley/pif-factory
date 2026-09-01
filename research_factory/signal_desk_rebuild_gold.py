@@ -1142,8 +1142,30 @@ def select_blind_gold_audit_windows(
     verify_frozen_manifest(manifest)
     if not 0.0 < fraction <= 1.0:
         raise SignalDeskGoldError("audit fraction must be in (0, 1]")
-    count = math.ceil(len(manifest["windows"]) * fraction)
-    return tuple(_stratified_window_order(manifest["windows"], seed)[:count])
+    by_split: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for window in manifest["windows"]:
+        by_split[str(window["split"])].append(window)
+    total = math.ceil(len(manifest["windows"]) * fraction)
+    exact = {
+        split: (len(windows) * total / len(manifest["windows"]))
+        for split, windows in by_split.items()
+    }
+    allocation = {split: math.floor(value) for split, value in exact.items()}
+    remaining = total - sum(allocation.values())
+    for split in sorted(exact, key=lambda value: (-(exact[value] - allocation[value]), value))[:remaining]:
+        allocation[split] += 1
+    selected_by_split: dict[str, deque[str]] = {}
+    for split, windows in sorted(by_split.items()):
+        count = allocation[split]
+        selected_by_split[split] = deque(_stratified_window_order(windows, seed)[:count])
+    # Interleave the proportional slices so no downstream prefix can recreate
+    # the former lexicographic split bias.
+    selected: list[str] = []
+    while any(selected_by_split.values()):
+        for split in sorted(selected_by_split):
+            if selected_by_split[split]:
+                selected.append(selected_by_split[split].popleft())
+    return tuple(selected)
 
 
 def select_gold_audit(
@@ -1169,7 +1191,14 @@ def select_gold_audit(
         raise SignalDeskGoldError(f"event counts missing for {len(missing)} benchmark windows")
     if any(int(event_counts[window_id]) < 0 for window_id in window_ids):
         raise SignalDeskGoldError("gold event counts must be nonnegative")
-    order = _stratified_window_order(manifest["windows"], seed)
+    initial_order = list(select_blind_gold_audit_windows(
+        manifest, seed=seed, fraction=initial_windows / len(manifest["windows"])
+    ))
+    selected_set = set(initial_order)
+    order = initial_order + [
+        window_id for window_id in _stratified_window_order(manifest["windows"], seed)
+        if window_id not in selected_set
+    ]
     sample_size = min(initial_windows, len(order))
     total_events = sum(int(event_counts[window_id]) for window_id in order[:sample_size])
     while total_events < minimum_events and sample_size < len(order):

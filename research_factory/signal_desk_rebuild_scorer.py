@@ -18,8 +18,8 @@ from statistics import NormalDist
 from typing import Any, Mapping, Optional, Sequence
 
 
-SCORER_VERSION = "signal-desk-rebuild-scorer-v3"
-SPEC_VERSION = "signal-desk-rebuild-scorer-spec-v3"
+SCORER_VERSION = "signal-desk-rebuild-scorer-v4"
+SPEC_VERSION = "signal-desk-rebuild-scorer-spec-v4"
 EVIDENCE_OVERLAP_FLOOR = 0.50
 CLAIM_TEXT_F1_FLOOR = 0.30
 QUALIFICATION_ALPHA = 0.05
@@ -190,9 +190,15 @@ def _token_f1(left: Any, right: Any) -> float:
     return 2 * precision * recall / (precision + recall) if precision + recall else 0.0
 
 
+def _identity_set(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return ()
+    return tuple(sorted({_identity(item) for item in value if _identity(item)}))
+
+
 def event_surface(
     event: Mapping[str, Any], *, issue_registry: Optional[Mapping[str, Any]] = None
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """Normalize the fields that determine eligibility and diagnostics."""
 
     return {
@@ -214,8 +220,22 @@ def event_surface(
                 "actor.name",
             )
         ),
+        "quoted_person": _canonical(
+            _first(event, "quoted_person_id", "quoted_person.name", "quote.person_id")
+        ),
+        "mentioned_people": _identity_set(
+            _first(event, "mentioned_person_ids", "mentioned_people", "mentions.people")
+        ),
         "issue": _canonical(
-            _first(event, "issue_id", "topic_id", "issue", "target.issue_id", "target.candidate_concept"),
+            _first(
+                event,
+                "issue_id",
+                "topic_id",
+                "issue_label",
+                "issue",
+                "target.issue_id",
+                "target.candidate_concept",
+            ),
             issue_registry,
         ),
         "stance": _normalize_enum(_first(event, "stance", "position", "polarity"), _STANCE_ALIASES),
@@ -253,7 +273,7 @@ def event_eligibility(
     if flattened_indeterminable:
         if p["speaker"] or p["speaker_role"] != "unresolved_speaker":
             failures.append("unsupported_attribution")
-    for field in ("speaker", "speaker_role", "subject", "issue", "stance"):
+    for field in ("speaker", "speaker_role", "stance"):
         if flattened_indeterminable and field in {"speaker", "speaker_role"}:
             continue
         if not g[field] or not p[field]:
@@ -265,6 +285,29 @@ def event_eligibility(
                     failures.append(f"{field}_disagreement")
             else:
                 failures.append(f"{field}_disagreement")
+    # Subject is a legacy optional field and is absent from the clean-event
+    # contract. It remains binding when either side supplies it, avoiding a
+    # silent compatibility regression without penalizing clean v2 events.
+    if g["subject"] or p["subject"]:
+        if not g["subject"] or not p["subject"]:
+            failures.append("missing_subject")
+        elif g["subject"] != p["subject"]:
+            if structure == "asr_diarized" and p["subject"] in _gold_entity_forms(
+                gold, "subject_id", g["subject"]
+            ):
+                pass
+            else:
+                failures.append("subject_disagreement")
+    if g["speaker_role"] == "quoted_speech":
+        if not g["quoted_person"] or not p["quoted_person"]:
+            failures.append("missing_quoted_person")
+        elif g["quoted_person"] != p["quoted_person"]:
+            failures.append("quoted_person_disagreement")
+    if g["speaker_role"] == "third_party_mention":
+        if not g["mentioned_people"] or not p["mentioned_people"]:
+            failures.append("missing_mentioned_people")
+        elif g["mentioned_people"] != p["mentioned_people"]:
+            failures.append("mentioned_people_disagreement")
     if overlap < evidence_overlap_floor:
         failures.append("insufficient_evidence_overlap")
     claim_f1 = _token_f1(g["claim"], p["claim"])
@@ -284,6 +327,15 @@ def event_eligibility(
         "predicted_surface": p,
         "transcript_structure": structure,
         "unsupported_attribution": "unsupported_attribution" in failures,
+        "field_agreement": {
+            "speaker": g["speaker"] == p["speaker"],
+            "speaker_role": g["speaker_role"] == p["speaker_role"],
+            "subject": g["subject"] == p["subject"],
+            "issue": g["issue"] == p["issue"],
+            "stance": g["stance"] == p["stance"],
+            "quoted_person": g["quoted_person"] == p["quoted_person"],
+            "mentioned_people": g["mentioned_people"] == p["mentioned_people"],
+        },
     }
 
 
@@ -409,7 +461,27 @@ def scorer_specification() -> dict[str, Any]:
             "cross_source_numeric_spans": "ineligible",
             "text_fallback": "multiset_token_overlap_coefficient",
         },
-        "hard_agreement_fields": ["speaker", "speaker_role", "subject", "issue", "stance"],
+        "hard_agreement_fields": [
+            "speaker",
+            "speaker_role",
+            "stance",
+            "quoted_person_when_quoted_speech",
+            "mentioned_people_when_third_party_mention",
+            "subject_when_legacy_field_present",
+        ],
+        "diagnostic_agreement_fields": ["issue"],
+        "issue_policy": (
+            "issue labels are extraction-time proposals and do not control event matching; "
+            "issue agreement is scored on eligible matched pairs after canonicalization"
+        ),
+        "clean_event_mapping": {
+            "speaker": "speaker_id",
+            "speaker_role": "attribution_type",
+            "issue": "issue_label with issue_id/topic_id compatibility",
+            "quoted_person": "quoted_person_id when attribution_type is quoted_speech",
+            "mentioned_people": "mentioned_person_ids when attribution_type is third_party_mention",
+            "subject": "optional legacy compatibility field only",
+        },
         "transcript_structure_policy": {
             "speaker_turn": "full_speaker_and_role_agreement",
             "paragraph": "full_speaker_and_role_agreement_when_present",

@@ -24,7 +24,7 @@ SCHEMA_VERSION = "pif_signal_desk_rebuild_gold_authoring_plan_v1"
 GOLD_MODEL = "gpt-5.6-sol"
 GOLD_EFFORT = "medium"
 GOLD_PASSES = ("A", "B", "C")
-MIN_CONCURRENCY = 4
+MIN_CONCURRENCY = 2
 MAX_CONCURRENCY = 8
 GPT55_GRANT_MODEL = "gpt-5.5"
 
@@ -58,7 +58,7 @@ def build_authoring_plan(
     if not manifest.get("complete_benchmark") or len(manifest["windows"]) != 804:
         raise GoldAuthoringPlanError("gold authoring requires the complete frozen 804")
     if not MIN_CONCURRENCY <= concurrency <= MAX_CONCURRENCY:
-        raise GoldAuthoringPlanError("gold concurrency must be between 4 and 8")
+        raise GoldAuthoringPlanError("gold concurrency must be between 2 and 8")
 
     split_counts: dict[str, int] = {}
     for window in manifest["windows"]:

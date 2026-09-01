@@ -11,6 +11,7 @@ from research_factory.signal_desk_rebuild_gold import (
     build_gold_packets,
     build_split_manifest,
     freeze_per_show_artifacts,
+    select_blind_gold_audit_windows,
     select_gold_audit,
     verify_frozen_manifest,
 )
@@ -219,6 +220,18 @@ def test_gold_audit_expands_in_blocks_until_event_denominator_is_powered(tmp_pat
         expansion_block=10,
         minimum_events=350,
     )
+
+
+def test_blind_audit_is_proportional_across_every_split():
+    manifest = json.loads(
+        Path("work/signal-desk-rebuild/benchmark/partial-manifest.json").read_text()
+    )
+    selected = set(select_blind_gold_audit_windows(manifest))
+    counts = {}
+    for window in manifest["windows"]:
+        if window["window_id"] in selected:
+            counts[window["split"]] = counts.get(window["split"], 0) + 1
+    assert counts == {"development": 19, "validation": 40, "sealed_holdout": 22}
 
 
 def test_coverage_requires_temporal_breadth_and_reports_reason(tmp_path):
