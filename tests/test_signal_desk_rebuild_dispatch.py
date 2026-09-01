@@ -12,6 +12,7 @@ from research_factory.signal_desk_rebuild_dispatch import (
     TaskDefinitionConflict,
     acquire_lease,
     complete_attempt,
+    complete_resurrected_attempt_from_artifact,
     enqueue_task,
     fail_attempt_semantically,
     get_task,
@@ -234,6 +235,53 @@ def test_explicit_resurrection_appends_new_attempt_same_lineage(conn) -> None:
     )
     assert next_lease["current_attempt_id"] == attempts[1]["id"]
     assert next_lease["lease_kind"] == "initial"
+
+
+def test_explicit_resurrection_can_complete_from_validated_artifact(conn) -> None:
+    enqueue(conn)
+    lease = acquire_lease(conn, lease_owner="judge", lease_seconds=60, now=T0)
+    fail_attempt_semantically(
+        conn,
+        attempt_id=lease["current_attempt_id"],
+        lease_owner="judge",
+        lease_generation=lease["lease_generation"],
+        failure_code="offset_only",
+        failure_detail="verbatim excerpt had an incorrect offset",
+        now=T0 + timedelta(seconds=1),
+    )
+    resurrect_task(
+        conn,
+        task_key="window:1",
+        resurrected_by="operator",
+        reason="The preserved artifact was repaired and independently validated.",
+        now=T0 + timedelta(seconds=2),
+    )
+    recovered = complete_resurrected_attempt_from_artifact(
+        conn,
+        task_key="window:1",
+        recovered_by="contract-validator-v2",
+        output={"artifact_sha256": "a" * 64, "semantic_fields_changed": False},
+        now=T0 + timedelta(seconds=3),
+    )
+    assert recovered["status"] == "succeeded"
+    output = conn.execute(
+        "SELECT output_json FROM signal_desk_rebuild_attempts WHERE id=?",
+        (recovered["current_attempt_id"],),
+    ).fetchone()[0]
+    assert '"artifact_recovery":true' in output
+    assert '"semantic_fields_changed":false' in output
+
+
+def test_artifact_recovery_rejects_ordinary_pending_work(conn) -> None:
+    enqueue(conn)
+    with pytest.raises(InvalidTransition):
+        complete_resurrected_attempt_from_artifact(
+            conn,
+            task_key="window:1",
+            recovered_by="validator",
+            output={"artifact_sha256": "a" * 64},
+            now=T0 + timedelta(seconds=1),
+        )
 
 
 @pytest.mark.parametrize("state", ["pending", "running", "succeeded"])

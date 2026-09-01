@@ -509,6 +509,66 @@ def resurrect_task(
         return _task_snapshot(conn, int(task["id"]))
 
 
+def complete_resurrected_attempt_from_artifact(
+    conn: sqlite3.Connection,
+    *,
+    task_key: str,
+    recovered_by: str,
+    output: Mapping[str, Any],
+    now: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    """Complete a pending resurrection from an independently validated artifact.
+
+    This transition is intentionally unavailable to ordinary pending work. It
+    exists for a terminal attempt whose provider output was preserved, repaired
+    without semantic changes, and explicitly resurrected under A9. Replaying a
+    completed provider sidecar would be both wasteful and unsafe.
+    """
+
+    if not recovered_by.strip():
+        raise ValueError("recovered_by must be non-empty")
+    timestamp = _timestamp(now)
+    with _write_transaction(conn):
+        task = conn.execute(
+            "SELECT * FROM signal_desk_rebuild_tasks WHERE task_key = ?", (task_key,)
+        ).fetchone()
+        if task is None:
+            raise KeyError(task_key)
+        attempt = conn.execute(
+            "SELECT * FROM signal_desk_rebuild_attempts WHERE id = ?",
+            (int(task["current_attempt_id"]),),
+        ).fetchone()
+        if (
+            task["status"] != "pending"
+            or attempt is None
+            or attempt["status"] != "pending"
+            or attempt["resurrects_attempt_id"] is None
+            or not attempt["resurrection_reason"]
+        ):
+            raise InvalidTransition(
+                "artifact recovery requires a pending explicitly resurrected attempt"
+            )
+        recovery_output = {
+            **dict(output),
+            "artifact_recovery": True,
+            "recovered_by": recovered_by,
+            "resurrects_attempt_id": int(attempt["resurrects_attempt_id"]),
+        }
+        conn.execute(
+            """
+            UPDATE signal_desk_rebuild_attempts
+            SET status = 'succeeded', output_json = ?, completed_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (_canonical_json(recovery_output), timestamp, timestamp, int(attempt["id"])),
+        )
+        conn.execute(
+            "UPDATE signal_desk_rebuild_tasks SET status='succeeded',updated_at=? WHERE id=?",
+            (timestamp, int(task["id"])),
+        )
+        return _task_snapshot(conn, int(task["id"]))
+
+
 def get_task(conn: sqlite3.Connection, task_key: str) -> Dict[str, Any]:
     row = conn.execute(
         "SELECT id FROM signal_desk_rebuild_tasks WHERE task_key = ?", (task_key,)
