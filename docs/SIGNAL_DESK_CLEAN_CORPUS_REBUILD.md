@@ -20,7 +20,13 @@ Campaign: `signal-desk-clean-corpus-2026-08-31`
 
 ## Blocking order
 
-Round 1 cannot start until all four receipts are frozen:
+Round 1 cannot start until all four receipts are frozen. Gold authoring precedes
+all four and follows one fixed sequence: Gold A, Gold B, and Gold C over all
+804 windows; a deterministic blind reliability audit over 81 windows (10% of
+804, rounded up); then one single-pass GPT-5.6-sol run over development. The
+same development prediction-vs-gold pairs supply both the A1 frontier ceiling
+and A2's stratified scorer decisions. A2 may add adjudication calls, but it may
+not create a second prediction run.
 
 1. `scorer-qualified.json`: scorer specification/code/fixture hashes and a
    one-sided 95% Wilson LCB of at least 0.97 against GPT-5.6-sol adjudication.
@@ -46,7 +52,8 @@ development episode, two validation episodes, and one sealed episode, with
 three windows per episode. Four complete OOD shows remain source-disjoint and
 sealed.
 
-Gold audit begins at 120 windows and expands in 40-window blocks until it
+Gold audit begins at 81 windows, selected deterministically across the full
+804-window benchmark before answers are read, and expands in 40-window blocks until it
 contains at least 1,000 consequential events or exhausts the benchmark. The
 critical-error denominator is events; its one-sided 95% Wilson UCB must be below
 1%. Fabricated evidence, reversed meaning, wrong source, or unusable context is
@@ -78,7 +85,16 @@ contract versions, and gold outputs. This safely lets authoring proceed for the
 covered current and OOD shows while acquisition continues. The tournament,
 frontier-ceiling measurement, development-error reading, and deterministic
 gold-reliability audit remain blocked until all 57 in-domain and 10 OOD show
-artifacts assemble to exactly 804 frozen windows.
+artifacts assemble to exactly 804 frozen windows. Gold is authored for every
+split before the seal closes. Development item outputs are readable to prompt
+authors; validation, sealed holdout, and every blind-audit item output live only
+in sealed storage and expose aggregate reporting from authoring time onward.
+
+For ASR windows, entity truth binds to the spelling on the transcript surface.
+Gold metadata may record a canonical spelling as an alias. The scorer accepts
+the surface spelling, or that exact recorded alias, after casefolding and
+whitespace normalization; it never consults an external name registry and
+rejects every unrecorded third spelling.
 
 OOD fixtures live in a separate benchmark database and filesystem namespace,
 never in the canonical `episodes` or `segments` tables. Public aggregation is
@@ -169,6 +185,21 @@ The owner-authorized rebuild grant is
 `config/signal_desk_rebuild_budget_grant.json`. It authorizes 20M GPT-5.5
 subscription tokens/day only for this campaign until the earlier of 45 days or
 the first clean release. It does not change the ordinary 5M global default.
+It is a GPT-5.5 publication-approval grant and is categorically unavailable to
+GPT-5.6-sol gold authoring.
+
+Gold authoring has its own measured preflight. The transport canary averaged
+25,654.2 tokens/call. Semantic prompt v1 then failed closed because it produced
+`quoted_speech` without a `quoted_person_id`; no output was accepted. Prompt v2
+made the field coupling explicit and passed all ten structure-stratified calls:
+345,403 tokens total, 34,540.3 mean, and 39,657 maximum. The 2,493 Gold
+A/B/C/audit calls therefore project to 86.1M tokens at the semantic mean and
+98.9M at the observed maximum. That does not fit the ordinary 5M/day governor.
+Using the maximum as a reserve and leaving a 10% daily safety margin permits at
+most 113 calls/day, or 23 days. The successful canary's 345,403 tokens are
+recorded in the shared ledger under `gpt_5_6_sol_gold_authoring`; no GPT-5.5
+grant was used. Bulk authoring remains fail-closed until the leased dispatcher
+reserves and records every call under that same lane.
 
 Before corpus rebuild, useful campaign work must demonstrate five consecutive
 days (seven preferred) between 18M and 20M tokens without provider quota
@@ -233,7 +264,7 @@ not write canonical production tables.
 Codex CLI 0.147.0 is no longer a blocker. A ten-window structure-stratified
 canary passed schema validation, deterministic envelope shape, complete token
 accounting, and compatible error handling on all ten windows. The protocol
-schema and sanitized receipt are frozen in the repository. No tournament,
-development-error inspection, or complete gold-reliability audit is authorized
-until all 57 current and 10 OOD shows are frozen into the complete 804-window
-benchmark.
+schema and sanitized receipt are frozen in the repository. All 57 current and
+10 OOD shows are now frozen into the complete 804-window benchmark. Tournament
+and development-error inspection remain blocked on complete gold, its blind
+reliability audit, the shared A1/A2 run, scorer qualification, and frozen gates.

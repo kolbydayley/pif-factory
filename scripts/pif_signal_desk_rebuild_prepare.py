@@ -140,7 +140,7 @@ def prepare(
     if materialize_gold_packets:
         if not freeze:
             raise ValueError("gold packet materialization requires --freeze-qualified")
-        for gold_pass in ("A", "B"):
+        for gold_pass in ("A", "B", "C"):
             packets = build_gold_packets(
                 manifest,
                 project_root=project_root,
@@ -148,18 +148,20 @@ def prepare(
                 splits=("development", "validation", "sealed_holdout"),
                 allow_sealed=True,
             )
-            by_show: dict[str, list[dict[str, Any]]] = {}
+            by_split_show: dict[tuple[str, str], list[dict[str, Any]]] = {}
             for packet in packets:
-                by_show.setdefault(str(packet["input"]["show_id"]), []).append(packet)
-            for show_id, show_packets in by_show.items():
+                key = (str(packet["input"]["split"]), str(packet["input"]["show_id"]))
+                by_split_show.setdefault(key, []).append(packet)
+            for (split, show_id), show_packets in by_split_show.items():
+                # Validation and holdout are item-level sealed surfaces even
+                # when the same show also contributes a development episode.
                 destination = (
-                    "private-gold-sealed-inputs"
-                    if any(packet["input"].get("split") == "sealed_holdout" for packet in show_packets)
-                    and all(packet["input"].get("split") == "sealed_holdout" for packet in show_packets)
-                    else "private-gold-inputs"
+                    "private-gold-development-inputs"
+                    if split == "development"
+                    else "private-gold-sealed-inputs"
                 )
                 _write_json(
-                    output_root / destination / show_id / f"gold-{gold_pass}.json",
+                    output_root / destination / split / show_id / f"gold-{gold_pass}.json",
                     show_packets,
                 )
         summary["private_gold_packets_materialized"] = True

@@ -18,8 +18,8 @@ from statistics import NormalDist
 from typing import Any, Mapping, Optional, Sequence
 
 
-SCORER_VERSION = "signal-desk-rebuild-scorer-v2"
-SPEC_VERSION = "signal-desk-rebuild-scorer-spec-v2"
+SCORER_VERSION = "signal-desk-rebuild-scorer-v3"
+SPEC_VERSION = "signal-desk-rebuild-scorer-spec-v3"
 EVIDENCE_OVERLAP_FLOOR = 0.50
 CLAIM_TEXT_F1_FLOOR = 0.30
 QUALIFICATION_ALPHA = 0.05
@@ -118,6 +118,23 @@ def _alias_table(registry: Optional[Mapping[str, Any]]) -> dict[str, str]:
 def _canonical(value: Any, registry: Optional[Mapping[str, Any]] = None) -> str:
     normalized = _identity(value)
     return _alias_table(registry).get(normalized, normalized)
+
+
+def _gold_entity_forms(gold: Mapping[str, Any], field: str, surface: str) -> set[str]:
+    """Return only transcript-bound forms explicitly frozen into gold.
+
+    ASR gold uses the transcript-surface spelling as authority. A canonical
+    correction is eligible only when the gold author recorded it as an alias;
+    this intentionally does not consult an external person registry.
+    """
+
+    forms = {_identity(surface)} if _identity(surface) else set()
+    aliases = gold.get("entity_aliases") or {}
+    if isinstance(aliases, Mapping):
+        values = aliases.get(field) or []
+        if isinstance(values, Sequence) and not isinstance(values, (str, bytes)):
+            forms.update(_identity(value) for value in values if _identity(value))
+    return forms
 
 
 def _source_key(event: Mapping[str, Any]) -> str:
@@ -242,7 +259,12 @@ def event_eligibility(
         if not g[field] or not p[field]:
             failures.append(f"missing_{field}")
         elif g[field] != p[field]:
-            failures.append(f"{field}_disagreement")
+            if structure == "asr_diarized" and field in {"speaker", "subject"}:
+                alias_field = "speaker_id" if field == "speaker" else "subject_id"
+                if p[field] not in _gold_entity_forms(gold, alias_field, g[field]):
+                    failures.append(f"{field}_disagreement")
+            else:
+                failures.append(f"{field}_disagreement")
     if overlap < evidence_overlap_floor:
         failures.append("insufficient_evidence_overlap")
     claim_f1 = _token_f1(g["claim"], p["claim"])
@@ -396,9 +418,16 @@ def scorer_specification() -> dict[str, Any]:
                 "speaker is an attribution error"
             ),
             "asr_diarized": (
-                "reported separately; window text may omit speaker labels, so unsupported named "
-                "attribution is an error and proper-name variants must not create new entities"
+                "gold binds to normalized transcript-surface entity forms; a canonical spelling "
+                "matches only when frozen in gold entity_aliases; every third spelling is an error"
             ),
+        },
+        "asr_entity_matching": {
+            "surface_normalization": "unicode string casefold plus collapsed whitespace",
+            "gold_authority": "transcript_surface_form",
+            "canonical_form": "eligible_only_when_recorded_in_gold_entity_aliases",
+            "external_registry_lookup": "forbidden",
+            "unrecorded_third_form": "entity_disagreement",
         },
         "claim_text": {
             "kind": "multiset_token_f1",

@@ -1131,18 +1131,36 @@ def _stratified_window_order(windows: Sequence[Mapping[str, Any]], seed: str) ->
     return order
 
 
+def select_blind_gold_audit_windows(
+    manifest: Mapping[str, Any],
+    *,
+    seed: str = DEFAULT_SEED,
+    fraction: float = 0.10,
+) -> tuple[str, ...]:
+    """Freeze the blind reliability sample before any gold answer is read."""
+
+    verify_frozen_manifest(manifest)
+    if not 0.0 < fraction <= 1.0:
+        raise SignalDeskGoldError("audit fraction must be in (0, 1]")
+    count = math.ceil(len(manifest["windows"]) * fraction)
+    return tuple(_stratified_window_order(manifest["windows"], seed)[:count])
+
+
 def select_gold_audit(
     manifest: Mapping[str, Any],
     event_counts: Mapping[str, int],
     *,
     seed: str = DEFAULT_SEED,
-    initial_windows: int = 120,
+    initial_windows: int | None = None,
     expansion_block: int = 40,
     minimum_events: int = 1_000,
 ) -> dict[str, Any]:
     """Select a deterministic stratified audit, expanding for event power."""
 
     verify_frozen_manifest(manifest)
+    if initial_windows is None:
+        # Exactly ten percent of the complete benchmark, rounded up: 81/804.
+        initial_windows = math.ceil(len(manifest["windows"]) * 0.10)
     if initial_windows < 1 or expansion_block < 1 or minimum_events < 1:
         raise SignalDeskGoldError("invalid audit sampling contract")
     window_ids = {str(row["window_id"]) for row in manifest["windows"]}

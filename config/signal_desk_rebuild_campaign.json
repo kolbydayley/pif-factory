@@ -23,7 +23,8 @@
     "windows_per_episode": 3,
     "per_show_gate_minimum_consequential_events": 50,
     "gold_audit": {
-      "initial_windows": 120,
+      "initial_windows": 81,
+      "sampling_fraction": 0.10,
       "expansion_windows": 40,
       "minimum_events": 1000,
       "critical_event_error_ucb": 0.01,
@@ -145,12 +146,38 @@
     "total_glm_ceiling": 23
   },
   "scorer_qualification": {
+    "prediction_source": "same_gpt_5_6_sol_single_pass_development_calibration_used_for_frontier_ceiling",
     "initial_decisions": 100,
     "expansion_decisions": 50,
     "maximum_decisions": 500,
     "minimum_error_families": 10,
     "agreement_lcb": 0.97,
     "alpha": 0.05
+  },
+  "gold_authoring": {
+    "sequence": [
+      "gold_a_all_splits",
+      "gold_b_all_splits",
+      "gold_c_all_splits",
+      "blind_reliability_audit_full_benchmark",
+      "single_pass_development_calibration",
+      "scorer_decision_qualification_from_same_calibration_pairs"
+    ],
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "medium",
+    "concurrency_minimum": 4,
+    "concurrency_maximum": 8,
+    "gold_calls": 2493,
+    "gold_call_breakdown": {
+      "gold_a": 804,
+      "gold_b": 804,
+      "gold_c": 804,
+      "blind_audit": 81
+    },
+    "gpt_5_5_rebuild_grant_eligible": false,
+    "sealed_item_outputs": ["validation", "sealed_holdout", "blind_audit"],
+    "visible_item_outputs": ["development"],
+    "sealed_reporting": "aggregate_only"
   },
   "gate_margins_from_measured_frontier": {
     "macro_composite_points": 0.02,

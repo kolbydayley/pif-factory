@@ -97,6 +97,36 @@ def test_flattened_gold_rewards_indeterminable_and_penalizes_fabricated_speaker(
     assert scored["unsupported_attributions"] == 1
 
 
+def test_asr_entities_bind_surface_and_only_frozen_canonical_alias() -> None:
+    gold = {
+        **_event(speaker="Fluenz", subject="Benaich"),
+        "entity_aliases": {
+            "speaker_id": ["Fluence"],
+            "subject_id": ["Nathan Benaich"],
+        },
+    }
+    surface = event_eligibility(
+        gold,
+        _event(speaker="fluenz", subject="benaich"),
+        transcript_structure="asr_diarized",
+    )
+    canonical = event_eligibility(
+        gold,
+        _event(speaker="Fluence", subject="Nathan Benaich"),
+        transcript_structure="asr_diarized",
+    )
+    invented = event_eligibility(
+        gold,
+        _event(speaker="Florence", subject="Nathan Benay"),
+        transcript_structure="asr_diarized",
+    )
+    assert surface["eligible"] is True
+    assert canonical["eligible"] is True
+    assert invented["eligible"] is False
+    assert "speaker_disagreement" in invented["failures"]
+    assert "subject_disagreement" in invented["failures"]
+
+
 def test_split_and_merge_credit_is_strictly_one_to_one() -> None:
     gold = [_event(start=0, end=100), _event(start=0, end=100)]
     merged_prediction = [_event(start=0, end=100)]

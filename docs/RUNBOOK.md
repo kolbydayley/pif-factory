@@ -66,6 +66,24 @@ campaign `signal-desk-clean-corpus-2026-08-31`, expiring after 45 days or the
 first clean release. The rebuild governor is
 `research_factory/signal_desk_rebuild_budget.py`; other lanes cannot use it.
 
+The exception is GPT-5.5-only. GPT-5.6-sol gold authoring stays under the
+ordinary 5M/day governor and uses lane `gpt_5_6_sol_gold_authoring`. Freeze its
+split-isolated plan and inputs without spending tokens:
+
+```bash
+cd ~/pif-factory && python3 -B scripts/pif_signal_desk_rebuild_plan_gold.py \
+  --materialize-inputs
+```
+
+The expected receipt is 2,493 gold calls (804 each for A/B/C plus an 81-window
+blind audit), with validation, holdout, and audit packets under
+`sealed_item_storage`. Never copy those item files into development paths.
+The semantic canary reserve is 39,657 tokens/call. Keep a 10% safety margin:
+no more than 113 gold calls in one otherwise-empty 5M budget window. Every
+started call, including failures, must append usage to the shared subscription
+ledger with lane `gpt_5_6_sol_gold_authoring`. Do not run bulk gold until the
+leased worker enforces both reservation and append-only metering.
+
 Before full rebuild, the campaign must record 5 consecutive useful-work days
 (7 preferred) at 18M-20M tokens without a provider quota failure. A file named
 `KILL-signal-desk-clean-corpus-2026-08-31.json` means the 120% campaign limit
