@@ -305,7 +305,10 @@ def _publication_period_choice(
     return ([] if reasons else chosen), reasons
 
 
-def _canonical_transcript_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+def _canonical_transcript_rows(
+    conn: sqlite3.Connection,
+    external_entries: Sequence[Mapping[str, Any]] = (),
+) -> list[dict[str, Any]]:
     source_columns = _table_columns(conn, "sources")
     episode_columns = _table_columns(conn, "episodes")
     transcript_columns = _table_columns(conn, "transcripts")
@@ -371,6 +374,51 @@ def _canonical_transcript_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]
             )
         )
         selected.append(candidates[0])
+    for entry in external_entries:
+        source_id = str(entry.get("source_id") or "")
+        if not source_id:
+            raise SignalDeskGoldError("external in-domain entry requires source_id")
+        for episode in entry.get("episodes") or ():
+            episode_id = str(episode.get("episode_id") or "")
+            transcript_path = str(episode.get("transcript_path") or "")
+            transcript_sha = str(episode.get("transcript_sha256") or "")
+            if not episode_id or not transcript_path or len(transcript_sha) != 64:
+                raise SignalDeskGoldError("external in-domain episode metadata is incomplete")
+            metadata = conn.execute(
+                """SELECT s.id source_id, s.name show_name, s.rss_url,
+                          e.id episode_id, e.guid episode_guid,
+                          e.title episode_title, e.published_at,
+                          e.duration_seconds
+                     FROM episodes e JOIN sources s ON s.id=e.source_id
+                    WHERE e.id=? AND s.id=?""",
+                (episode_id, source_id),
+            ).fetchone()
+            if metadata is None:
+                raise SignalDeskGoldError(
+                    f"external benchmark episode is not in the canonical catalog: {episode_id}"
+                )
+            metadata_dict = (
+                dict(metadata)
+                if isinstance(metadata, sqlite3.Row)
+                else dict(zip(
+                    ("source_id", "show_name", "rss_url", "episode_id", "episode_guid",
+                     "episode_title", "published_at", "duration_seconds"),
+                    metadata,
+                ))
+            )
+            metadata_dict.update(
+                {
+                    "transcript_id": f"benchmark_external_{episode_id}",
+                    "raw_text_path": transcript_path,
+                    "raw_text_sha256": transcript_sha,
+                    "cleaned_text_path": None,
+                    "cleaned_text_sha256": None,
+                    "preparation_quality": 1.0,
+                    "preparation_status": None,
+                    "use_prepared": False,
+                }
+            )
+            selected.append(metadata_dict)
     return selected
 
 
@@ -443,13 +491,16 @@ def _build_in_domain(
     seed: str,
     max_chars: int,
     show_aliases: Mapping[str, str] | None = None,
+    external_entries: Sequence[Mapping[str, Any]] = (),
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    rows = _canonical_transcript_rows(conn)
+    rows = _canonical_transcript_rows(conn, external_entries)
     by_feed = _validate_unique_feeds(rows, show_aliases)
     windows: list[dict[str, Any]] = []
     shows: list[dict[str, Any]] = []
     diagnostics: list[dict[str, Any]] = []
+    processed_feeds: set[str] = set()
     for feed, candidates in sorted(by_feed.items()):
+        processed_feeds.add(feed)
         eligible: list[tuple[dict[str, Any], Path, str, str, tuple[dict[str, Any], ...]]] = []
         rejection_counts: dict[str, int] = defaultdict(int)
         canonical_ids = {
@@ -547,6 +598,37 @@ def _build_in_domain(
                 "qualifying_transcripts": len(eligible),
                 "selected_episode_ids": show_episode_ids,
                 "blocking_reasons": [],
+            }
+        )
+    source_enabled = "WHERE enabled=1" if "enabled" in _table_columns(conn, "sources") else ""
+    for source in conn.execute(
+        f"SELECT id, name, rss_url FROM sources {source_enabled} ORDER BY id"
+    ):
+        source_row = dict(source) if isinstance(source, sqlite3.Row) else {
+            "id": source[0], "name": source[1], "rss_url": source[2]
+        }
+        source_id = str(source_row["id"])
+        canonical_id = str((show_aliases or {}).get(source_id, source_id))
+        if canonical_id != source_id:
+            continue
+        feed = normalize_feed_url(str(source_row.get("rss_url") or ""))
+        if not feed or feed in processed_feeds:
+            continue
+        episode_count = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM episodes WHERE source_id=?", (source_id,)
+            ).fetchone()[0]
+        )
+        diagnostics.append(
+            {
+                "show_id": source_id,
+                "show_name": str(source_row["name"]),
+                "canonical_feed": feed,
+                "covered": False,
+                "candidate_episodes": episode_count,
+                "qualifying_transcripts": 0,
+                "rejection_counts": {},
+                "blocking_reasons": ["no_ready_local_transcripts"],
             }
         )
     return shows, windows, diagnostics
@@ -691,6 +773,7 @@ def build_split_manifest(
     expected_in_domain_shows: int | None = None,
     expected_ood_shows: int | None = None,
     show_aliases: Mapping[str, str] | None = None,
+    in_domain_entries: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     """Build and hash-freeze a deterministic split manifest."""
 
@@ -700,6 +783,7 @@ def build_split_manifest(
         seed=seed,
         max_chars=max_chars,
         show_aliases=show_aliases,
+        external_entries=in_domain_entries,
     )
     ood_shows, ood_windows = _build_ood(
         ood_entries, project_root=project_root, seed=seed, max_chars=max_chars

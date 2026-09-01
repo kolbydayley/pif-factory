@@ -146,6 +146,21 @@ def test_campaign_show_counts_are_explicit_not_silently_underfilled(tmp_path):
         )
 
 
+def test_sources_with_no_ready_transcripts_are_reported_not_silently_absent(tmp_path):
+    conn = _database(tmp_path)
+    conn.execute(
+        "INSERT INTO sources VALUES (?,?,?,?)",
+        ("show-empty", "Empty Show", "https://feeds.example/empty", 1),
+    )
+    manifest = build_split_manifest(conn, project_root=tmp_path)
+    diagnostic = next(
+        row for row in manifest["coverage_diagnostics"]
+        if row["show_id"] == "show-empty"
+    )
+    assert diagnostic["covered"] is False
+    assert diagnostic["blocking_reasons"] == ["no_ready_local_transcripts"]
+
+
 def test_private_gold_a_b_c_packets_share_exact_glm_contract_and_sealed_is_guarded(tmp_path):
     conn = _database(tmp_path)
     manifest = build_split_manifest(conn, project_root=tmp_path, ood_entries=_ood(tmp_path))
@@ -269,3 +284,44 @@ def test_partial_show_artifact_is_frozen_but_cannot_start_tournament(tmp_path):
     assert artifact["dev_error_reading_allowed"] is False
     with pytest.raises(SignalDeskGoldError, match=r"57 current \+ 10 OOD"):
         assemble_complete_frozen_manifest(artifacts)
+
+
+def test_private_browser_overlay_adds_coverage_without_canonical_transcript_rows(tmp_path):
+    conn = _database(tmp_path)
+    conn.execute(
+        "INSERT INTO sources VALUES (?,?,?,?)",
+        ("show-b", "Show B", "https://feeds.example/b", 1),
+    )
+    episodes = []
+    for index, published_at in enumerate(
+        ("2025-01-01", "2025-04-01", "2025-07-01", "2025-10-01")
+    ):
+        episode_id = f"show-b-ep-{index}"
+        text = "\n\n".join(
+            f"Host: Browser transcript {index}, turn {turn}, with enough exact words."
+            for turn in range(90)
+        )
+        path = tmp_path / f"{episode_id}.txt"
+        path.write_text(text, encoding="utf-8")
+        digest = __import__("hashlib").sha256(text.encode()).hexdigest()
+        conn.execute(
+            "INSERT INTO episodes VALUES (?,?,?,?,?,?)",
+            (episode_id, "show-b", f"show-b-guid-{index}", f"B {index}", published_at, 600),
+        )
+        episodes.append(
+            {
+                "episode_id": episode_id,
+                "transcript_path": str(path),
+                "transcript_sha256": digest,
+            }
+        )
+    manifest = build_split_manifest(
+        conn,
+        project_root=tmp_path,
+        in_domain_entries=({"source_id": "show-b", "episodes": episodes},),
+    )
+    assert manifest["counts"]["shows"] == 2
+    assert {show["show_id"] for show in manifest["shows"]} == {"show-a", "show-b"}
+    assert conn.execute(
+        "SELECT COUNT(*) FROM transcripts WHERE episode_id LIKE 'show-b-%'"
+    ).fetchone()[0] == 0

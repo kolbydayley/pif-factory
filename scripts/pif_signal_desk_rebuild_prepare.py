@@ -25,6 +25,9 @@ from research_factory.signal_desk_rebuild_gold import (  # noqa: E402
     build_split_manifest,
     freeze_per_show_artifacts,
 )
+from research_factory.signal_desk_rebuild_acquisition import (  # noqa: E402
+    load_browser_acquisition_overlay,
+)
 from research_factory.util import write_text_atomic  # noqa: E402
 
 
@@ -41,16 +44,19 @@ def prepare(
     show_alias_path: Path,
     freeze: bool,
     materialize_gold_packets: bool,
+    acquisition_receipts: Sequence[Path] = (),
 ) -> dict[str, Any]:
     aliases_payload = json.loads(show_alias_path.read_text(encoding="utf-8"))
     aliases = aliases_payload.get("aliases") or {}
     conn = sqlite3.connect(database)
     conn.row_factory = sqlite3.Row
+    overlays = [load_browser_acquisition_overlay(path) for path in acquisition_receipts]
     try:
         manifest = build_split_manifest(
             conn,
             project_root=project_root,
             show_aliases=aliases,
+            in_domain_entries=overlays,
         )
     finally:
         conn.close()
@@ -124,6 +130,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--freeze-qualified", action="store_true")
     parser.add_argument("--materialize-gold-packets", action="store_true")
+    parser.add_argument(
+        "--acquisition-receipt",
+        action="append",
+        type=Path,
+        default=[],
+        help="Private browser acquisition receipt to overlay without canonical ingest",
+    )
     args = parser.parse_args(argv)
     result = prepare(
         database=args.database.resolve(),
@@ -132,6 +145,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         show_alias_path=args.show_aliases.resolve(),
         freeze=args.freeze_qualified,
         materialize_gold_packets=args.materialize_gold_packets,
+        acquisition_receipts=tuple(path.resolve() for path in args.acquisition_receipt),
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0

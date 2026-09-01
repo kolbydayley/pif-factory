@@ -11,6 +11,7 @@ from research_factory.signal_desk_rebuild_acquisition import (
     plan_blocked_show_acquisition,
     select_period_spread,
     validate_transcript_ingest,
+    load_browser_acquisition_overlay,
 )
 
 
@@ -143,3 +144,39 @@ def test_ingest_guard_is_words_at_least_duration_divided_by_ten_minutes() -> Non
                                    episode_id="shell")
     validate_transcript_ingest(text="word " * 600, duration_seconds=3600,
                                episode_id="real")
+
+
+def test_browser_receipt_overlay_revalidates_hash_and_plausibility(tmp_path) -> None:
+    import hashlib
+    import json
+
+    selected = []
+    for index in range(4):
+        text = "word " * 700
+        path = tmp_path / f"episode-{index}.txt"
+        path.write_text(text, encoding="utf-8")
+        selected.append(
+            {
+                "id": f"episode-{index}",
+                "duration": 3600,
+                "path": str(path),
+                "sha256": hashlib.sha256(text.encode()).hexdigest(),
+            }
+        )
+    receipt = tmp_path / "receipt.json"
+    receipt.write_text(
+        json.dumps(
+            {
+                "schema_version": "pif_marketplace_benchmark_browser_receipt_v2",
+                "source_id": "marketplace-tech",
+                "ready_for_benchmark_overlay": True,
+                "selected": selected,
+            }
+        )
+    )
+    overlay = load_browser_acquisition_overlay(receipt)
+    assert overlay["source_id"] == "marketplace-tech"
+    assert len(overlay["episodes"]) == 4
+    (tmp_path / "episode-0.txt").write_text("changed")
+    with pytest.raises(ValueError, match="shell suspected|hash changed"):
+        load_browser_acquisition_overlay(receipt)

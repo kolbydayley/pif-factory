@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import sqlite3
 from typing import Iterable, Mapping, Sequence
+import json
 
 from research_factory.ingest import assert_transcript_plausible
 
@@ -295,3 +296,34 @@ def validate_transcript_ingest(*, text: str, duration_seconds: int | None,
         duration_seconds=duration_seconds,
         episode_id=episode_id,
     )
+
+
+def load_browser_acquisition_overlay(receipt_path: Path) -> dict[str, object]:
+    """Load a hash-frozen browser receipt as a private in-domain overlay."""
+    payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    if payload.get("schema_version") != "pif_marketplace_benchmark_browser_receipt_v2":
+        raise ValueError("unsupported browser acquisition receipt")
+    if payload.get("ready_for_benchmark_overlay") is not True:
+        raise ValueError("browser acquisition receipt is not benchmark-ready")
+    episodes = []
+    for row in payload.get("selected") or ():
+        path = Path(str(row.get("path") or "")).expanduser().resolve()
+        text = path.read_text(encoding="utf-8")
+        validate_transcript_ingest(
+            text=text,
+            duration_seconds=int(row["duration"]),
+            episode_id=str(row["id"]),
+        )
+        digest = __import__("hashlib").sha256(text.encode("utf-8")).hexdigest()
+        if digest != row.get("sha256"):
+            raise ValueError("browser acquisition transcript hash changed")
+        episodes.append(
+            {
+                "episode_id": str(row["id"]),
+                "transcript_path": str(path),
+                "transcript_sha256": digest,
+            }
+        )
+    if len(episodes) != EPISODES_PER_SHOW:
+        raise ValueError("browser acquisition overlay requires exactly four episodes")
+    return {"source_id": str(payload["source_id"]), "episodes": episodes}

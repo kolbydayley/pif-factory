@@ -159,11 +159,24 @@ opened holdout.
 
 ## Current pre-tournament coverage result
 
-Read-only validation against `data/factory.sqlite` on 2026-08-31 found 57
-canonical enabled feeds after adjudicating the duplicate Decoder source, but
-only 52 currently have four eligible local transcripts under the frozen 1/2/1
-split contract. The five coverage blockers are How I Built This, Marketplace
-Tech, Search Engine, Tech Brew Ride Home, and The Ben and Marc Show. The builder
-fails closed at 52/57; it does not silently reduce the benchmark or begin the
-tournament. Transcript coverage for those sources, or a new explicitly
-approved benchmark contract, is required first.
+The original row-count preflight reported 52/57, but the amended qualifying
+episode contract disproved that number. Read-only validation on 2026-08-31
+found only 31 canonical current shows with four publication-spread,
+episode-disjoint, structurally usable transcripts. The rendered Marketplace
+lane then acquired and hash-froze four qualifying episodes without inserting
+them into canonical production tables, bringing the authorable current set to
+32 shows / 384 windows.
+
+Twenty-five current shows remain blocked: 20 contain only flattened selected
+transcripts (Security Now also lacks temporal breadth), The Gradient has fewer
+than four qualifying dated transcripts, The Ben and Marc Show's nine local
+records fail their frozen hash checks, and How I Built This, Search Engine, and
+Tech Brew Ride Home have no ready local transcript. The same audit found stale
+transcript hashes in several other blocked shows; those files are rejected,
+never silently re-hashed.
+
+The 32 per-show artifacts and private Gold A/B inputs are frozen locally, but
+no tournament, development-error inspection, or full reliability audit is
+authorized. GPT-5.6-sol execution is additionally blocked until the verified
+Codex app-server protocol pin (0.144.1) is reconciled with the installed CLI
+(0.147.0); model calls do not bypass that attestation.
