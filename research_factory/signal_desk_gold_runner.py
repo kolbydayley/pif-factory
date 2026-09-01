@@ -53,11 +53,19 @@ def repair_unique_evidence_offsets(
         ):
             continue
         first = transcript_window.find(evidence) if evidence else -1
-        if first < 0 or transcript_window.find(evidence, first + 1) >= 0:
+        if first >= 0 and transcript_window.find(evidence, first + 1) < 0:
+            event["evidence_start"] = first
+            event["evidence_end"] = first + len(evidence)
+            count += 1
             continue
-        event["evidence_start"] = first
-        event["evidence_end"] = first + len(evidence)
-        count += 1
+        # Flattened captions occasionally omit or add a space while copying.
+        # Restore only source whitespace at the declared span; any non-space
+        # character disagreement remains a semantic contract failure.
+        if 0 <= declared_start < declared_end <= len(transcript_window):
+            declared_source = transcript_window[declared_start:declared_end]
+            if evidence and "".join(evidence.split()) == "".join(declared_source.split()):
+                event["evidence_text"] = declared_source
+                count += 1
     return repaired, count
 
 

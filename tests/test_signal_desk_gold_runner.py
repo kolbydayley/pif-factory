@@ -45,3 +45,23 @@ def test_ambiguous_excerpt_is_never_rebound():
     )
     assert count == 0
     assert repaired == output
+
+
+def test_declared_span_may_restore_source_whitespace_only():
+    output = {
+        "events": [
+            {"evidence_text": "caption text", "evidence_start": 0, "evidence_end": 11}
+        ]
+    }
+    repaired, count = repair_unique_evidence_offsets(
+        output, transcript_window="captiontext"
+    )
+    assert count == 1
+    assert repaired["events"][0]["evidence_text"] == "captiontext"
+
+    changed, changed_count = repair_unique_evidence_offsets(
+        {"events": [{"evidence_text": "caption best", "evidence_start": 0, "evidence_end": 11}]},
+        transcript_window="captiontext",
+    )
+    assert changed_count == 0
+    assert changed["events"][0]["evidence_text"] == "caption best"
