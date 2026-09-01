@@ -1,0 +1,11 @@
+{
+  "schema_version": "pif_signal_desk_rebuild_budget_grant_v1",
+  "granted_at": "2026-09-01T00:05:24Z",
+  "expires_at": "2026-10-16T00:05:24Z",
+  "expiry_condition": "first_clean_release",
+  "daily_cap_tokens": 20000000,
+  "scope": "signal-desk-clean-corpus-rebuild",
+  "authorized_by": "Kolby",
+  "campaign_id": "signal-desk-clean-corpus-2026-08-31",
+  "grant_sha256": "13cfabf2c5a654595d2d49851fb02b5059f1a91a45e4760e266bab2270445dba"
+}

@@ -1,0 +1,14 @@
+{
+  "schema_version": "pif_signal_desk_show_aliases_v1",
+  "aliases": {
+    "decoder": "decoder-with-nilay-patel"
+  },
+  "adjudications": [
+    {
+      "alias_source_id": "decoder",
+      "canonical_source_id": "decoder-with-nilay-patel",
+      "reason": "Both source rows resolve to https://feeds.megaphone.fm/recodedecode; all 9 alias episodes duplicate canonical GUIDs.",
+      "evidence_date": "2026-08-31"
+    }
+  ]
+}

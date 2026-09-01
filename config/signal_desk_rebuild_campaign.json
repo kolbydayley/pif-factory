@@ -1,0 +1,106 @@
+{
+  "schema_version": "pif_signal_desk_rebuild_campaign_v1",
+  "campaign_id": "signal-desk-clean-corpus-2026-08-31",
+  "public_intelligence_state": "withdrawn_until_clean_release",
+  "window_contract": {
+    "baseline_characters": 6000,
+    "gold_and_glm_schema_identical": true,
+    "gold_author_model": "gpt-5.6-sol",
+    "gold_reasoning_effort": "medium",
+    "approval_model": "gpt-5.5"
+  },
+  "benchmark": {
+    "total_windows": 804,
+    "canonical_in_domain_shows": 57,
+    "ood_shows": 10,
+    "in_domain_windows": 684,
+    "ood_windows": 120,
+    "episodes_per_show": {
+      "development": 1,
+      "validation": 2,
+      "sealed_holdout": 1
+    },
+    "windows_per_episode": 3,
+    "per_show_gate_minimum_consequential_events": 50,
+    "gold_audit": {
+      "initial_windows": 120,
+      "expansion_windows": 40,
+      "minimum_events": 1000,
+      "critical_event_error_ucb": 0.01,
+      "catastrophic_window_errors_allowed": 0,
+      "alpha": 0.05
+    }
+  },
+  "ood_cohorts": {
+    "claim_dense": [
+      "Freakonomics",
+      "Fresh Air",
+      "This American Life",
+      "Hidden Brain",
+      "On Being"
+    ],
+    "narrative": ["The Moth", "Ear Hustle", "99% Invisible"],
+    "format_stress": ["Gastropod", "The Allusionist"],
+    "sealed_source_shape_counts": {
+      "claim_dense": 2,
+      "narrative": 1,
+      "format_stress": 1
+    }
+  },
+  "concurrency": {
+    "zai_glm_5_2": 12,
+    "opencode_go_glm_5_2": 3,
+    "zai_glm_5_3_flash_separate_qualification": 8,
+    "total_glm_ceiling": 23
+  },
+  "scorer_qualification": {
+    "initial_decisions": 100,
+    "expansion_decisions": 50,
+    "maximum_decisions": 500,
+    "minimum_error_families": 10,
+    "agreement_lcb": 0.97,
+    "alpha": 0.05
+  },
+  "gate_margins_from_measured_frontier": {
+    "macro_composite_points": 0.02,
+    "event_precision_points": 0.03,
+    "event_recall_points": 0.03,
+    "field_metric_points": 0.02,
+    "contamination_ucb_points": 0.005,
+    "paired_bootstrap_samples": 10000,
+    "alpha": 0.05
+  },
+  "tournament": {
+    "minimum_rounds": 10,
+    "maximum_rounds": 15,
+    "maximum_initial_prompt_candidates": 24,
+    "representation_parallel_rounds": [3, 9],
+    "one_change_per_child": true,
+    "sealed_holdout_open_count": 1
+  },
+  "shadow_release": {
+    "minimum_processed_windows": 1000,
+    "minimum_approval_rate": 0.60,
+    "maximum_approval_rate": 0.95,
+    "legacy_audit_weights": {
+      "disagreement": 0.50,
+      "new_only": 0.25,
+      "legacy_only": 0.15,
+      "agreement_control": 0.10
+    }
+  },
+  "blocking_before_round_1": [
+    "split_manifest_frozen",
+    "gold_adjudicated",
+    "gold_audit_passed",
+    "scorer_qualified",
+    "frontier_ceiling_measured",
+    "absolute_gates_frozen",
+    "dispatch_invariants_qualified"
+  ],
+  "blocking_before_corpus_rebuild": [
+    "winning_prompt_and_representation_frozen",
+    "sealed_aggregate_gates_passed",
+    "five_day_budget_burn_probe_passed"
+  ]
+}

@@ -57,6 +57,22 @@ print(budget_gate(conn, day=now_iso()[:10]))"
   pre-dispatch gate before deleting it — removing KILL without a diagnosis is
   how the next billion-token wave happens.
 
+### Signal Desk clean-corpus rebuild exception
+
+The ordinary 5M/day authority above is unchanged. The Signal Desk rebuild has
+a separate, scope-bound grant at
+`config/signal_desk_rebuild_budget_grant.json`: 20M GPT-5.5 tokens/day for
+campaign `signal-desk-clean-corpus-2026-08-31`, expiring after 45 days or the
+first clean release. The rebuild governor is
+`research_factory/signal_desk_rebuild_budget.py`; other lanes cannot use it.
+
+Before full rebuild, the campaign must record 5 consecutive useful-work days
+(7 preferred) at 18M-20M tokens without a provider quota failure. A file named
+`KILL-signal-desk-clean-corpus-2026-08-31.json` means the 120% campaign limit
+tripped. Stop dispatch, reconcile every contributing ledger, identify the
+bypass, and record the diagnosis. It does not clear at midnight. Only Kolby or
+an operator explicitly delegated by Kolby in the current turn may remove it.
+
 ## Outage / quota exhaustion
 
 Signature: `codex exec` exits rc=1 in ~10s, log ends with *"You've hit your
