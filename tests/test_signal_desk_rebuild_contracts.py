@@ -118,3 +118,11 @@ def test_chrome_and_questions_are_rejected():
             transcript_window=TEXT,
             expected_window_id="w1",
         )
+
+
+def test_substantive_discussion_of_subscriptions_is_not_chrome():
+    text = "An RSS feed lets people subscribe and learn when new episodes are released."
+    event = _event(evidence_text=text, evidence_start=0, evidence_end=len(text))
+    assert validate_output(
+        _output(event), transcript_window=text, expected_window_id="w1"
+    )["events"][0]["evidence_text"] == text

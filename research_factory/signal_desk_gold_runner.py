@@ -34,6 +34,33 @@ SYSTEM_PROMPTS = {"A": A_SYSTEM_PROMPT, "B": B_SYSTEM_PROMPT,
                   "C": C_SYSTEM_PROMPT, "AUDIT": AUDIT_SYSTEM_PROMPT}
 
 
+def repair_unique_evidence_offsets(
+    output: Mapping[str, Any], *, transcript_window: str
+) -> tuple[dict[str, Any], int]:
+    """Rebind offset-only slips when a verbatim excerpt occurs exactly once."""
+
+    repaired = json.loads(json.dumps(output))
+    count = 0
+    for event in repaired.get("events") or []:
+        evidence = str(event.get("evidence_text") or "")
+        declared_start = int(event.get("evidence_start") or 0)
+        declared_end = int(event.get("evidence_end") or 0)
+        if (
+            evidence
+            and declared_start >= 0
+            and declared_end == declared_start + len(evidence)
+            and transcript_window[declared_start:declared_end] == evidence
+        ):
+            continue
+        first = transcript_window.find(evidence) if evidence else -1
+        if first < 0 or transcript_window.find(evidence, first + 1) >= 0:
+            continue
+        event["evidence_start"] = first
+        event["evidence_end"] = first + len(evidence)
+        count += 1
+    return repaired, count
+
+
 def _notify_stall(kind: str, detail: str, next_step: str) -> None:
     subprocess.run(
         ["codex-ops", "notify", "--source", "signal-desk-gold-authoring",
@@ -110,11 +137,20 @@ async def run_dev_gold(
             target_ids = sorted(audit_ids if turn_type == "AUDIT" else by_window)
             existing = _load_outputs(result_root, turn_type)
             for window_id in set(existing) & set(target_ids):
+                transcript_window = str(by_window[window_id]["input"]["window_text"])
+                repaired, repair_count = repair_unique_evidence_offsets(
+                    existing[window_id], transcript_window=transcript_window
+                )
                 validate_output(
-                    existing[window_id],
-                    transcript_window=str(by_window[window_id]["input"]["window_text"]),
+                    repaired,
+                    transcript_window=transcript_window,
                     expected_window_id=window_id,
                 )
+                if repair_count:
+                    (result_root / turn_type / f"{window_id}.json").write_text(
+                        json.dumps(repaired, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+                    )
+                    existing[window_id] = repaired
             missing = [window_id for window_id in target_ids if window_id not in existing]
             for window_id in missing:
                 packet = by_window[window_id]
@@ -175,10 +211,18 @@ async def run_dev_gold(
                     reservation_settled = True
                     if not result.status_ok or result.output is None:
                         raise RuntimeError(result.error_class or result.status)
+                    repaired, repair_count = repair_unique_evidence_offsets(
+                        result.output,
+                        transcript_window=str(packet["input"]["window_text"]),
+                    )
                     validated = validate_output(
-                        result.output, transcript_window=str(packet["input"]["window_text"]),
+                        repaired, transcript_window=str(packet["input"]["window_text"]),
                         expected_window_id=window_id,
                     )
+                    if repair_count:
+                        output_path.write_text(
+                            json.dumps(repaired, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+                        )
                 except Exception as exc:  # noqa: BLE001
                     if not reservation_settled:
                         # The provider call started, but an exception denied us
@@ -216,6 +260,7 @@ async def run_dev_gold(
                     lease_owner=str(lease["lease_owner"]), lease_generation=int(lease["lease_generation"]),
                     output={"window_id": window_id, "turn_type": turn_type,
                             "events": len(validated["events"]), "tokens": usage,
+                            "deterministic_offset_repairs": repair_count,
                             "output_sha256": hashlib.sha256(output_path.read_bytes()).hexdigest()},
                 )
                 completed_rows.append({"window_id": window_id, "tokens": usage,

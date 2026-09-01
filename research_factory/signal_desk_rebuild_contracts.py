@@ -34,8 +34,9 @@ RELATIONSHIP_TYPES = (
     "evidence_against",
 )
 _CHROME_RE = re.compile(
-    r"\b(?:subscribe|sign up|cookie policy|privacy policy|all episodes|"
-    r"advertisement|sponsored by|navigation menu|skip to content)\b",
+    r"\b(?:subscribe\s+(?:now|today|for\b|to\s+(?:hear|listen|watch|read|support))|"
+    r"sign up|cookie policy|privacy policy|all episodes|this (?:episode|show) is sponsored by|"
+    r"brought to you by|navigation menu|skip to content)\b",
     re.I,
 )
 
