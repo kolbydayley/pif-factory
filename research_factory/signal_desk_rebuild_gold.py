@@ -15,15 +15,18 @@ import math
 import re
 import sqlite3
 from collections import defaultdict, deque
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+from .ingest import assert_transcript_plausible
 from .signal_desk_intelligence import normalize_feed_url
 from .signal_desk_rebuild_contracts import SCHEMA_VERSION as GLM_CONTRACT_VERSION
 from .signal_desk_rebuild_contracts import event_schema
 
 
 MANIFEST_SCHEMA_VERSION = "pif_signal_desk_rebuild_split_manifest_v1"
+SHOW_ARTIFACT_SCHEMA_VERSION = "pif_signal_desk_rebuild_show_artifact_v1"
 GOLD_PACKET_SCHEMA_VERSION = "pif_signal_desk_rebuild_gold_packet_v1"
 DEFAULT_SEED = "signal-desk-clean-corpus-2026-08-31-v1"
 DEFAULT_WINDOW_CHARS = 6_000
@@ -31,8 +34,10 @@ WINDOWS_PER_EPISODE = 3
 IN_DOMAIN_EPISODES_PER_SHOW = 4
 OOD_EPISODES_PER_SHOW = 4
 OOD_SEALED_SHOW_COUNT = 4
-OOD_SHAPES = frozenset({"claim_dense", "narrative", "structural"})
+OOD_SHAPES = frozenset({"claim_dense", "narrative", "format_stress"})
 GOLD_PASSES = frozenset({"A", "B", "C"})
+MIN_DISTINCT_PUBLICATION_MONTHS = 3
+MIN_PUBLICATION_SPAN_DAYS = 60
 
 
 class SignalDeskGoldError(RuntimeError):
@@ -149,7 +154,9 @@ def _turn_spans(text: str, limit: int) -> tuple[list[tuple[int, int]], str]:
         spans = _paragraph_spans(text)
         if len(spans) < 3:
             spans = _sentence_spans(text)
-        alignment = "sentence_fallback"
+            alignment = "sentence_fallback"
+        else:
+            alignment = "paragraph"
     expanded: list[tuple[int, int]] = []
     for start, end in spans:
         if end - start <= limit:
@@ -212,6 +219,92 @@ def turn_aligned_windows(
     return tuple(results)
 
 
+def _publication_datetime(value: object) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _word_count(text: str) -> int:
+    return len(re.findall(r"\b[\w'’-]+\b", text))
+
+
+def _qualify_transcript(
+    row: Mapping[str, Any],
+    *,
+    project_root: Path,
+    max_chars: int,
+) -> tuple[Path, str, str, tuple[dict[str, Any], ...], list[str]]:
+    reasons: list[str] = []
+    path_value = row["cleaned_text_path"] if row["use_prepared"] else row["raw_text_path"]
+    expected = row["cleaned_text_sha256"] if row["use_prepared"] else row["raw_text_sha256"]
+    path, text, digest = _verified_text(str(path_value), str(expected or ""), project_root)
+    words = _word_count(text)
+    try:
+        assert_transcript_plausible(
+            words=words,
+            duration_seconds=row.get("duration_seconds"),
+            episode_id=str(row.get("episode_id") or "benchmark_episode"),
+        )
+    except ValueError:
+        reasons.append("implausible_word_count_for_duration")
+    try:
+        windows = turn_aligned_windows(text, max_chars=max_chars)
+    except SignalDeskGoldError:
+        windows = ()
+        reasons.append("cannot_produce_three_unique_aligned_windows")
+    if reasons:
+        raise SignalDeskGoldError(",".join(reasons))
+    return path, text, digest, windows, reasons
+
+
+def _publication_period_choice(
+    candidates: Sequence[tuple[dict[str, Any], Path, str, str, tuple[dict[str, Any], ...]]],
+) -> tuple[list[tuple[dict[str, Any], Path, str, str, tuple[dict[str, Any], ...]]], list[str]]:
+    """Choose four episode-disjoint transcripts across the publication history."""
+
+    dated = [item for item in candidates if _publication_datetime(item[0].get("published_at"))]
+    dated.sort(
+        key=lambda item: (
+            _publication_datetime(item[0].get("published_at")),
+            str(item[0]["episode_id"]),
+        )
+    )
+    reasons: list[str] = []
+    if len(dated) < IN_DOMAIN_EPISODES_PER_SHOW:
+        return [], ["fewer_than_four_dated_qualifying_episodes"]
+    # Deterministic quartile anchors prevent four convenient episodes from one
+    # publication burst from masquerading as early/middle/late coverage.
+    last = len(dated) - 1
+    indexes = [round(last * fraction) for fraction in (0.0, 1 / 3, 2 / 3, 1.0)]
+    if len(set(indexes)) != IN_DOMAIN_EPISODES_PER_SHOW:
+        return [], ["publication_period_bins_not_distinct"]
+    chosen = [dated[index] for index in indexes]
+    dates = [_publication_datetime(item[0].get("published_at")) for item in chosen]
+    assert all(dates)
+    distinct_months = {(date.year, date.month) for date in dates if date}
+    span_days = int(((dates[-1] - dates[0]).total_seconds()) // 86_400)  # type: ignore[operator]
+    if len(distinct_months) < MIN_DISTINCT_PUBLICATION_MONTHS:
+        reasons.append("insufficient_distinct_publication_months")
+    if span_days < MIN_PUBLICATION_SPAN_DAYS:
+        reasons.append("insufficient_publication_span")
+    alignments = {
+        window["alignment"]
+        for _row, _path, _text, _digest, windows in chosen
+        for window in windows
+    }
+    if alignments == {"sentence_fallback"}:
+        reasons.append("all_selected_transcripts_are_flattened")
+    return ([] if reasons else chosen), reasons
+
+
 def _canonical_transcript_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     source_columns = _table_columns(conn, "sources")
     episode_columns = _table_columns(conn, "episodes")
@@ -234,6 +327,11 @@ def _canonical_transcript_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]
         raise SignalDeskGoldError("factory schema missing transcript preparation columns")
     enabled = "AND s.enabled = 1" if "enabled" in source_columns else ""
     published = "e.published_at" if "published_at" in episode_columns else "NULL"
+    duration_column = next(
+        (name for name in ("duration_seconds", "duration_sec", "duration") if name in episode_columns),
+        None,
+    )
+    duration = f"e.{duration_column}" if duration_column else "NULL"
     prep_sha = "p.cleaned_text_sha256" if "cleaned_text_sha256" in prep_columns else "NULL"
     quality = "p.quality_score" if "quality_score" in prep_columns else "0"
     prep_status = "p.status" if "status" in prep_columns else "NULL"
@@ -241,6 +339,7 @@ def _canonical_transcript_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]
         f"""
         SELECT s.id source_id, s.name show_name, s.rss_url,
                e.id episode_id, e.guid episode_guid, e.title episode_title, {published} published_at,
+               {duration} duration_seconds,
                t.id transcript_id, t.raw_text_path, t.raw_text_sha256,
                p.cleaned_text_path, {prep_sha} cleaned_text_sha256,
                {quality} preparation_quality, {prep_status} preparation_status
@@ -344,13 +443,15 @@ def _build_in_domain(
     seed: str,
     max_chars: int,
     show_aliases: Mapping[str, str] | None = None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     rows = _canonical_transcript_rows(conn)
     by_feed = _validate_unique_feeds(rows, show_aliases)
     windows: list[dict[str, Any]] = []
     shows: list[dict[str, Any]] = []
+    diagnostics: list[dict[str, Any]] = []
     for feed, candidates in sorted(by_feed.items()):
-        eligible: list[tuple[dict[str, Any], Path, str, str]] = []
+        eligible: list[tuple[dict[str, Any], Path, str, str, tuple[dict[str, Any], ...]]] = []
+        rejection_counts: dict[str, int] = defaultdict(int)
         canonical_ids = {
             str((show_aliases or {}).get(str(row["source_id"]), str(row["source_id"])))
             for row in candidates
@@ -371,28 +472,35 @@ def _build_in_domain(
                 candidate_by_guid[guid] = row
         ranked_candidates = sorted(
             candidate_by_guid.values(),
-            key=lambda row: (
-                _stable_rank(seed, feed, row["episode_id"]),
-                str(row["episode_id"]),
-            ),
+            key=lambda row: (str(row.get("published_at") or ""), str(row["episode_id"])),
         )
         for row in ranked_candidates:
-            path_value = row["cleaned_text_path"] if row["use_prepared"] else row["raw_text_path"]
-            expected = row["cleaned_text_sha256"] if row["use_prepared"] else row["raw_text_sha256"]
             try:
-                path, text, digest = _verified_text(str(path_value), str(expected or ""), project_root)
-                turn_aligned_windows(text, max_chars=max_chars)
-            except SignalDeskGoldError:
+                path, text, digest, episode_windows, _ = _qualify_transcript(
+                    row, project_root=project_root, max_chars=max_chars
+                )
+            except SignalDeskGoldError as exc:
+                rejection_counts[str(exc)] += 1
                 continue
-            eligible.append((row, path, text, digest))
-            if len(eligible) >= IN_DOMAIN_EPISODES_PER_SHOW:
-                break
-        if len(eligible) < IN_DOMAIN_EPISODES_PER_SHOW:
+            eligible.append((row, path, text, digest, episode_windows))
+        chosen, temporal_reasons = _publication_period_choice(eligible)
+        if not chosen:
+            diagnostics.append(
+                {
+                    "show_id": source_id,
+                    "show_name": show_name,
+                    "canonical_feed": feed,
+                    "covered": False,
+                    "candidate_episodes": len(candidate_by_guid),
+                    "qualifying_transcripts": len(eligible),
+                    "rejection_counts": dict(sorted(rejection_counts.items())),
+                    "blocking_reasons": temporal_reasons or ["fewer_than_four_qualifying_episodes"],
+                }
+            )
             continue
-        chosen = eligible[:IN_DOMAIN_EPISODES_PER_SHOW]
         assignments = ("development", "validation", "validation", "sealed_holdout")
         show_episode_ids = []
-        for (row, path, text, digest), split in zip(chosen, assignments):
+        for (row, path, text, digest, _episode_windows), split in zip(chosen, assignments):
             episode_id = str(row["episode_id"])
             show_episode_ids.append(episode_id)
             windows.extend(
@@ -420,9 +528,28 @@ def _build_in_domain(
                 "canonical_feed": feed,
                 "corpus": "in_domain",
                 "episode_ids": show_episode_ids,
+                "qualifying_contract": {
+                    "episode_disjoint": True,
+                    "publication_period_stratified": True,
+                    "minimum_distinct_publication_months": MIN_DISTINCT_PUBLICATION_MONTHS,
+                    "minimum_publication_span_days": MIN_PUBLICATION_SPAN_DAYS,
+                    "duration_word_plausibility": "words >= duration_seconds / 6 when known",
+                },
             }
         )
-    return shows, windows
+        diagnostics.append(
+            {
+                "show_id": source_id,
+                "show_name": show_name,
+                "canonical_feed": feed,
+                "covered": True,
+                "candidate_episodes": len(candidate_by_guid),
+                "qualifying_transcripts": len(eligible),
+                "selected_episode_ids": show_episode_ids,
+                "blocking_reasons": [],
+            }
+        )
+    return shows, windows, diagnostics
 
 
 def _build_ood(
@@ -451,14 +578,9 @@ def _build_ood(
         episodes = list(entry.get("episodes") or [])
         if len(episodes) < OOD_EPISODES_PER_SHOW:
             raise SignalDeskGoldError(f"OOD show requires four local episodes: {show_id}")
-        episodes.sort(key=lambda row: (_stable_rank(seed, "ood", show_id, row.get("episode_id")), str(row.get("episode_id"))))
-        chosen = episodes[:OOD_EPISODES_PER_SHOW]
-        sealed = bool(entry.get("sealed"))
-        assignments = ("sealed_holdout",) * 4 if sealed else ("development", "validation", "validation", "validation")
-        episode_ids = []
-        for episode, split in zip(chosen, assignments):
+        eligible = []
+        for episode in episodes:
             episode_id = str(episode.get("episode_id") or "")
-            transcript_id = str(episode.get("transcript_id") or episode_id)
             if not episode_id or not episode.get("transcript_path"):
                 raise SignalDeskGoldError(f"invalid OOD episode metadata: {show_id}")
             path, text, digest = _verified_text(
@@ -466,6 +588,31 @@ def _build_ood(
                 str(episode.get("transcript_sha256") or ""),
                 project_root,
             )
+            try:
+                assert_transcript_plausible(
+                    words=_word_count(text),
+                    duration_seconds=episode.get("duration_seconds"),
+                    episode_id=episode_id,
+                )
+            except ValueError:
+                continue
+            try:
+                episode_windows = turn_aligned_windows(text, max_chars=max_chars)
+            except SignalDeskGoldError:
+                continue
+            eligible.append((dict(episode), path, text, digest, episode_windows))
+        chosen, reasons = _publication_period_choice(eligible)
+        if not chosen:
+            raise SignalDeskGoldError(
+                f"OOD show lacks four publication-stratified qualifying episodes: {show_id}: "
+                + ",".join(reasons or ["fewer_than_four_qualifying_episodes"])
+            )
+        sealed = bool(entry.get("sealed"))
+        assignments = ("sealed_holdout",) * 4 if sealed else ("development", "validation", "validation", "validation")
+        episode_ids = []
+        for (episode, path, text, digest, _episode_windows), split in zip(chosen, assignments):
+            episode_id = str(episode.get("episode_id") or "")
+            transcript_id = str(episode.get("transcript_id") or episode_id)
             path_key = (episode_id, str(path))
             if path_key in seen_paths:
                 raise SignalDeskGoldError("duplicate OOD episode/transcript entry")
@@ -547,7 +694,7 @@ def build_split_manifest(
 ) -> dict[str, Any]:
     """Build and hash-freeze a deterministic split manifest."""
 
-    in_shows, in_windows = _build_in_domain(
+    in_shows, in_windows, coverage_diagnostics = _build_in_domain(
         conn,
         project_root=project_root,
         seed=seed,
@@ -574,6 +721,9 @@ def build_split_manifest(
         "schema_version": MANIFEST_SCHEMA_VERSION,
         "seed": seed,
         "frozen": True,
+        "complete_benchmark": len(in_shows) == 57 and len(ood_shows) == 10 and len(windows) == 804,
+        "tournament_allowed": len(in_shows) == 57 and len(ood_shows) == 10 and len(windows) == 804,
+        "dev_error_reading_allowed": len(in_shows) == 57 and len(ood_shows) == 10 and len(windows) == 804,
         "window_contract": {
             "max_chars": max_chars,
             "windows_per_episode": WINDOWS_PER_EPISODE,
@@ -588,6 +738,7 @@ def build_split_manifest(
         },
         "shows": shows,
         "show_aliases": dict(sorted((show_aliases or {}).items())),
+        "coverage_diagnostics": coverage_diagnostics,
         "windows": windows,
     }
     validate_split_manifest(payload)
@@ -601,6 +752,132 @@ def verify_frozen_manifest(manifest: Mapping[str, Any]) -> None:
     unhashed = {key: value for key, value in manifest.items() if key != "manifest_sha256"}
     if not expected or _sha(_canonical_json(unhashed)) != expected:
         raise SignalDeskGoldError("split manifest hash verification failed")
+
+
+def freeze_per_show_artifacts(
+    manifest: Mapping[str, Any],
+    *,
+    outputs_metadata: Mapping[str, Mapping[str, Any]] | None = None,
+) -> tuple[dict[str, Any], ...]:
+    """Freeze independently authorable shows without opening tournament feedback.
+
+    The artifact binds episode IDs, split membership, transcript/window hashes and
+    output receipt metadata. It intentionally contains no scores or dev errors.
+    """
+
+    verify_frozen_manifest(manifest)
+    windows_by_show: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for window in manifest["windows"]:
+        windows_by_show[str(window["show_id"])].append(dict(window))
+    artifacts: list[dict[str, Any]] = []
+    for show in manifest["shows"]:
+        show_id = str(show["show_id"])
+        windows = sorted(windows_by_show[show_id], key=lambda row: str(row["window_id"]))
+        if len(windows) != IN_DOMAIN_EPISODES_PER_SHOW * WINDOWS_PER_EPISODE:
+            raise SignalDeskGoldError(f"show artifact must contain exactly 12 windows: {show_id}")
+        episode_ids = sorted({str(row["episode_id"]) for row in windows})
+        transcript_hashes = sorted({str(row["transcript_sha256"]) for row in windows})
+        splits_by_episode = {
+            episode_id: sorted(
+                {str(row["split"]) for row in windows if str(row["episode_id"]) == episode_id}
+            )
+            for episode_id in episode_ids
+        }
+        artifact: dict[str, Any] = {
+            "schema_version": SHOW_ARTIFACT_SCHEMA_VERSION,
+            "frozen": True,
+            "authoring_allowed": True,
+            "tournament_allowed": False,
+            "dev_error_reading_allowed": False,
+            "seed": manifest["seed"],
+            "window_contract": manifest["window_contract"],
+            "source_manifest_sha256": manifest["manifest_sha256"],
+            "show": dict(show),
+            "episode_ids": episode_ids,
+            "transcript_sha256": transcript_hashes,
+            "splits_by_episode": splits_by_episode,
+            "windows": windows,
+            "outputs_metadata": dict((outputs_metadata or {}).get(show_id) or {}),
+        }
+        artifact["artifact_sha256"] = _sha(_canonical_json(artifact))
+        artifacts.append(artifact)
+    return tuple(sorted(artifacts, key=lambda row: (str(row["show"]["corpus"]), str(row["show"]["show_id"]))))
+
+
+def verify_show_artifact(artifact: Mapping[str, Any]) -> None:
+    if artifact.get("schema_version") != SHOW_ARTIFACT_SCHEMA_VERSION:
+        raise SignalDeskGoldError("unsupported per-show artifact schema")
+    expected = str(artifact.get("artifact_sha256") or "")
+    unhashed = {key: value for key, value in artifact.items() if key != "artifact_sha256"}
+    if not expected or _sha(_canonical_json(unhashed)) != expected:
+        raise SignalDeskGoldError("per-show artifact hash verification failed")
+    windows = list(artifact.get("windows") or [])
+    if len(windows) != 12 or len({str(row.get("episode_id")) for row in windows}) != 4:
+        raise SignalDeskGoldError("per-show artifact requires four episodes and 12 windows")
+    if artifact.get("tournament_allowed") or artifact.get("dev_error_reading_allowed"):
+        raise SignalDeskGoldError("partial show artifact cannot authorize tournament feedback")
+
+
+def assemble_complete_frozen_manifest(
+    artifacts: Sequence[Mapping[str, Any]],
+    *,
+    expected_in_domain_shows: int = 57,
+    expected_ood_shows: int = 10,
+) -> dict[str, Any]:
+    """Assemble the only tournament-eligible manifest: 57 + 10 shows, 804 windows."""
+
+    if expected_in_domain_shows != 57 or expected_ood_shows != 10:
+        raise SignalDeskGoldError("complete benchmark cardinality is frozen at 57 current + 10 OOD shows")
+    for artifact in artifacts:
+        verify_show_artifact(artifact)
+    show_ids = [str(artifact["show"]["show_id"]) for artifact in artifacts]
+    if len(show_ids) != len(set(show_ids)):
+        raise SignalDeskGoldError("duplicate show artifact")
+    in_domain = [artifact for artifact in artifacts if artifact["show"].get("corpus") == "in_domain"]
+    ood = [artifact for artifact in artifacts if artifact["show"].get("corpus") == "ood"]
+    if len(in_domain) != 57 or len(ood) != 10:
+        raise SignalDeskGoldError(
+            f"complete benchmark requires 57 current + 10 OOD shows; found {len(in_domain)} + {len(ood)}"
+        )
+    seeds = {_canonical_json(artifact["seed"]) for artifact in artifacts}
+    contracts = {_canonical_json(artifact["window_contract"]) for artifact in artifacts}
+    if len(seeds) != 1 or len(contracts) != 1:
+        raise SignalDeskGoldError("show artifacts use different sampling contracts")
+    windows = sorted(
+        [dict(window) for artifact in artifacts for window in artifact["windows"]],
+        key=lambda row: str(row["window_id"]),
+    )
+    if len(windows) != 804:
+        raise SignalDeskGoldError(f"complete benchmark requires exactly 804 windows, found {len(windows)}")
+    split_counts: dict[str, int] = defaultdict(int)
+    for window in windows:
+        split_counts[str(window["split"])] += 1
+    payload: dict[str, Any] = {
+        "schema_version": MANIFEST_SCHEMA_VERSION,
+        "seed": artifacts[0]["seed"],
+        "frozen": True,
+        "complete_benchmark": True,
+        "tournament_allowed": True,
+        "dev_error_reading_allowed": True,
+        "window_contract": artifacts[0]["window_contract"],
+        "counts": {
+            "shows": 67,
+            "episodes": 268,
+            "windows": 804,
+            "by_split": dict(sorted(split_counts.items())),
+        },
+        "shows": sorted(
+            [dict(artifact["show"]) for artifact in artifacts],
+            key=lambda row: (str(row["corpus"]), str(row["show_id"])),
+        ),
+        "show_aliases": {},
+        "coverage_diagnostics": [],
+        "show_artifact_sha256": sorted(str(artifact["artifact_sha256"]) for artifact in artifacts),
+        "windows": windows,
+    }
+    validate_split_manifest(payload)
+    payload["manifest_sha256"] = _sha(_canonical_json(payload))
+    return payload
 
 
 def _packet_for_window(

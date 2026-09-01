@@ -29,7 +29,60 @@
       "critical_event_error_ucb": 0.01,
       "catastrophic_window_errors_allowed": 0,
       "alpha": 0.05
+    },
+    "qualifying_episode_contract": {
+      "episode_disjoint": true,
+      "episodes_per_show": 4,
+      "windows_per_episode": 3,
+      "window_positions": ["early", "middle", "late"],
+      "publication_period_stratified": true,
+      "minimum_distinct_publication_months": 3,
+      "minimum_publication_span_days": 60,
+      "minimum_words_when_duration_known": "duration_seconds / 6",
+      "all_sentence_fallback_episodes_block_show": true
+    },
+    "freeze_protocol": {
+      "per_show_authoring_may_start_when_qualified": true,
+      "per_show_artifact_fields": [
+        "episode_ids",
+        "transcript_sha256",
+        "split_membership",
+        "window_sha256",
+        "gold_outputs"
+      ],
+      "tournament_requires_complete_frozen_show_count": 67,
+      "tournament_requires_complete_frozen_window_count": 804,
+      "development_errors_readable_before_complete_freeze": false,
+      "gold_reliability_audit_requires_complete_freeze": true
     }
+  },
+  "benchmark_acquisition": {
+    "full_catalog_asr_authorized": false,
+    "episodes_per_blocked_show": 4,
+    "transcript_plausibility": "words >= duration_seconds / 6",
+    "how_i_built_this": ["rendered_npr_transcript", "groq_asr"],
+    "marketplace_tech": ["rendered_first_party_transcript", "groq_asr"],
+    "search_engine": ["groq_asr"],
+    "tech_brew_ride_home": ["groq_asr"],
+    "the_ben_and_marc_show": ["youtube_caption_after_channel_gate", "groq_asr"],
+    "youtube_channel_gate": {
+      "catalog_sample": 40,
+      "minimum_title_match_rate": 0.25,
+      "minimum_duration_seconds": 1500
+    },
+    "groq": {
+      "model": "whisper-large-v3-turbo",
+      "requires_owner_key": true,
+      "estimated_benchmark_audio_hours": 20,
+      "estimated_benchmark_cost_usd": 1
+    }
+  },
+  "ood_storage": {
+    "separate_from_factory_database": true,
+    "public_aggregation_access": false,
+    "official_archive_preferred": true,
+    "episode_side_token_containment_minimum": 0.85,
+    "tracking_wrappers_unwrapped_before_matching": true
   },
   "ood_cohorts": {
     "claim_dense": [

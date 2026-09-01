@@ -58,6 +58,53 @@ Invisible are narrative contamination tests. Gastropod and The Allusionist are
 format stress tests. Recall is not used as a hard gate on near-zero narrative
 denominators.
 
+### Qualifying coverage, incremental authoring, and complete-freeze boundary
+
+Coverage is not a count of transcript rows. A show qualifies only when four
+episode-disjoint transcripts can each produce three distinct early, middle,
+and late windows under the frozen character contract; pass the shared ingest
+plausibility rule (`words >= duration_seconds / 6` when duration is known);
+and collectively span at least three publication months and 60 days. Episodes
+are selected across publication periods rather than from one convenient
+cluster. A show whose four candidates all require flattened sentence fallback
+is reported but does not pass the qualifying-show gate.
+
+Each qualified show may be frozen and sent through Gold A/B/C independently.
+Its artifact binds episode IDs, transcript and window hashes, split membership,
+contract versions, and gold outputs. This safely lets authoring proceed for the
+covered current and OOD shows while acquisition continues. The tournament,
+frontier-ceiling measurement, development-error reading, and deterministic
+gold-reliability audit remain blocked until all 57 in-domain and 10 OOD show
+artifacts assemble to exactly 804 frozen windows.
+
+OOD fixtures live in a separate benchmark database and filesystem namespace,
+never in the canonical `episodes` or `segments` tables. Public aggregation is
+tested with a sentinel fixture that must remain invisible. Official archives
+take precedence over feed transcript tags; tracking-wrapped feed URLs are
+unwrapped before matching; and an official page matches only when at least 85%
+of the episode-side title tokens are contained in the page title.
+
+## Bounded transcript acquisition
+
+The missing-show lane is benchmark-only: four qualifying episodes per show,
+not a full-catalog transcription project.
+
+- How I Built This: try rendered NPR pages from the indexed story map and
+  accept only bodies that pass the duration plausibility rule, then fall back
+  to ASR. The index is discovery evidence, not proof that transcript text is
+  present. Live checks on 2026-08-31 found two indexed pages marked
+  `no-transcript`, so those pages remain rejected.
+- Marketplace Tech: try a real rendered first-party session, then ASR.
+- Search Engine and Tech Brew Ride Home: ASR only.
+- The Ben and Marc Show: try full-episode YouTube captions only after at least
+  25% of a 40-episode catalog sample title-matches and each chosen upload is at
+  least 1,500 seconds; otherwise use ASR.
+
+ASR uses Groq `whisper-large-v3-turbo` only after the owner-provided
+`GROQ_API_KEY` is present. The authorized benchmark scope is approximately 20
+audio-hours (about $1); full-rump ASR is a separate decision and is not
+authorized by this campaign.
+
 ## Tournament
 
 Every experiment registry row binds campaign, family, parent, hypothesis,

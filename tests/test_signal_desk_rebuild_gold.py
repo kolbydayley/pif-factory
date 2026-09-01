@@ -7,8 +7,10 @@ import pytest
 from research_factory.signal_desk_rebuild_gold import (
     GLM_CONTRACT_VERSION,
     SignalDeskGoldError,
+    assemble_complete_frozen_manifest,
     build_gold_packets,
     build_split_manifest,
+    freeze_per_show_artifacts,
     select_gold_audit,
     verify_frozen_manifest,
 )
@@ -22,7 +24,8 @@ def _database(root: Path, *, duplicate_feed: bool = False) -> sqlite3.Connection
           id TEXT PRIMARY KEY, name TEXT NOT NULL, rss_url TEXT, enabled INTEGER
         );
         CREATE TABLE episodes (
-          id TEXT PRIMARY KEY, source_id TEXT, guid TEXT, title TEXT, published_at TEXT
+          id TEXT PRIMARY KEY, source_id TEXT, guid TEXT, title TEXT, published_at TEXT,
+          duration_seconds REAL
         );
         CREATE TABLE transcripts (
           id TEXT PRIMARY KEY, episode_id TEXT, raw_text_path TEXT,
@@ -38,6 +41,7 @@ def _database(root: Path, *, duplicate_feed: bool = False) -> sqlite3.Connection
     if duplicate_feed:
         sources.append(("show-alias", "Show Alias", "https://feeds.example/a", 1))
     conn.executemany("INSERT INTO sources VALUES (?,?,?,?)", sources)
+    dates = ["2025-01-01", "2025-04-01", "2025-07-01", "2025-10-01", "2026-01-01"]
     for source_id, *_ in sources:
         for index in range(5):
             episode_id = f"{source_id}-ep-{index}"
@@ -50,8 +54,8 @@ def _database(root: Path, *, duplicate_feed: bool = False) -> sqlite3.Connection
             path.write_text(text, encoding="utf-8")
             digest = __import__("hashlib").sha256(text.encode()).hexdigest()
             conn.execute(
-                "INSERT INTO episodes VALUES (?,?,?,?,?)",
-                (episode_id, source_id, f"guid-{index}", f"Episode {index}", f"2026-08-{index + 1:02d}"),
+                "INSERT INTO episodes VALUES (?,?,?,?,?,?)",
+                (episode_id, source_id, f"guid-{index}", f"Episode {index}", dates[index], 600),
             )
             conn.execute(
                 "INSERT INTO transcripts VALUES (?,?,?,?,?)",
@@ -65,7 +69,7 @@ def _database(root: Path, *, duplicate_feed: bool = False) -> sqlite3.Connection
 
 
 def _ood(root: Path):
-    shapes = ["claim_dense", "claim_dense", "narrative", "structural"]
+    shapes = ["claim_dense", "claim_dense", "narrative", "format_stress"]
     entries = []
     for show_index, shape in enumerate(shapes):
         episodes = []
@@ -82,6 +86,8 @@ def _ood(root: Path):
                     "episode_id": f"ood-{show_index}-ep-{episode_index}",
                     "episode_title": f"OOD {episode_index}",
                     "transcript_path": str(path),
+                    "published_at": ["2025-01-01", "2025-04-01", "2025-07-01", "2025-10-01"][episode_index],
+                    "duration_seconds": 600,
                 }
             )
         entries.append(
@@ -198,3 +204,68 @@ def test_gold_audit_expands_in_blocks_until_event_denominator_is_powered(tmp_pat
         expansion_block=10,
         minimum_events=350,
     )
+
+
+def test_coverage_requires_temporal_breadth_and_reports_reason(tmp_path):
+    conn = _database(tmp_path)
+    conn.execute("UPDATE episodes SET published_at = '2026-08-01'")
+    manifest = build_split_manifest(conn, project_root=tmp_path, ood_entries=_ood(tmp_path))
+    diagnostic = next(row for row in manifest["coverage_diagnostics"] if row["show_id"] == "show-a")
+    assert diagnostic["covered"] is False
+    assert "insufficient_distinct_publication_months" in diagnostic["blocking_reasons"]
+    assert "insufficient_publication_span" in diagnostic["blocking_reasons"]
+
+
+def test_duration_plausibility_and_all_flattened_are_not_covered(tmp_path):
+    conn = _database(tmp_path)
+    # Three episodes fail the shell-page plausibility guard. The remaining two
+    # cannot satisfy the four-episode coverage contract.
+    conn.execute("UPDATE episodes SET duration_seconds = 100000 WHERE id IN ('show-a-ep-0','show-a-ep-1','show-a-ep-2')")
+    manifest = build_split_manifest(conn, project_root=tmp_path, ood_entries=_ood(tmp_path))
+    diagnostic = next(row for row in manifest["coverage_diagnostics"] if row["show_id"] == "show-a")
+    assert diagnostic["covered"] is False
+    assert diagnostic["rejection_counts"]["implausible_word_count_for_duration"] == 3
+
+    (tmp_path / "flat").mkdir()
+    conn = _database(tmp_path / "flat")
+    for index in range(5):
+        path = tmp_path / "flat" / f"show-a-ep-{index}.txt"
+        text = " ".join(
+            f"Flattened caption sentence {turn}. Enough independent words here."
+            for turn in range(90)
+        )
+        path.write_text(text, encoding="utf-8")
+        digest = __import__("hashlib").sha256(text.encode()).hexdigest()
+        conn.execute(
+            "UPDATE transcripts SET raw_text_sha256=? WHERE episode_id=?",
+            (digest, f"show-a-ep-{index}"),
+        )
+        conn.execute(
+            "UPDATE transcript_preparations SET cleaned_text_sha256=? WHERE transcript_id=?",
+            (digest, f"tr-show-a-ep-{index}"),
+        )
+    manifest = build_split_manifest(conn, project_root=tmp_path / "flat", ood_entries=_ood(tmp_path))
+    diagnostic = next(row for row in manifest["coverage_diagnostics"] if row["show_id"] == "show-a")
+    assert diagnostic["blocking_reasons"] == ["all_selected_transcripts_are_flattened"]
+
+
+def test_partial_show_artifact_is_frozen_but_cannot_start_tournament(tmp_path):
+    conn = _database(tmp_path)
+    manifest = build_split_manifest(conn, project_root=tmp_path)
+    artifacts = freeze_per_show_artifacts(
+        manifest,
+        outputs_metadata={"show-a": {"gold_A_receipt_sha256": "a" * 64}},
+    )
+    assert len(artifacts) == 1
+    assert manifest["complete_benchmark"] is False
+    assert manifest["tournament_allowed"] is False
+    assert manifest["dev_error_reading_allowed"] is False
+    artifact = artifacts[0]
+    assert len(artifact["episode_ids"]) == 4
+    assert len(artifact["windows"]) == 12
+    assert artifact["outputs_metadata"]["gold_A_receipt_sha256"] == "a" * 64
+    assert artifact["authoring_allowed"] is True
+    assert artifact["tournament_allowed"] is False
+    assert artifact["dev_error_reading_allowed"] is False
+    with pytest.raises(SignalDeskGoldError, match=r"57 current \+ 10 OOD"):
+        assemble_complete_frozen_manifest(artifacts)
