@@ -40,7 +40,21 @@ C_SYSTEM_PROMPT = A_SYSTEM_PROMPT.replace(
 You will receive independent Gold A and Gold B outputs after the transcript.
 Resolve their disagreements against transcript evidence. Preserve supported events one-to-one,
 repair contract errors, split merged propositions, and omit unsupported claims. Do not vote,
-average, or invent a compromise. The transcript remains the only semantic authority."""
+average, or invent a compromise. Gold A/B omit reconstructable offsets and issue aliases;
+derive final exact offsets and aliases from the transcript. The transcript remains the only semantic authority."""
+
+
+def _compact_adjudication_output(output: Mapping[str, Any]) -> dict[str, Any]:
+    keep = (
+        "claim_text", "speech_act", "evidence_text", "speaker_id",
+        "quoted_person_id", "mentioned_person_ids", "attribution_type",
+        "attribution_confidence", "issue_label", "stance",
+        "publishability_state",
+    )
+    return {
+        "window_disposition": output.get("window_disposition"),
+        "events": [{key: event.get(key) for key in keep} for event in output.get("events") or []],
+    }
 
 
 def _p90(values: list[int]) -> float:
@@ -142,8 +156,14 @@ async def run_measurement(
                 prompt = _prompt(packet)
                 if turn_type == "C":
                     prompt += (
-                        "\n\nGOLD A OUTPUT\n" + json.dumps(a_outputs[window_id], sort_keys=True)
-                        + "\n\nGOLD B OUTPUT\n" + json.dumps(prior_outputs[window_id], sort_keys=True)
+                        "\n\nGOLD A OUTPUT\n" + json.dumps(
+                            _compact_adjudication_output(a_outputs[window_id]),
+                            separators=(",", ":"), sort_keys=True,
+                        )
+                        + "\n\nGOLD B OUTPUT\n" + json.dumps(
+                            _compact_adjudication_output(prior_outputs[window_id]),
+                            separators=(",", ":"), sort_keys=True,
+                        )
                     )
                 result = await client.run_ephemeral_structured_turn(
                     model="gpt-5.6-sol", effort="medium", base_instructions=system_prompt,

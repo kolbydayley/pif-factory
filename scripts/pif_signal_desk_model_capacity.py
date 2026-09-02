@@ -15,6 +15,7 @@ sys.path.insert(0, str(PIF_ROOT))
 
 from research_factory.signal_desk_model_capacity import (  # noqa: E402
     build_capacity_pulse,
+    append_capacity_report,
     ensure_capacity_pulse_schema,
     load_capacity_policy,
     write_capacity_pulse,
@@ -38,6 +39,7 @@ def main() -> int:
         type=Path,
         default=PIF_ROOT / "work/pif-ops/model-capacity/signal-desk-gpt-5.6-sol.json",
     )
+    parser.add_argument("--history", type=Path)
     args = parser.parse_args()
     policy = load_capacity_policy(args.policy)
     conn = sqlite3.connect(args.database)
@@ -48,6 +50,8 @@ def main() -> int:
     finally:
         conn.close()
     write_capacity_pulse(args.output, pulse)
+    if args.history is not None:
+        append_capacity_report(args.history, pulse)
     print(json.dumps(pulse, indent=2, sort_keys=True))
     return 0
 

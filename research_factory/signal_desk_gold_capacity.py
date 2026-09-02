@@ -118,11 +118,20 @@ def ensure_gold_capacity_schema(conn: sqlite3.Connection) -> None:
                  lane TEXT NOT NULL,
                  event_type TEXT NOT NULL,
                  reason TEXT,
+                 backend_message TEXT,
                  state TEXT NOT NULL,
                  task_key TEXT,
                  active_admissions INTEGER NOT NULL
                )"""
         )
+        event_columns = {
+            str(row[1])
+            for row in conn.execute("PRAGMA table_info(signal_desk_model_capacity_events)")
+        }
+        if "backend_message" not in event_columns:
+            conn.execute(
+                "ALTER TABLE signal_desk_model_capacity_events ADD COLUMN backend_message TEXT"
+            )
         conn.execute(
             """CREATE INDEX IF NOT EXISTS signal_desk_model_capacity_events_recent_idx
                ON signal_desk_model_capacity_events(model, occurred_at DESC)"""
@@ -179,6 +188,7 @@ def _record_event(
     lane: str,
     event_type: str,
     reason: str | None,
+    backend_message: str | None = None,
     state: str,
     task_key: str | None,
     active: int,
@@ -187,14 +197,15 @@ def _record_event(
 
     conn.execute(
         """INSERT INTO signal_desk_model_capacity_events
-           (occurred_at,model,lane,event_type,reason,state,task_key,active_admissions)
-           VALUES (?,?,?,?,?,?,?,?)""",
+           (occurred_at,model,lane,event_type,reason,backend_message,state,task_key,active_admissions)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
         (
             _timestamp(now),
             MODEL,
             lane,
             event_type,
             reason,
+            backend_message,
             state,
             task_key,
             int(active),
@@ -340,6 +351,7 @@ def record_capacity_failure(
     *,
     admission_id: str,
     error_code: str,
+    backend_message: str | None = None,
     at: datetime | None = None,
 ) -> dict[str, Any]:
     """Open the circuit after a provider capacity response and release its slot."""
@@ -358,7 +370,12 @@ def record_capacity_failure(
         conn.execute(
             "DELETE FROM signal_desk_gold_capacity_leases WHERE admission_id=?", (admission_id,)
         )
-        _record_event(conn, now=now, lane=lane, event_type="capacity_failure", reason=str(error_code), state="open", task_key=task_key, active=_active_count(conn, now=now))
+        _record_event(
+            conn, now=now, lane=lane, event_type="capacity_failure",
+            reason=str(error_code), backend_message=backend_message,
+            state="open", task_key=task_key,
+            active=_active_count(conn, now=now),
+        )
         state = _state(conn)
         failures = int(state["consecutive_capacity_failures"]) + 1
         delay = _backoff_seconds(failures)
@@ -447,3 +464,21 @@ def capacity_error_from_sidecar(sidecar_path: str | None) -> str | None:
         return None
     error = ((payload.get("turn_error") or {}).get("codex_error_info"))
     return str(error) if error is not None else None
+
+
+def capacity_backend_message_from_sidecar(sidecar_path: str | None) -> str | None:
+    """Read the bounded raw backend capacity diagnostic from a sidecar."""
+
+    if not sidecar_path:
+        return None
+    try:
+        import json
+
+        payload = json.loads(open(sidecar_path, encoding="utf-8").read())
+    except (OSError, ValueError):
+        return None
+    error = payload.get("turn_error") or {}
+    if not is_model_capacity_error(error_code=error.get("codex_error_info")):
+        return None
+    message = error.get("backend_message")
+    return str(message) if isinstance(message, str) and len(message) <= 500 else None

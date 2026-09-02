@@ -62,8 +62,8 @@ def test_policy_is_explicit_and_frozen():
     policy = load_capacity_policy(POLICY)
     assert policy["active_background_lane"] == "gpt_5_6_sol_gold_authoring"
     assert policy["foreground_override"] == {
-        "configured_concurrency": 4,
-            "provider_concurrency_cap": 3,
+            "configured_concurrency": 8,
+            "provider_concurrency_cap": 8,
     }
 
 

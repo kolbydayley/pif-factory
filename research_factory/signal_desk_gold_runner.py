@@ -17,6 +17,7 @@ from typing import Any, Mapping, Sequence
 from .codex_app_server import CodexAppServerClient
 from .signal_desk_gold_capacity import (
     admit_gold_call,
+    capacity_backend_message_from_sidecar,
     capacity_error_from_sidecar,
     capacity_status,
     is_model_capacity_error,
@@ -27,11 +28,7 @@ from .signal_desk_gold_capacity import (
 from .signal_desk_adaptive_concurrency import (
     GOLD_BOUNDS, admission_limit, initialize_lane, record_outcome,
 )
-from .signal_desk_background_admission import (
-    BackgroundWorkDeferred,
-    local_background_admission,
-    run_foreground_preemptible,
-)
+from .signal_desk_background_admission import BackgroundAdmission
 from .signal_desk_gold_atomicity import ATOMICITY_REVIEW_WINDOW_IDS
 from .signal_desk_gold_audit import select_dev_audit_windows
 from .signal_desk_gold_budget import (
@@ -94,6 +91,18 @@ class GoldCapacityDeferred(GoldRunnerError):
         )
 
 
+def gold_model_admission(*, configured_concurrency: int) -> BackgroundAdmission:
+    """Gold uses provider health, not local foreground state, for admission."""
+
+    return BackgroundAdmission(
+        allowed=True,
+        reason="gold_provider_capacity_governed",
+        retry_after_seconds=0,
+        provider_concurrency_cap=int(configured_concurrency),
+        input_idle_seconds=None,
+    )
+
+
 def repair_unique_evidence_offsets(
     output: Mapping[str, Any], *, transcript_window: str
 ) -> tuple[dict[str, Any], int]:
@@ -127,6 +136,24 @@ def repair_unique_evidence_offsets(
                 event["evidence_text"] = declared_source
                 count += 1
     return repaired, count
+
+
+def compact_adjudication_output(output: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep Gold-C semantic inputs while dropping reconstructable bulk."""
+
+    keep = (
+        "claim_text", "speech_act", "evidence_text", "speaker_id",
+        "quoted_person_id", "mentioned_person_ids", "attribution_type",
+        "attribution_confidence", "issue_label", "stance",
+        "publishability_state",
+    )
+    return {
+        "window_disposition": output.get("window_disposition"),
+        "events": [
+            {key: event.get(key) for key in keep}
+            for event in (output.get("events") or [])
+        ],
+    }
 
 
 def _notify_stall(kind: str, detail: str, next_step: str) -> None:
@@ -472,12 +499,8 @@ def build_gold_resume_plan(
     }
     stages = (
         ("development", "C"),
-        ("validation", "A"),
-        ("validation", "B"),
-        ("validation", "C"),
-        ("sealed_holdout", "A"),
-        ("sealed_holdout", "B"),
-        ("sealed_holdout", "C"),
+        ("validation", "PIPELINE"),
+        ("sealed_holdout", "PIPELINE"),
         ("development", "AUDIT"),
         ("validation", "AUDIT"),
         ("sealed_holdout", "AUDIT"),
@@ -513,7 +536,7 @@ async def _run_gold_split_phases(
     allow_sealed_holdout: bool = False,
     sealed_output_root: Path | None = None,
     concurrency: int = 8, binary: str = "codex",
-    foreground_admission: Callable[..., Any] = local_background_admission,
+    foreground_admission: Callable[..., Any] = gold_model_admission,
 ) -> dict[str, Any]:
     if not 2 <= concurrency <= 8:
         raise ValueError("gold concurrency must be 2-8")
@@ -532,21 +555,6 @@ async def _run_gold_split_phases(
         split=split,
         sealed_output_root=sealed_output_root,
     )
-    foreground = foreground_admission(configured_concurrency=concurrency)
-    if not foreground.allowed:
-        # Do not even construct an app-server client while the interactive
-        # desktop session has priority.  This is intentionally before packet
-        # materialization, dispatch, budget reservation, and provider calls.
-        _write_split_status(
-            result_root=result_root,
-            split=split,
-            turn_type=phase_order[0],
-            status="deferred",
-            reason=foreground.reason,
-            retry_after_seconds=foreground.retry_after_seconds,
-            manifest_sha256=str(manifest["manifest_sha256"]),
-        )
-        raise GoldForegroundDeferred(foreground)
     packets = build_gold_packets(
         manifest,
         project_root=project_root,
@@ -587,11 +595,12 @@ async def _run_gold_split_phases(
     stop = asyncio.Event()
     foreground_stop: Any | None = None
     capacity_stop: dict[str, Any] | None = None
+    pipeline_mode = tuple(phase_order) == ("A", "B", "C")
 
     try:
-        for turn_type in phase_order:
+        for turn_type in (("A",) if pipeline_mode else phase_order):
             all_ids = sorted(by_window)
-            if turn_type == "B":
+            if turn_type == "B" and not pipeline_mode:
                 # The stage contract is public-entrypoint enforced as well as
                 # supervisor enforced: B cannot bypass a complete Gold A.
                 _validate_phase_outputs(
@@ -600,7 +609,7 @@ async def _run_gold_split_phases(
                     by_window=by_window,
                     required_ids=all_ids,
                 )
-            if turn_type == "C":
+            if turn_type == "C" and not pipeline_mode:
                 # No C task may be enqueued before both independent authoring
                 # passes are complete and contract-valid for this exact split.
                 _validate_phase_outputs(
@@ -626,25 +635,36 @@ async def _run_gold_split_phases(
                     result_root=result_root,
                 )
                 audit_ids = set(target_ids)
+            elif pipeline_mode:
+                target_ids = all_ids
             else:
                 target_ids = all_ids
-            existing = _load_outputs(result_root, turn_type)
-            for window_id in set(existing) & set(target_ids):
-                transcript_window = str(by_window[window_id]["input"]["window_text"])
-                repaired, repair_count = repair_unique_evidence_offsets(
-                    existing[window_id], transcript_window=transcript_window
-                )
-                validate_output(
-                    repaired,
-                    transcript_window=transcript_window,
-                    expected_window_id=window_id,
-                )
-                if repair_count:
-                    (result_root / turn_type / f"{window_id}.json").write_text(
-                        json.dumps(repaired, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            phase_types = ("A", "B", "C") if pipeline_mode else (turn_type,)
+            existing_by_turn: dict[str, dict[str, Mapping[str, Any]]] = {}
+            for phase_type in phase_types:
+                phase_existing = _load_outputs(result_root, phase_type)
+                for window_id in set(phase_existing) & set(target_ids):
+                    transcript_window = str(by_window[window_id]["input"]["window_text"])
+                    repaired, repair_count = repair_unique_evidence_offsets(
+                        phase_existing[window_id], transcript_window=transcript_window
                     )
-                    existing[window_id] = repaired
-            missing = [window_id for window_id in target_ids if window_id not in existing]
+                    validate_output(
+                        repaired,
+                        transcript_window=transcript_window,
+                        expected_window_id=window_id,
+                    )
+                    if repair_count:
+                        (result_root / phase_type / f"{window_id}.json").write_text(
+                            json.dumps(repaired, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+                        )
+                        phase_existing[window_id] = repaired
+                existing_by_turn[phase_type] = phase_existing
+            existing = existing_by_turn[turn_type]
+            missing = (
+                [window_id for window_id in target_ids if window_id not in existing_by_turn["C"]]
+                if pipeline_mode
+                else [window_id for window_id in target_ids if window_id not in existing]
+            )
             worker_concurrency = 0
             if missing:
                 capacity = _capacity_preflight(
@@ -662,24 +682,26 @@ async def _run_gold_split_phases(
                         manifest_sha256=str(manifest["manifest_sha256"]),
                     )
                     raise GoldCapacityDeferred(capacity)
-                # Do not spawn eight app-server clients merely to deny six of
-                # them at the capacity gate.  A new Gold lane begins with its
-                # durable adaptive limit of two, then the next staged phase
-                # observes any healthy ramp from that same shared state.
-                worker_concurrency = min(
-                    concurrency,
-                    int(capacity["effective_limit"]),
-                    int(foreground.provider_concurrency_cap),
-                )
+                # Keep the configured worker pool alive. Each worker reads the
+                # durable limit before leasing work, so the pool can ramp or
+                # back off in place without restarting the supervisor.
+                worker_concurrency = concurrency
                 if worker_concurrency < 1:
-                    raise GoldForegroundDeferred(foreground)
+                    raise GoldRunnerError("Gold worker pool is empty")
             for window_id in missing:
                 packet = by_window[window_id]
+                enqueue_turn = turn_type
+                if pipeline_mode:
+                    enqueue_turn = (
+                        "A" if window_id not in existing_by_turn["A"]
+                        else "B" if window_id not in existing_by_turn["B"]
+                        else "C"
+                    )
                 enqueue_task(
                     dispatch,
-                    task_key=f"{task_namespace}:{turn_type}:{window_id}",
+                    task_key=f"{task_namespace}:{enqueue_turn}:{window_id}",
                     task_type="gold_window",
-                    payload={"window_id": window_id, "turn_type": turn_type,
+                    payload={"window_id": window_id, "turn_type": enqueue_turn,
                              "text_sha256": hashlib.sha256(packet["input"]["window_text"].encode()).hexdigest()},
                 )
             phase_start = time.monotonic()
@@ -689,38 +711,20 @@ async def _run_gold_split_phases(
                 nonlocal foreground_stop, capacity_stop
                 payload = lease["payload"]
                 window_id = str(payload["window_id"])
+                task_turn_type = str(payload["turn_type"])
+                if task_turn_type not in GOLD_TURN_TYPES:
+                    raise GoldRunnerError("leased Gold task has an invalid turn type")
                 packet = by_window[window_id]
                 capacity_task_key = (
-                    f"{task_namespace}:{turn_type}:{window_id}:attempt:{lease['current_attempt_id']}:"
+                    f"{task_namespace}:{task_turn_type}:{window_id}:attempt:{lease['current_attempt_id']}:"
                     f"generation:{lease['lease_generation']}"
                 )
                 adaptive = admission_limit(budget, lane="gold")
-                foreground = foreground_admission(
-                    configured_concurrency=int(adaptive["effective_limit"])
-                )
-                if not foreground.allowed:
-                    foreground_stop = foreground
-                    release_attempt_for_retry(
-                        dispatch, attempt_id=int(lease["current_attempt_id"]),
-                        lease_owner=str(lease["lease_owner"]),
-                        lease_generation=int(lease["lease_generation"]),
-                        failure_code="gold_foreground_reserved",
-                        failure_detail=(
-                            "foreground Codex has priority over background Gold; "
-                            f"retry after {foreground.retry_after_seconds} seconds "
-                            f"({foreground.reason})"
-                        ),
-                    )
-                    # This is an expected, non-provider pause.  Stop all
-                    # workers so the supervisor will not churn leases while
-                    # the user is using Codex.
-                    stop.set()
-                    return
                 admission = admit_gold_call(
                     budget,
                     task_key=capacity_task_key,
                     lease_owner=str(lease["lease_owner"]),
-                    configured_concurrency=foreground.provider_concurrency_cap,
+                    configured_concurrency=int(adaptive["effective_limit"]),
                     lane="gpt_5_6_sol_gold_authoring",
                 )
                 if not admission["allowed"]:
@@ -753,7 +757,8 @@ async def _run_gold_split_phases(
                         budget, grant_path=grant_path, session_root=session_root,
                         budget_dir=budget_dir,
                         task_key=capacity_task_key,
-                        turn_type=turn_type, reserve_tokens=RESERVE_TOKENS[turn_type],
+                        turn_type=task_turn_type,
+                        reserve_tokens=RESERVE_TOKENS[task_turn_type],
                         live_snapshot=live_snapshot,
                     )
                 except Exception:
@@ -772,13 +777,17 @@ async def _run_gold_split_phases(
                     return
                 reservation_id = str(reservation["reservation_id"])
                 prompt = _prompt(packet)
-                if turn_type == "C":
+                if task_turn_type == "C":
                     a = json.loads((result_root / "A" / f"{window_id}.json").read_text())
                     b = json.loads((result_root / "B" / f"{window_id}.json").read_text())
-                    prompt += "\n\nGOLD A OUTPUT\n" + json.dumps(a, sort_keys=True)
-                    prompt += "\n\nGOLD B OUTPUT\n" + json.dumps(b, sort_keys=True)
-                output_path = result_root / turn_type / f"{window_id}.json"
-                sidecar_path = result_root / "sidecars" / turn_type / f"{window_id}.json"
+                    prompt += "\n\nGOLD A OUTPUT\n" + json.dumps(
+                        compact_adjudication_output(a), separators=(",", ":"), sort_keys=True
+                    )
+                    prompt += "\n\nGOLD B OUTPUT\n" + json.dumps(
+                        compact_adjudication_output(b), separators=(",", ":"), sort_keys=True
+                    )
+                output_path = result_root / task_turn_type / f"{window_id}.json"
+                sidecar_path = result_root / "sidecars" / task_turn_type / f"{window_id}.json"
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 sidecar_path.parent.mkdir(parents=True, exist_ok=True)
                 if split in {"validation", "sealed_holdout"}:
@@ -787,7 +796,7 @@ async def _run_gold_split_phases(
                 archive_retryable_sidecar_for_retry(
                     sidecar_path=sidecar_path,
                     output_path=output_path,
-                    recovery_root=result_root / "recovery-sidecars" / turn_type,
+                    recovery_root=result_root / "recovery-sidecars" / task_turn_type,
                     attempt_id=int(lease["current_attempt_id"]),
                     lease_generation=int(lease["lease_generation"]),
                 )
@@ -798,24 +807,17 @@ async def _run_gold_split_phases(
                 try:
                     async def invoke_provider_turn() -> Any:
                         nonlocal provider_started
-                        # The foreground gate inside run_foreground_preemptible
-                        # executes before this factory.  A foreground return in
-                        # that small interval therefore releases its budget
-                        # reservation rather than charging a no-call attempt.
                         mark_provider_started(budget, reservation_id)
                         provider_started = True
                         return await client.run_ephemeral_structured_turn(
                             model="gpt-5.6-sol", effort="medium",
-                            base_instructions=SYSTEM_PROMPTS[turn_type], prompt=prompt,
+                            base_instructions=SYSTEM_PROMPTS[task_turn_type], prompt=prompt,
                             output_schema=packet["output_schema"], cwd=project_root,
                             sidecar_path=sidecar_path, output_path=output_path,
                             timeout_seconds=900,
                         )
 
-                    result = await run_foreground_preemptible(
-                        invoke_provider_turn,
-                        configured_concurrency=foreground.provider_concurrency_cap,
-                    )
+                    result = await invoke_provider_turn()
                     usage = int(result.usage.total_tokens) if result.usage else 0
                     settle_gold_call(budget, reservation_id=reservation_id,
                                      actual_tokens=usage, provider_calls=1)
@@ -842,7 +844,7 @@ async def _run_gold_split_phases(
                     )
                     record_gold_admission_success(budget, admission_id=admission_id)
                 except Exception as exc:  # noqa: BLE001
-                    foreground_yield = isinstance(exc, BackgroundWorkDeferred)
+                    foreground_yield = False
                     capacity_error_code = capacity_error_from_sidecar(str(sidecar_path))
                     provider_capacity = not foreground_yield and is_model_capacity_error(
                         error_code=capacity_error_code,
@@ -872,11 +874,11 @@ async def _run_gold_split_phases(
                             settle_gold_call(
                                 budget,
                                 reservation_id=reservation_id,
-                                actual_tokens=RESERVE_TOKENS[turn_type],
+                                actual_tokens=RESERVE_TOKENS[task_turn_type],
                                 provider_calls=1,
                             )
                     if output_path.exists():
-                        rejected = result_root / "rejected" / turn_type / output_path.name
+                        rejected = result_root / "rejected" / task_turn_type / output_path.name
                         rejected.parent.mkdir(parents=True, exist_ok=True)
                         output_path.replace(rejected)
                     detail = f"{type(exc).__name__}: {str(exc)[:300]}"
@@ -903,9 +905,13 @@ async def _run_gold_split_phases(
                         )
                     else:
                         if provider_capacity:
+                            backend_message = capacity_backend_message_from_sidecar(
+                                str(sidecar_path)
+                            )
                             capacity = record_capacity_failure(
                                 budget, admission_id=admission_id,
                                 error_code=str(capacity_error_code or "serverOverloaded"),
+                                backend_message=backend_message,
                             )
                             failure_code = "gold_model_capacity_backoff"
                             detail = (
@@ -944,14 +950,29 @@ async def _run_gold_split_phases(
                 complete_attempt(
                     dispatch, attempt_id=int(lease["current_attempt_id"]),
                     lease_owner=str(lease["lease_owner"]), lease_generation=int(lease["lease_generation"]),
-                    output={"window_id": window_id, "turn_type": turn_type,
+                    output={"window_id": window_id, "turn_type": task_turn_type,
                             "events": len(validated["events"]), "tokens": usage,
                             "deterministic_offset_repairs": repair_count,
                             "output_sha256": hashlib.sha256(output_path.read_bytes()).hexdigest()},
                 )
                 completed_rows.append({"window_id": window_id, "tokens": usage,
                                        "wall_seconds": time.monotonic() - started,
-                                       "events": len(validated["events"]), "worker": worker_id})
+                                       "events": len(validated["events"]), "worker": worker_id,
+                                       "turn_type": task_turn_type})
+                if pipeline_mode and task_turn_type in {"A", "B"}:
+                    successor = "B" if task_turn_type == "A" else "C"
+                    enqueue_task(
+                        dispatch,
+                        task_key=f"{task_namespace}:{successor}:{window_id}",
+                        task_type="gold_window",
+                        payload={
+                            "window_id": window_id,
+                            "turn_type": successor,
+                            "text_sha256": hashlib.sha256(
+                                packet["input"]["window_text"].encode()
+                            ).hexdigest(),
+                        },
+                    )
 
             lock = asyncio.Lock()
 
@@ -961,13 +982,26 @@ async def _run_gold_split_phases(
                     expected_cli_version="0.147.0",
                 ) as client:
                     while not stop.is_set():
+                        adaptive = admission_limit(budget, lane="gold")
+                        if worker_id >= int(adaptive["effective_limit"]):
+                            await asyncio.sleep(10)
+                            continue
                         async with lock:
                             lease = acquire_lease(
                                 dispatch, lease_owner=f"{task_namespace}-gold-{turn_type}-{worker_id}",
                                 lease_seconds=1800,
-                                task_key_prefix=f"{task_namespace}:{turn_type}:",
+                                task_key_prefix=(
+                                    f"{task_namespace}:" if pipeline_mode
+                                    else f"{task_namespace}:{turn_type}:"
+                                ),
                             )
                         if lease is None:
+                            if pipeline_mode and any(
+                                not (result_root / "C" / f"{window_id}.json").exists()
+                                for window_id in target_ids
+                            ):
+                                await asyncio.sleep(1)
+                                continue
                             return
                         await process_one(client, lease, worker_id)
 
@@ -999,21 +1033,30 @@ async def _run_gold_split_phases(
                 raise GoldRunnerError(
                     f"{split} Gold stopped during {turn_type}; checkpoint preserved"
                 )
-            final_outputs = _load_outputs(result_root, turn_type)
-            if any(window_id not in final_outputs for window_id in target_ids):
-                raise GoldRunnerError(f"{split} Gold phase {turn_type} is incomplete")
-            phase_receipts.append({
-                "turn_type": turn_type, "target_windows": len(target_ids),
-                "worker_concurrency": worker_concurrency,
-                "reused_outputs": len(target_ids) - len(missing),
-                "new_outputs": len(completed_rows),
-                "new_tokens": sum(row["tokens"] for row in completed_rows),
-                "wall_seconds": time.monotonic() - phase_start,
-                "mean_call_wall_seconds": (
-                    sum(row["wall_seconds"] for row in completed_rows) / len(completed_rows)
-                    if completed_rows else 0.0
-                ),
-            })
+            completed_phase_types = ("A", "B", "C") if pipeline_mode else (turn_type,)
+            for completed_type in completed_phase_types:
+                final_outputs = _load_outputs(result_root, completed_type)
+                if any(window_id not in final_outputs for window_id in target_ids):
+                    raise GoldRunnerError(
+                        f"{split} Gold phase {completed_type} is incomplete"
+                    )
+                rows = [
+                    row for row in completed_rows
+                    if row["turn_type"] == completed_type
+                ]
+                phase_receipts.append({
+                    "turn_type": completed_type,
+                    "target_windows": len(target_ids),
+                    "worker_concurrency": worker_concurrency,
+                    "reused_outputs": len(existing_by_turn[completed_type]),
+                    "new_outputs": len(rows),
+                    "new_tokens": sum(row["tokens"] for row in rows),
+                    "wall_seconds": time.monotonic() - phase_start,
+                    "mean_call_wall_seconds": (
+                        sum(row["wall_seconds"] for row in rows) / len(rows)
+                        if rows else 0.0
+                    ),
+                })
 
         receipt = {
             "schema_version": "pif_signal_desk_gold_split_run_v2",
@@ -1070,7 +1113,7 @@ async def run_gold_split_phase(
     seed_roots: Mapping[str, Path] | None = None,
     concurrency: int = 8,
     binary: str = "codex",
-    foreground_admission: Callable[..., Any] = local_background_admission,
+    foreground_admission: Callable[..., Any] = gold_model_admission,
 ) -> dict[str, Any]:
     """Run one resumable Gold phase for one frozen benchmark split.
 
@@ -1080,8 +1123,10 @@ async def run_gold_split_phase(
     protections; no caller can use it to initiate A1 or A2.
     """
 
-    if turn_type not in GOLD_TURN_TYPES:
-        raise GoldResumePlanError("Gold split runner accepts only A, B, C, or AUDIT")
+    if turn_type not in (*GOLD_TURN_TYPES, "PIPELINE"):
+        raise GoldResumePlanError(
+            "Gold split runner accepts A, B, C, AUDIT, or PIPELINE"
+        )
     return await _run_gold_split_phases(
         manifest_path=manifest_path,
         project_root=project_root,
@@ -1093,7 +1138,7 @@ async def run_gold_split_phase(
         budget_dir=budget_dir,
         seed_roots=seed_roots or {},
         split=split,
-        phase_order=(turn_type,),
+        phase_order=("A", "B", "C") if turn_type == "PIPELINE" else (turn_type,),
         task_namespace=task_namespace or split,
         allow_sealed_holdout=allow_sealed_holdout,
         sealed_output_root=sealed_output_root,
@@ -1108,7 +1153,7 @@ async def run_dev_gold(
     dispatch_database: Path, budget_database: Path, grant_path: Path,
     session_root: Path, budget_dir: Path, seed_roots: Mapping[str, Path],
     concurrency: int = 4, binary: str = "codex",
-    foreground_admission: Callable[..., Any] = local_background_admission,
+    foreground_admission: Callable[..., Any] = gold_model_admission,
 ) -> dict[str, Any]:
     """Backward-compatible full development A/B/C/audit runner.
 
@@ -1189,14 +1234,14 @@ async def run_gold_resume_supervisor(
     concurrency: int = 8,
     binary: str = "codex",
     phase_runner: Callable[..., Awaitable[dict[str, Any]]] = run_gold_split_phase,
-    foreground_admission: Callable[..., Any] = local_background_admission,
+    foreground_admission: Callable[..., Any] = gold_model_admission,
 ) -> dict[str, Any]:
     """Resume exactly the authorized Gold phases and nothing downstream.
 
     This supervisor intentionally has no dependency on the A1 calibration or
-    A2 scorer machinery.  It checks foreground admission before every stage;
-    a foreground Codex session returns a zero-call deferred receipt instead of
-    starting an app-server client or consuming a provider slot.
+    A2 scorer machinery. Gold uses the provider-capacity circuit and weekly
+    budget directly; local foreground application state is not a model-pool
+    capacity signal.
     """
 
     if not 2 <= concurrency <= 8:
@@ -1209,24 +1254,6 @@ async def run_gold_resume_supervisor(
     completed: list[dict[str, Any]] = []
     roots = seed_roots_by_split or {}
     for stage in plan["stages"]:
-        foreground = foreground_admission(configured_concurrency=concurrency)
-        if not foreground.allowed:
-            deferred = {
-                "schema_version": "pif_signal_desk_gold_resume_supervision_v1",
-                "status": "deferred",
-                "manifest_sha256": plan["manifest_sha256"],
-                "reason": foreground.reason,
-                "retry_after_seconds": foreground.retry_after_seconds,
-                "completed_stages": completed,
-                "next_stage": {
-                    "split": stage["split"],
-                    "turn_type": stage["turn_type"],
-                },
-                "provider_calls_started_during_deferred_check": 0,
-                "contains_a1_or_a2": False,
-            }
-            _write_resume_supervision_checkpoint(gold_root=gold_root, receipt=deferred)
-            return deferred
         _write_resume_supervision_checkpoint(
             gold_root=gold_root,
             receipt={
@@ -1261,23 +1288,6 @@ async def run_gold_resume_supervisor(
                 binary=binary,
                 foreground_admission=foreground_admission,
             )
-        except GoldForegroundDeferred as exc:
-            deferred = {
-                "schema_version": "pif_signal_desk_gold_resume_supervision_v1",
-                "status": "deferred",
-                "manifest_sha256": plan["manifest_sha256"],
-                "reason": exc.admission.reason,
-                "retry_after_seconds": exc.admission.retry_after_seconds,
-                "completed_stages": completed,
-                "next_stage": {
-                    "split": stage["split"],
-                    "turn_type": stage["turn_type"],
-                },
-                "provider_calls_started_during_deferred_check": 0,
-                "contains_a1_or_a2": False,
-            }
-            _write_resume_supervision_checkpoint(gold_root=gold_root, receipt=deferred)
-            return deferred
         except GoldCapacityDeferred as exc:
             deferred = {
                 "schema_version": "pif_signal_desk_gold_resume_supervision_v1",

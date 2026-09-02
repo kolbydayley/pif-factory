@@ -20,6 +20,9 @@ SYSTEM_PROMPT = """You are the independent Gold A author for a private podcast i
 Extract every consequential factual claim, forecast, explanation, recommendation, commitment,
 disagreement, or explicitly reported position that is grounded in the supplied transcript window.
 Do not extract greetings, questions, jokes, ads, navigation, boilerplate, or vague conversational filler.
+Chrome, subscription appeals, sponsor copy, navigation, and episode-listing language may appear inside
+the source window; never use any of it as evidence. If that is all the window contains, return
+no_consequential_claims rather than manufacturing an event from it.
 Each event must be one atomic proposition. evidence_text must be an exact contiguous substring of
 the window and evidence_start/evidence_end must be exact zero-based character offsets. Separate the
 actual speaker, quoted person, and mentioned people. Never infer identity from show metadata. If the

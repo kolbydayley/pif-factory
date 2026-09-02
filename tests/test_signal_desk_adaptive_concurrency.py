@@ -6,9 +6,11 @@ from research_factory.signal_desk_adaptive_concurrency import (
     GOLD_BOUNDS,
     LaneBounds,
     admission_limit,
+    gold_clock_period,
     initialize_lane,
     lane_status,
     record_outcome,
+    set_effective_limit,
 )
 
 
@@ -57,11 +59,38 @@ def test_trip_thresholds_reduce_by_two_and_persist(outcome, count, latencies, re
 
 def test_no_success_for_fifteen_minutes_trips_on_next_admission():
     conn = _conn()
-    initialize_lane(conn, lane="gold", bounds=GOLD_BOUNDS, initial_limit=4, now=0)
-    record_outcome(conn, lane="gold", outcome="failure", latency_seconds=2, now=1)
-    state = admission_limit(conn, lane="gold", now=901)
+    shoulder = 14 * 3600
+    initialize_lane(conn, lane="gold", bounds=GOLD_BOUNDS, initial_limit=4, now=shoulder)
+    record_outcome(conn, lane="gold", outcome="failure", latency_seconds=2, now=shoulder + 1)
+    state = admission_limit(conn, lane="gold", now=shoulder + 901)
     assert state["effective_limit"] == 2
     assert state["last_trip_reason"] == "no_success_15m"
+
+
+def test_gold_clock_periods_and_peak_holds_without_a_capacity_event():
+    assert gold_clock_period(3 * 3600) == "off_peak"
+    assert gold_clock_period(14 * 3600) == "shoulder"
+    assert gold_clock_period(23 * 3600) == "peak"
+    conn = _conn()
+    initialize_lane(conn, lane="gold", bounds=GOLD_BOUNDS, initial_limit=4, now=23 * 3600)
+    record_outcome(
+        conn, lane="gold", outcome="parse_schema", latency_seconds=2,
+        now=23 * 3600 + 1,
+    )
+    state = admission_limit(conn, lane="gold", now=23 * 3600 + 901)
+    assert state["effective_limit"] == 4
+    assert state["clock_period"] == "peak"
+
+
+def test_live_limit_adjustment_is_durable_and_does_not_require_a_stop():
+    conn = _conn()
+    initialize_lane(conn, lane="gold", bounds=GOLD_BOUNDS, initial_limit=2, now=0)
+    state = set_effective_limit(
+        conn, lane="gold", effective_limit=6, reason="healthy_off_peak", now=1
+    )
+    assert state["effective_limit"] == 6
+    assert state["last_trip_reason"] == "operator_adjustment:healthy_off_peak"
+    assert lane_status(conn, lane="gold", now=2)["effective_limit"] == 6
 
 
 def test_recovery_waits_for_cooldown_and_three_healthy_windows():

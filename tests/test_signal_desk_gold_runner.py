@@ -5,15 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from research_factory.signal_desk_background_admission import BackgroundAdmission
 from research_factory.signal_desk_gold_runner import (
     RESERVE_TOKENS,
     SYSTEM_PROMPTS,
     GoldCapacityDeferred,
-    GoldForegroundDeferred,
     GoldResumePlanError,
     archive_retryable_sidecar_for_retry,
     build_gold_resume_plan,
+    compact_adjudication_output,
     repair_unique_evidence_offsets,
     run_gold_resume_supervisor,
     run_gold_split_phase,
@@ -47,6 +46,27 @@ def test_unique_exact_excerpt_repairs_offsets_without_changing_semantics():
     assert repaired["events"][0]["evidence_end"] == 21
     assert repaired["events"][0]["claim_text"] == "unchanged"
     assert output["events"][0]["evidence_start"] == 3
+
+
+def test_compact_adjudication_input_drops_reconstructable_bulk():
+    compact = compact_adjudication_output({
+        "window_disposition": "publishable",
+        "events": [{
+            "claim_text": "A consequence",
+            "evidence_text": "exact source text",
+            "evidence_start": 10,
+            "evidence_end": 27,
+            "issue_label": "AI employment",
+            "issue_aliases": ["jobs"],
+            "speaker_id": "speaker-1",
+        }],
+    })
+    assert compact["events"][0]["claim_text"] == "A consequence"
+    assert compact["events"][0]["evidence_text"] == "exact source text"
+    assert compact["events"][0]["speaker_id"] == "speaker-1"
+    assert "evidence_start" not in compact["events"][0]
+    assert "evidence_end" not in compact["events"][0]
+    assert "issue_aliases" not in compact["events"][0]
 
 
 def test_ambiguous_excerpt_is_never_rebound():
@@ -158,26 +178,6 @@ def _manifest_path() -> Path:
     return Path("work/signal-desk-rebuild/benchmark/partial-manifest.json")
 
 
-def _always_background(*, configured_concurrency: int) -> BackgroundAdmission:
-    return BackgroundAdmission(
-        allowed=True,
-        reason="test_background_window",
-        retry_after_seconds=0,
-        provider_concurrency_cap=configured_concurrency,
-        input_idle_seconds=9_999.0,
-    )
-
-
-def _foreground_codex(*, configured_concurrency: int) -> BackgroundAdmission:
-    return BackgroundAdmission(
-        allowed=False,
-        reason="foreground_codex_active",
-        retry_after_seconds=120,
-        provider_concurrency_cap=0,
-        input_idle_seconds=0.0,
-    )
-
-
 def test_resume_plan_is_exactly_staged_split_safe_and_never_mentions_a1_a2(tmp_path: Path):
     plan = build_gold_resume_plan(
         manifest_path=_manifest_path(),
@@ -187,12 +187,8 @@ def test_resume_plan_is_exactly_staged_split_safe_and_never_mentions_a1_a2(tmp_p
 
     assert [(stage["split"], stage["turn_type"]) for stage in plan["stages"]] == [
         ("development", "C"),
-        ("validation", "A"),
-        ("validation", "B"),
-        ("validation", "C"),
-        ("sealed_holdout", "A"),
-        ("sealed_holdout", "B"),
-        ("sealed_holdout", "C"),
+        ("validation", "PIPELINE"),
+        ("sealed_holdout", "PIPELINE"),
         ("development", "AUDIT"),
         ("validation", "AUDIT"),
         ("sealed_holdout", "AUDIT"),
@@ -219,6 +215,35 @@ def test_resume_plan_refuses_holdout_before_any_prefix_can_start(tmp_path: Path)
         )
 
 
+def test_pipeline_entrypoint_maps_to_per_window_a_b_c_flow(tmp_path: Path, monkeypatch):
+    import research_factory.signal_desk_gold_runner as runner
+
+    captured = {}
+
+    async def fake_run(**kwargs):
+        captured.update(kwargs)
+        return {"complete": True}
+
+    monkeypatch.setattr(runner, "_run_gold_split_phases", fake_run)
+    receipt = asyncio.run(
+        run_gold_split_phase(
+            manifest_path=_manifest_path(),
+            project_root=Path.cwd(),
+            result_root=tmp_path / "results",
+            dispatch_database=tmp_path / "dispatch.sqlite",
+            budget_database=tmp_path / "budget.sqlite",
+            grant_path=tmp_path / "grant.json",
+            session_root=tmp_path / "sessions",
+            budget_dir=tmp_path / "budget-dir",
+            split="validation",
+            turn_type="PIPELINE",
+            task_namespace="validation",
+        )
+    )
+    assert receipt == {"complete": True}
+    assert captured["phase_order"] == ("A", "B", "C")
+
+
 def test_c_phase_preflight_requires_full_a_and_b_before_any_c_dispatch(tmp_path: Path):
     dispatch = tmp_path / "dispatch-dev.sqlite"
     budget = tmp_path / "budget.sqlite"
@@ -237,7 +262,6 @@ def test_c_phase_preflight_requires_full_a_and_b_before_any_c_dispatch(tmp_path:
                 turn_type="C",
                 task_namespace="dev",
                 concurrency=8,
-                foreground_admission=_always_background,
             )
         )
     with sqlite3.connect(dispatch) as conn:
@@ -267,7 +291,6 @@ def test_public_phase_entrypoint_enforces_predecessors(
                 split="development",
                 turn_type=turn_type,
                 task_namespace="dev",
-                foreground_admission=_always_background,
             )
         )
 
@@ -306,7 +329,6 @@ def test_open_capacity_circuit_defers_before_constructing_an_app_server_client(t
                 split="development",
                 turn_type="A",
                 task_namespace="dev",
-                foreground_admission=_always_background,
             )
         )
     status = json.loads((result_root / "gold-development-status.json").read_text())
@@ -346,16 +368,18 @@ def test_holdout_phase_rejects_missing_explicit_flag_without_opening_packets(tmp
     assert called is False
 
 
-def test_explicit_holdout_phase_uses_a_0700_sealed_root_before_any_provider_work(tmp_path: Path, monkeypatch):
+def test_explicit_holdout_phase_secures_root_before_packet_materialization(tmp_path: Path, monkeypatch):
     import research_factory.signal_desk_gold_runner as runner
 
     def never_build(*_args, **_kwargs):
-        raise AssertionError("foreground defer must precede holdout packet materialization")
+        assert sealed_root.stat().st_mode & 0o777 == 0o700
+        assert result_root.stat().st_mode & 0o777 == 0o700
+        raise RuntimeError("packet materialization sentinel")
 
     monkeypatch.setattr(runner, "build_gold_packets", never_build)
     sealed_root = tmp_path / "sealed"
     result_root = sealed_root / "sealed_holdout"
-    with pytest.raises(GoldForegroundDeferred, match="foreground_codex_active"):
+    with pytest.raises(RuntimeError, match="packet materialization sentinel"):
         asyncio.run(
             run_gold_split_phase(
                 manifest_path=_manifest_path(),
@@ -370,35 +394,10 @@ def test_explicit_holdout_phase_uses_a_0700_sealed_root_before_any_provider_work
                 turn_type="A",
                 allow_sealed_holdout=True,
                 sealed_output_root=sealed_root,
-                foreground_admission=_foreground_codex,
             )
         )
     assert sealed_root.stat().st_mode & 0o777 == 0o700
     assert result_root.stat().st_mode & 0o777 == 0o700
-
-
-def test_supervisor_defers_before_calling_a_phase_runner_when_codex_is_foreground(tmp_path: Path):
-    async def must_not_run(**_kwargs):
-        raise AssertionError("foreground defer must start zero provider work")
-
-    receipt = asyncio.run(
-        run_gold_resume_supervisor(
-            manifest_path=_manifest_path(),
-            project_root=Path.cwd(),
-            gold_root=tmp_path / "gold",
-            budget_database=tmp_path / "budget.sqlite",
-            grant_path=tmp_path / "grant.json",
-            session_root=tmp_path / "sessions",
-            budget_dir=tmp_path / "budget-dir",
-            allow_sealed_holdout=True,
-            foreground_admission=_foreground_codex,
-            phase_runner=must_not_run,
-        )
-    )
-    assert receipt["status"] == "deferred"
-    assert receipt["provider_calls_started_during_deferred_check"] == 0
-    assert receipt["next_stage"] == {"split": "development", "turn_type": "C"}
-    assert receipt["contains_a1_or_a2"] is False
 
 
 def test_supervisor_calls_only_the_authorized_stages_in_order_and_checkpoints_each_stage(
@@ -433,19 +432,14 @@ def test_supervisor_calls_only_the_authorized_stages_in_order_and_checkpoints_ea
             session_root=tmp_path / "sessions",
             budget_dir=tmp_path / "budget-dir",
             allow_sealed_holdout=True,
-            foreground_admission=_always_background,
             phase_runner=fake_phase_runner,
         )
     )
     assert receipt["status"] == "complete"
     assert calls == [
         ("development", "C"),
-        ("validation", "A"),
-        ("validation", "B"),
-        ("validation", "C"),
-        ("sealed_holdout", "A"),
-        ("sealed_holdout", "B"),
-        ("sealed_holdout", "C"),
+        ("validation", "PIPELINE"),
+        ("sealed_holdout", "PIPELINE"),
         ("development", "AUDIT"),
         ("validation", "AUDIT"),
         ("sealed_holdout", "AUDIT"),

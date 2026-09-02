@@ -1111,8 +1111,9 @@ class CodexAppServerClient:
         )
         turn_error = turn.get("error") if isinstance(turn, dict) else None
         if isinstance(turn_error, dict):
+            codex_error_info = turn_error.get("codexErrorInfo")
             report["turn_error"] = {
-                "codex_error_info": turn_error.get("codexErrorInfo"),
+                "codex_error_info": codex_error_info,
                 **_text_metadata(
                     "message",
                     turn_error.get("message"),
@@ -1124,6 +1125,18 @@ class CodexAppServerClient:
                     include_text=self.synthetic_debug_errors,
                 ),
             }
+            # Capacity messages are short provider diagnostics, not model
+            # output. Preserve them verbatim so model-pool saturation can be
+            # distinguished from quota, transport, and local-process errors.
+            backend_message = turn_error.get("message")
+            if (
+                codex_error_info in {
+                    "serverOverloaded", "modelCapacityExceeded", "capacityExceeded"
+                }
+                and isinstance(backend_message, str)
+                and 0 < len(backend_message) <= 500
+            ):
+                report["turn_error"]["backend_message"] = backend_message
         self._write_sidecar(sidecar_file, report)
         wall_elapsed = float(report["wall_elapsed_seconds"])
         if status == "completed" and error_class == "structured_output_invalid":

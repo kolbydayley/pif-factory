@@ -24,6 +24,7 @@ from .signal_desk_background_admission import (
 )
 from .signal_desk_gold_capacity import (
     admit_gold_call,
+    capacity_backend_message_from_sidecar,
     capacity_error_from_sidecar,
     is_model_capacity_error,
     record_capacity_failure,
@@ -383,6 +384,9 @@ async def run_scorer_qualification(
                                 budget,
                                 admission_id=admission_id,
                                 error_code=str(capacity_error_from_sidecar(str(sidecar_path)) or "serverOverloaded"),
+                                backend_message=capacity_backend_message_from_sidecar(
+                                    str(sidecar_path)
+                                ),
                             )
                             failure_code = "a2_model_capacity_backoff"
                         else:

@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 import sqlite3
 import time
+from datetime import datetime, timezone
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Iterator
@@ -20,6 +21,11 @@ WINDOW_SECONDS = 600.0
 NO_SUCCESS_SECONDS = 900.0
 COOLDOWN_SECONDS = 600.0
 CALL_WINDOW_SIZE = 100
+GOLD_OFF_PEAK_START_UTC = 2
+GOLD_OFF_PEAK_END_UTC = 13
+GOLD_PEAK_START_UTC = 22
+GOLD_PEAK_END_UTC = 2
+GOLD_OFF_PEAK_EVALUATION_SECONDS = 120.0
 
 
 @dataclass(frozen=True)
@@ -157,10 +163,25 @@ def _p95(values: list[float]) -> float:
     return values[min(len(values) - 1, math.ceil(len(values) * 0.95) - 1)]
 
 
-def _trip_reason(state: dict[str, Any], events: list[dict[str, Any]], now: float) -> str | None:
-    count = len(events)
-    if state["last_success_at"] is not None and now - float(state["last_success_at"]) > NO_SUCCESS_SECONDS:
+def gold_clock_period(now: float) -> str:
+    hour = datetime.fromtimestamp(now, timezone.utc).hour
+    if GOLD_OFF_PEAK_START_UTC <= hour < GOLD_OFF_PEAK_END_UTC:
+        return "off_peak"
+    if hour >= GOLD_PEAK_START_UTC or hour < GOLD_PEAK_END_UTC:
+        return "peak"
+    return "shoulder"
+
+
+def _trip_reason(
+    state: dict[str, Any], events: list[dict[str, Any]], now: float, *, lane: str,
+) -> str | None:
+    if (
+        not (lane == "gold" and gold_clock_period(now) == "peak")
+        and state["last_success_at"] is not None
+        and now - float(state["last_success_at"]) > NO_SUCCESS_SECONDS
+    ):
         return "no_success_15m"
+    count = len(events)
     if not count:
         return None
     rates = {kind: sum(event["outcome"] == kind for event in events) / count for kind in (
@@ -168,6 +189,13 @@ def _trip_reason(state: dict[str, Any], events: list[dict[str, Any]], now: float
     )}
     if rates["rate_limit"] > 0.02:
         return "rate_limit_over_2pct"
+    # The provider's US-evening gpt-5.6-sol saturation is model-pool
+    # availability, not account quota or local pressure. During that known
+    # peak, hold the last proven limit and react only to an actual capacity
+    # response; semantic and transport failures still stop their individual
+    # runner, but cannot masquerade as a pool-capacity signal.
+    if lane == "gold" and gold_clock_period(now) == "peak":
+        return None
     if rates["timeout"] > 0.05:
         return "timeout_over_5pct"
     if rates["parse_schema"] > 0.02:
@@ -181,14 +209,27 @@ def _evaluate(conn: sqlite3.Connection, *, lane: str, now: float, force: bool = 
     state = _mapping(_row(conn, lane))
     events = _recent_events(conn, lane, now)
     newest_event_id = max((int(event["id"]) for event in events), default=0)
-    due = (
+    interval = (
+        GOLD_OFF_PEAK_EVALUATION_SECONDS
+        if lane == "gold" and gold_clock_period(now) == "off_peak"
+        else WINDOW_SECONDS
+    )
+    has_new_events = newest_event_id > int(state.get("last_evaluated_event_id") or 0)
+    no_success_due = (
+        not (lane == "gold" and gold_clock_period(now) == "peak")
+        and state["last_success_at"] is not None
+        and now - float(state["last_success_at"]) > NO_SUCCESS_SECONDS
+        and state.get("last_trip_reason") != "no_success_15m"
+    )
+    due = no_success_due or (has_new_events and (
         force
         or newest_event_id - int(state.get("last_evaluated_event_id") or 0) >= CALL_WINDOW_SIZE
-        or now - float(state["last_evaluated_at"]) >= WINDOW_SECONDS
-    )
+        or now - float(state["last_evaluated_at"]) >= interval
+    ))
     if not due:
         return state
-    reason = _trip_reason(state, events, now)
+    period = gold_clock_period(now) if lane == "gold" else "default"
+    reason = _trip_reason(state, events, now, lane=lane)
     if reason:
         limit = max(int(state["minimum_limit"]), int(state["effective_limit"]) - 2)
         conn.execute(
@@ -197,7 +238,7 @@ def _evaluate(conn: sqlite3.Connection, *, lane: str, now: float, force: bool = 
                    last_evaluated_at=?, last_evaluated_event_id=?, last_trip_reason=?, updated_at=? WHERE lane=?""",
             (limit, now + COOLDOWN_SECONDS, now, newest_event_id, reason, now, lane),
         )
-    elif now >= float(state["cooldown_until"]):
+    elif now >= float(state["cooldown_until"]) and period != "peak":
         healthy = int(state["healthy_windows"]) + 1
         limit = int(state["effective_limit"])
         if healthy >= 3 and limit < int(state["maximum_limit"]):
@@ -255,6 +296,33 @@ def lane_status(conn: sqlite3.Connection, *, lane: str, now: float | None = None
     return _status_from_state(_mapping(row), lane=lane, now=now)
 
 
+def set_effective_limit(
+    conn: sqlite3.Connection, *, lane: str, effective_limit: int,
+    reason: str, now: float | None = None,
+) -> dict[str, Any]:
+    """Adjust a live lane's durable ceiling without stopping its workers."""
+
+    if not str(reason).strip():
+        raise ValueError("capacity adjustment reason is required")
+    now = time.time() if now is None else float(now)
+    ensure_adaptive_concurrency_schema(conn)
+    with _transaction(conn):
+        row = _row(conn, lane)
+        if row is None:
+            raise ValueError(f"adaptive lane is not initialized: {lane}")
+        state = _mapping(row)
+        value = int(effective_limit)
+        if not int(state["minimum_limit"]) <= value <= int(state["maximum_limit"]):
+            raise ValueError("effective limit is outside the lane bounds")
+        conn.execute(
+            """UPDATE signal_desk_adaptive_concurrency_state
+               SET effective_limit=?, healthy_windows=0, last_trip_reason=?, updated_at=?
+               WHERE lane=?""",
+            (value, f"operator_adjustment:{reason}", now, lane),
+        )
+        return _status_from_state(_mapping(_row(conn, lane)), lane=lane, now=now)
+
+
 def admission_limit(conn: sqlite3.Connection, *, lane: str, now: float | None = None) -> dict[str, Any]:
     """Refresh time-based safeguards before admitting another provider call."""
 
@@ -277,4 +345,5 @@ def _status_from_state(state: dict[str, Any], *, lane: str, now: float) -> dict[
         "cooldown_remaining_seconds": max(0, int(float(state["cooldown_until"]) - now)),
         "healthy_windows": int(state["healthy_windows"]),
         "last_trip_reason": state["last_trip_reason"],
+        "clock_period": gold_clock_period(now) if lane == "gold" else "default",
     }

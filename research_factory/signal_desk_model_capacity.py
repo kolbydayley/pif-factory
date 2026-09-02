@@ -62,8 +62,8 @@ def load_capacity_policy(path: Path) -> dict[str, Any]:
         or not isinstance(lanes, list)
         or not isinstance(health, dict)
         or not isinstance(override, dict)
-        or override.get("configured_concurrency") != 4
-        or override.get("provider_concurrency_cap") != 3
+        or override.get("configured_concurrency") != 8
+        or override.get("provider_concurrency_cap") != 8
         or health.get("history_window_seconds") != 600
         or health.get("orphan_after_seconds") != 1800
         or health.get("capacity_error_rate_red") != 0.02
@@ -240,13 +240,32 @@ def build_capacity_pulse(
     capacity_errors = int(outcomes.get("rate_limit", 0))
     ownership_events = _rows(
         conn,
-        "SELECT lane,event_type,COUNT(*) AS count "
+        "SELECT lane,event_type,reason,backend_message,COUNT(*) AS count "
         "FROM signal_desk_model_capacity_events "
-        "WHERE model=? AND occurred_at>=? GROUP BY lane,event_type ORDER BY lane,event_type",
+        "WHERE model=? AND occurred_at>=? "
+        "GROUP BY lane,event_type,reason,backend_message ORDER BY lane,event_type",
         (
             EXPECTED_MODEL,
             datetime.fromtimestamp(recent_after, timezone.utc).isoformat(),
         ),
+    )
+    hour_events = _rows(
+        conn,
+        "SELECT lane,event_type,reason,backend_message,task_key,occurred_at "
+        "FROM signal_desk_model_capacity_events "
+        "WHERE model=? AND occurred_at>=? ORDER BY id",
+        (
+            EXPECTED_MODEL,
+            datetime.fromtimestamp(now_epoch - 3600, timezone.utc).isoformat(),
+        ),
+    )
+    gold_successes_hour = [
+        event for event in hour_events
+        if event.get("lane") == "gpt_5_6_sol_gold_authoring"
+        and event.get("event_type") == "success"
+    ]
+    adjudicated_windows_hour = sum(
+        ":C:" in str(event.get("task_key") or "") for event in gold_successes_hour
     )
     active_reservations = _rows(
         conn,
@@ -319,6 +338,11 @@ def build_capacity_pulse(
             "stale_provider_reservations": stale,
             "adaptive": adaptive,
         },
+        "telemetry": {
+            "successful_gold_passes_per_hour": len(gold_successes_hour),
+            "adjudicated_windows_per_hour": adjudicated_windows_hour,
+            "in_flight_by_lane": capacity_leases,
+        },
         "priorities": policy["lanes"],
         "privacy": "counts_capacity_metadata_and_task_keys_only_no_prompt_transcript_output_account_or_thread_ids",
     }
@@ -333,4 +357,23 @@ def write_capacity_pulse(path: Path, pulse: Mapping[str, Any]) -> None:
         handle.write("\n")
     os.chmod(temporary, 0o600)
     os.replace(temporary, target)
+    os.chmod(target, 0o600)
+
+
+def append_capacity_report(path: Path, pulse: Mapping[str, Any]) -> None:
+    """Append a privacy-safe ten-minute operational report."""
+
+    target = path.expanduser().resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    report = {
+        "schema_version": "pif_signal_desk_model_capacity_report_v1",
+        "measured_at": pulse.get("measured_at"),
+        "health": pulse.get("health"),
+        "decision": pulse.get("decision"),
+        "weekly_quota": pulse.get("weekly_quota"),
+        "provider_capacity": pulse.get("provider_capacity"),
+        "telemetry": pulse.get("telemetry"),
+    }
+    with target.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(report, sort_keys=True, separators=(",", ":")) + "\n")
     os.chmod(target, 0o600)

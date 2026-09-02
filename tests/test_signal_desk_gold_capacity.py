@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
@@ -7,6 +8,7 @@ from research_factory.signal_desk_gold_capacity import (
     INITIAL_BACKOFF_SECONDS,
     SUCCESSFUL_PROBES_TO_CLOSE,
     admit_gold_call,
+    capacity_backend_message_from_sidecar,
     capacity_error_from_sidecar,
     capacity_status,
     is_model_capacity_error,
@@ -36,6 +38,28 @@ def test_capacity_error_is_recognized_from_provider_code_and_sidecar(tmp_path):
     assert capacity_error_from_sidecar(str(sidecar)) == "serverOverloaded"
 
 
+def test_capacity_backend_message_is_retained_only_as_bounded_diagnostic(tmp_path):
+    sidecar = tmp_path / "sidecar.json"
+    message = "Selected model is at capacity. Please try a different model."
+    sidecar.write_text(
+        json.dumps({"turn_error": {
+            "codex_error_info": "serverOverloaded",
+            "backend_message": message,
+        }}),
+        encoding="utf-8",
+    )
+    assert capacity_backend_message_from_sidecar(str(sidecar)) == message
+
+    sidecar.write_text(
+        json.dumps({"turn_error": {
+            "codex_error_info": "invalidOutput",
+            "backend_message": "private arbitrary provider payload",
+        }}),
+        encoding="utf-8",
+    )
+    assert capacity_backend_message_from_sidecar(str(sidecar)) is None
+
+
 def test_capacity_failure_opens_persistent_backoff_and_prevents_stampede():
     conn = _conn()
     first = admit_gold_call(
@@ -43,7 +67,9 @@ def test_capacity_failure_opens_persistent_backoff_and_prevents_stampede():
     )
     assert first["allowed"] is True and first["state"] == "closed"
     failure = record_capacity_failure(
-        conn, admission_id=first["admission_id"], error_code="serverOverloaded", at=_at(1)
+        conn, admission_id=first["admission_id"], error_code="serverOverloaded",
+        backend_message="Selected model is at capacity. Please try a different model.",
+        at=_at(1),
     )
     assert failure["backoff_seconds"] == INITIAL_BACKOFF_SECONDS
     blocked = admit_gold_call(
@@ -58,6 +84,13 @@ def test_capacity_failure_opens_persistent_backoff_and_prevents_stampede():
     state = capacity_status(conn, at=_at(2))
     assert state["state"] == "open"
     assert state["active_admissions"] == 0
+    event = conn.execute(
+        "SELECT backend_message FROM signal_desk_model_capacity_events "
+        "WHERE event_type='capacity_failure'"
+    ).fetchone()
+    assert event["backend_message"] == (
+        "Selected model is at capacity. Please try a different model."
+    )
 
 
 def test_half_open_uses_one_probe_then_restores_only_after_three_successes():

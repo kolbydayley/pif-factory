@@ -3,8 +3,8 @@
   "model": "gpt-5.6-sol",
   "active_background_lane": "gpt_5_6_sol_gold_authoring",
   "foreground_override": {
-    "configured_concurrency": 4,
-    "provider_concurrency_cap": 3
+    "configured_concurrency": 8,
+    "provider_concurrency_cap": 8
   },
   "health": {
     "capacity_error_rate_red": 0.02,
