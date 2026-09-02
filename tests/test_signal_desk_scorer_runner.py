@@ -36,3 +36,25 @@ def test_a2_uses_distinct_lane_and_counts_active_reservations(tmp_path, monkeypa
 def test_a2_system_prompt_does_not_let_issue_wording_control_matching():
     assert "Issue-label wording is diagnostic" in runner.SYSTEM_PROMPT
     assert runner.OUTPUT_SCHEMA["properties"]["expected_match"]["type"] == "boolean"
+
+
+def test_a2_unstarted_reservation_is_released_for_foreground_preemption(tmp_path, monkeypatch):
+    conn = _conn()
+    monkeypatch.setattr(runner, "subscription_budget_window", lambda: ("2026-09-01", "start"))
+    monkeypatch.setattr(
+        runner,
+        "budget_gate",
+        lambda *_args, **_kwargs: {
+            "allowed": True,
+            "reason": None,
+            "tokens_used": 0,
+            "cap_tokens": 5_000_000,
+        },
+    )
+    reservation = runner.reserve_scorer_call(conn, task_key="foreground", budget_dir=tmp_path)
+    runner.release_unstarted_scorer_reservation(
+        conn, reservation_id=reservation["reservation_id"]
+    )
+    assert conn.execute(
+        "SELECT COUNT(*) FROM signal_desk_scorer_reservations WHERE status='active'"
+    ).fetchone()[0] == 0

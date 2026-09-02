@@ -50,3 +50,25 @@ def test_a1_settlement_attributes_the_distinct_non_gold_lane(tmp_path, monkeypat
         "SELECT lane,tokens FROM pif_subscription_budget_ledger"
     ).fetchone()
     assert tuple(row) == (runner.LANE, 12_345)
+
+
+def test_a1_unstarted_reservation_is_released_for_foreground_preemption(tmp_path, monkeypatch):
+    conn = _conn()
+    monkeypatch.setattr(runner, "subscription_budget_window", lambda: ("2026-09-01", "start"))
+    monkeypatch.setattr(
+        runner,
+        "budget_gate",
+        lambda *_args, **_kwargs: {
+            "allowed": True,
+            "reason": None,
+            "tokens_used": 0,
+            "cap_tokens": 5_000_000,
+        },
+    )
+    reservation = runner.reserve_frontier_call(conn, task_key="foreground", budget_dir=tmp_path)
+    runner.release_unstarted_frontier_reservation(
+        conn, reservation_id=reservation["reservation_id"]
+    )
+    assert conn.execute(
+        "SELECT COUNT(*) FROM signal_desk_frontier_reservations WHERE status='active'"
+    ).fetchone()[0] == 0

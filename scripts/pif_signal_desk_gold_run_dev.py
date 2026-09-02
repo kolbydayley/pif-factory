@@ -13,6 +13,7 @@ PIF_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PIF_ROOT))
 from research_factory.signal_desk_gold_runner import run_dev_gold  # noqa: E402
 from research_factory.signal_desk_gold_capacity import capacity_status  # noqa: E402
+from research_factory.signal_desk_background_admission import local_background_admission  # noqa: E402
 from research_factory.pif_budget_governor import read_weekly_snapshot  # noqa: E402
 
 
@@ -80,6 +81,22 @@ def main() -> int:
     root = PIF_ROOT / "work/signal-desk-rebuild/gold-authoring-v2"
     dispatch_database = root / "dispatch-dev.sqlite"
     while True:
+        # Do this before opening an app-server client.  The runner repeats the
+        # check around each turn, but a supervisor must not even initialize a
+        # background model client while the desktop user is active.
+        foreground = local_background_admission(configured_concurrency=args.concurrency)
+        if not foreground.allowed:
+            receipt = {
+                "status": "deferred",
+                "reason": foreground.reason,
+                "retry_after_seconds": foreground.retry_after_seconds,
+                "provider_calls_started": 0,
+            }
+            if args.once:
+                print(json.dumps(receipt, indent=2, sort_keys=True))
+                return 0
+            time.sleep(min(max(1, foreground.retry_after_seconds), 60))
+            continue
         try:
             receipt = asyncio.run(run_dev_gold(
                 manifest_path=PIF_ROOT / "work/signal-desk-rebuild/benchmark/partial-manifest.json",

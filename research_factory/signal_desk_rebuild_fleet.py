@@ -19,6 +19,9 @@ from typing import Any, Callable, Mapping, MutableMapping, Optional
 
 from .cheap_lane_adapters import GLM_JSON_INSTRUCTION, draft_glm, draft_glm_http
 from .lane_profiles import LANE_PROFILES
+from .signal_desk_adaptive_concurrency import (
+    LaneBounds, initialize_lane, record_outcome,
+)
 from .signal_desk_rebuild_dispatch import (
     LostLease,
     acquire_lease,
@@ -183,11 +186,34 @@ class _LaneRuntime:
                 "circuit_open": self.cooldown_until > self.clock(),
             }
 
+    def apply_persistent_limit(self, limit: int, *, force: bool = False) -> None:
+        with self._condition:
+            candidate = max(1, min(self.spec.max_concurrency, int(limit)))
+            # The established per-run transient circuit remains an immediate
+            # safety brake.  Persistent learning may tighten it mid-run but
+            # does not erase that brake after a single success.
+            self.effective_limit = candidate if force else min(self.effective_limit, candidate)
+            self._condition.notify_all()
+
 
 def _transient(result: Mapping[str, Any]) -> bool:
     error_class = str(result.get("error_class") or "").lower()
     error = str(result.get("error") or "").lower()
     return error_class == "timeout" or "429" in error or error_class == "rate_limit"
+
+
+def _adaptive_outcome(result: Mapping[str, Any]) -> str:
+    if result.get("ok"):
+        return "success"
+    error_class = str(result.get("error_class") or "").casefold()
+    detail = f"{error_class} {result.get('error') or ''}".casefold()
+    if error_class == "timeout" or "timeout" in detail:
+        return "timeout"
+    if error_class == "rate_limit" or "429" in detail or "capacity" in detail:
+        return "rate_limit"
+    if any(token in detail for token in ("schema", "parse", "json", "validation")):
+        return "parse_schema"
+    return "failure"
 
 
 class FleetRunner:
@@ -291,6 +317,7 @@ class FleetRunner:
         result: Mapping[str, Any] = {}
         while calls <= self.max_transient_retries:
             runtime.enter()
+            started = self._clock()
             try:
                 calls += 1
                 try:
@@ -304,13 +331,22 @@ class FleetRunner:
                     }
             finally:
                 runtime.leave()
+            adaptive = record_outcome(
+                conn,
+                lane=lane_name,
+                outcome=_adaptive_outcome(result),
+                latency_seconds=max(0.0, self._clock() - started),
+            )
             provider_calls += int(result.get("calls", 1))
             if result.get("ok"):
                 runtime.success()
+                runtime.apply_persistent_limit(int(adaptive["effective_limit"]))
                 break
             if not _transient(result):
+                runtime.apply_persistent_limit(int(adaptive["effective_limit"]))
                 break
             runtime.transient_failure()
+            runtime.apply_persistent_limit(int(adaptive["effective_limit"]))
             if calls > self.max_transient_retries:
                 break
 
@@ -383,6 +419,18 @@ class FleetRunner:
 
     def run_until_idle(self) -> dict[str, Any]:
         """Drain currently leasable work with the fixed global worker ceiling."""
+
+        bootstrap = self.connection_factory()
+        try:
+            for name, spec in self.lane_specs.items():
+                state = initialize_lane(
+                    bootstrap, lane=name,
+                    bounds=LaneBounds(1, spec.max_concurrency, 90.0),
+                    initial_limit=spec.max_concurrency,
+                )
+                self._runtimes[name].apply_persistent_limit(int(state["effective_limit"]), force=True)
+        finally:
+            bootstrap.close()
 
         with ThreadPoolExecutor(max_workers=GLOBAL_GLM_CEILING) as pool:
             futures = [pool.submit(self._worker, index) for index in range(GLOBAL_GLM_CEILING)]

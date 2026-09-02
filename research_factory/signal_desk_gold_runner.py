@@ -21,9 +21,22 @@ from .signal_desk_gold_capacity import (
     record_gold_admission_success,
     release_gold_admission,
 )
+from .signal_desk_adaptive_concurrency import (
+    GOLD_BOUNDS, admission_limit, initialize_lane, record_outcome,
+)
+from .signal_desk_background_admission import (
+    BackgroundWorkDeferred,
+    local_background_admission,
+    run_foreground_preemptible,
+)
 from .signal_desk_gold_atomicity import ATOMICITY_REVIEW_WINDOW_IDS
 from .signal_desk_gold_audit import select_dev_audit_windows
-from .signal_desk_gold_budget import mark_provider_started, reserve_gold_call, settle_gold_call
+from .signal_desk_gold_budget import (
+    mark_provider_started,
+    release_unstarted_reservation,
+    reserve_gold_call,
+    settle_gold_call,
+)
 from .signal_desk_gold_measurement import (
     A_SYSTEM_PROMPT, AUDIT_SYSTEM_PROMPT, B_SYSTEM_PROMPT, C_SYSTEM_PROMPT,
 )
@@ -193,6 +206,9 @@ async def run_dev_gold(
     initialize_dispatch_schema(dispatch)
     budget = sqlite3.connect(budget_database)
     budget.row_factory = sqlite3.Row
+    initialize_lane(
+        budget, lane="gold", bounds=GOLD_BOUNDS, initial_limit=concurrency,
+    )
     phase_receipts = []
     run_started = time.monotonic()
     stop = asyncio.Event()
@@ -247,11 +263,32 @@ async def run_dev_gold(
                     f"dev:{turn_type}:{window_id}:attempt:{lease['current_attempt_id']}:"
                     f"generation:{lease['lease_generation']}"
                 )
+                adaptive = admission_limit(budget, lane="gold")
+                foreground = local_background_admission(
+                    configured_concurrency=int(adaptive["effective_limit"])
+                )
+                if not foreground.allowed:
+                    release_attempt_for_retry(
+                        dispatch, attempt_id=int(lease["current_attempt_id"]),
+                        lease_owner=str(lease["lease_owner"]),
+                        lease_generation=int(lease["lease_generation"]),
+                        failure_code="gold_foreground_reserved",
+                        failure_detail=(
+                            "foreground Codex has priority over background Gold; "
+                            f"retry after {foreground.retry_after_seconds} seconds "
+                            f"({foreground.reason})"
+                        ),
+                    )
+                    # This is an expected, non-provider pause.  Stop all
+                    # workers so the supervisor will not churn leases while
+                    # the user is using Codex.
+                    stop.set()
+                    return
                 admission = admit_gold_call(
                     budget,
                     task_key=capacity_task_key,
                     lease_owner=str(lease["lease_owner"]),
-                    configured_concurrency=concurrency,
+                    configured_concurrency=foreground.provider_concurrency_cap,
                 )
                 if not admission["allowed"]:
                     release_attempt_for_retry(
@@ -263,6 +300,12 @@ async def run_dev_gold(
                             f"retry after {int(admission.get('retry_after_seconds') or 0)} seconds"
                         ),
                     )
+                    # A lower adaptive ceiling is normal while calls already
+                    # in flight drain.  Requeue quietly; the existing capacity
+                    # circuit still stops the swarm for a provider outage.
+                    if admission["reason"] == "gold_model_capacity_slots_full":
+                        await asyncio.sleep(1)
+                        return
                     stop.set()
                     return
                 admission_id = str(admission["admission_id"])
@@ -290,11 +333,6 @@ async def run_dev_gold(
                                   "Restore/reset the weekly subscription window; the runner can resume from leases.")
                     return
                 reservation_id = str(reservation["reservation_id"])
-                try:
-                    mark_provider_started(budget, reservation_id)
-                except Exception:
-                    release_gold_admission(budget, admission_id=admission_id)
-                    raise
                 prompt = _prompt(packet)
                 if turn_type == "C":
                     a = json.loads((result_root / "A" / f"{window_id}.json").read_text())
@@ -312,14 +350,28 @@ async def run_dev_gold(
                 )
                 started = time.monotonic()
                 reservation_settled = False
+                provider_started = False
                 result = None
                 try:
-                    result = await client.run_ephemeral_structured_turn(
-                        model="gpt-5.6-sol", effort="medium",
-                        base_instructions=SYSTEM_PROMPTS[turn_type], prompt=prompt,
-                        output_schema=packet["output_schema"], cwd=project_root,
-                        sidecar_path=sidecar_path, output_path=output_path,
-                        timeout_seconds=900,
+                    async def invoke_provider_turn() -> Any:
+                        nonlocal provider_started
+                        # The foreground gate inside run_foreground_preemptible
+                        # executes before this factory.  A foreground return in
+                        # that small interval therefore releases its budget
+                        # reservation rather than charging a no-call attempt.
+                        mark_provider_started(budget, reservation_id)
+                        provider_started = True
+                        return await client.run_ephemeral_structured_turn(
+                            model="gpt-5.6-sol", effort="medium",
+                            base_instructions=SYSTEM_PROMPTS[turn_type], prompt=prompt,
+                            output_schema=packet["output_schema"], cwd=project_root,
+                            sidecar_path=sidecar_path, output_path=output_path,
+                            timeout_seconds=900,
+                        )
+
+                    result = await run_foreground_preemptible(
+                        invoke_provider_turn,
+                        configured_concurrency=foreground.provider_concurrency_cap,
                     )
                     usage = int(result.usage.total_tokens) if result.usage else 0
                     settle_gold_call(budget, reservation_id=reservation_id,
@@ -339,29 +391,64 @@ async def run_dev_gold(
                         output_path.write_text(
                             json.dumps(repaired, indent=2, sort_keys=True) + "\n", encoding="utf-8"
                         )
+                    record_outcome(
+                        budget, lane="gold", outcome="success",
+                        latency_seconds=time.monotonic() - started,
+                    )
                     record_gold_admission_success(budget, admission_id=admission_id)
                 except Exception as exc:  # noqa: BLE001
+                    foreground_yield = isinstance(exc, BackgroundWorkDeferred)
                     capacity_error_code = capacity_error_from_sidecar(str(sidecar_path))
-                    provider_capacity = is_model_capacity_error(
+                    provider_capacity = not foreground_yield and is_model_capacity_error(
                         error_code=capacity_error_code,
                         detail=str(exc),
                     )
-                    if not reservation_settled:
-                        # The provider call started, but an exception denied us
-                        # authoritative usage. Charge the full reservation so
-                        # an infrastructure failure can never become unmetered.
-                        settle_gold_call(
-                            budget,
-                            reservation_id=reservation_id,
-                            actual_tokens=RESERVE_TOKENS[turn_type],
-                            provider_calls=1,
+                    detail_text = f"{type(exc).__name__}: {str(exc)}".casefold()
+                    adaptive_outcome = (
+                        "rate_limit" if provider_capacity else
+                        "timeout" if "timeout" in detail_text else
+                        "parse_schema" if any(token in detail_text for token in (
+                            "schema", "parse", "json", "evidencecontract", "validation"
+                        )) else "failure"
+                    )
+                    if not foreground_yield:
+                        record_outcome(
+                            budget, lane="gold", outcome=adaptive_outcome,
+                            latency_seconds=time.monotonic() - started,
                         )
+                    if not reservation_settled:
+                        if not provider_started:
+                            release_unstarted_reservation(budget, reservation_id)
+                        else:
+                            # The provider call started, but an exception denied
+                            # us authoritative usage. Charge the full reservation
+                            # so an infrastructure failure can never become
+                            # unmetered.
+                            settle_gold_call(
+                                budget,
+                                reservation_id=reservation_id,
+                                actual_tokens=RESERVE_TOKENS[turn_type],
+                                provider_calls=1,
+                            )
                     if output_path.exists():
                         rejected = result_root / "rejected" / turn_type / output_path.name
                         rejected.parent.mkdir(parents=True, exist_ok=True)
                         output_path.replace(rejected)
                     detail = f"{type(exc).__name__}: {str(exc)[:300]}"
-                    if "EvidenceContract" in type(exc).__name__:
+                    if foreground_yield:
+                        release_gold_admission(budget, admission_id=admission_id)
+                        failure_code = "gold_foreground_reserved"
+                        detail = (
+                            "foreground Codex resumed; cancelled the background Gold turn "
+                            f"and preserved its sidecar for retry ({exc.admission.reason})"
+                        )
+                        release_attempt_for_retry(
+                            dispatch, attempt_id=int(lease["current_attempt_id"]),
+                            lease_owner=str(lease["lease_owner"]),
+                            lease_generation=int(lease["lease_generation"]),
+                            failure_code=failure_code, failure_detail=detail,
+                        )
+                    elif "EvidenceContract" in type(exc).__name__:
                         release_gold_admission(budget, admission_id=admission_id)
                         fail_attempt_semantically(
                             dispatch, attempt_id=int(lease["current_attempt_id"]),
@@ -388,6 +475,10 @@ async def run_dev_gold(
                             failure_code=failure_code, failure_detail=detail,
                         )
                     stop.set()
+                    if foreground_yield:
+                        # Do not page or open a provider circuit for the
+                        # normal act of returning control to the user.
+                        return
                     if provider_capacity:
                         _notify_stall(
                             "model_capacity",

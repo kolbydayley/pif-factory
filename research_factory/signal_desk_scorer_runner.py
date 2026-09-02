@@ -11,6 +11,25 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .codex_app_server import CodexAppServerClient
+from .signal_desk_adaptive_concurrency import (
+    GOLD_BOUNDS,
+    admission_limit,
+    initialize_lane,
+    record_outcome,
+)
+from .signal_desk_background_admission import (
+    BackgroundWorkDeferred,
+    local_background_admission,
+    run_foreground_preemptible,
+)
+from .signal_desk_gold_capacity import (
+    admit_gold_call,
+    capacity_error_from_sidecar,
+    is_model_capacity_error,
+    record_capacity_failure,
+    record_gold_admission_success,
+    release_gold_admission,
+)
 from .signal_desk_rebuild_dispatch import (
     acquire_lease,
     complete_attempt,
@@ -114,6 +133,20 @@ def settle_scorer_call(
     conn.commit()
 
 
+def release_unstarted_scorer_reservation(
+    conn: sqlite3.Connection, *, reservation_id: str
+) -> None:
+    """Forget an A2 reservation when foreground priority blocked any call."""
+
+    changed = conn.execute(
+        "DELETE FROM signal_desk_scorer_reservations WHERE id=? AND status='active'",
+        (reservation_id,),
+    ).rowcount
+    conn.commit()
+    if changed != 1:
+        raise RuntimeError("unstarted A2 reservation not found")
+
+
 def build_selection(
     *, manifest: Mapping[str, Any], project_root: Path,
     gold_root: Path, prediction_root: Path, total: int,
@@ -182,6 +215,7 @@ async def run_scorer_qualification(
     dispatch = sqlite3.connect(dispatch_database); dispatch.row_factory = sqlite3.Row
     budget = sqlite3.connect(budget_database); budget.row_factory = sqlite3.Row
     initialize_dispatch_schema(dispatch); ensure_scorer_budget_schema(budget)
+    initialize_lane(budget, lane="gold", bounds=GOLD_BOUNDS, initial_limit=concurrency)
     stop = asyncio.Event(); completed = []
     case_map = {case["case_id"]: case for case in selection["cases"]}
     try:
@@ -202,26 +236,52 @@ async def run_scorer_qualification(
                 while not stop.is_set():
                     async with lock:
                         lease = acquire_lease(
-                            dispatch, lease_owner=f"a2-{index}", lease_seconds=1200
+                            dispatch, lease_owner=f"a2-{index}", lease_seconds=1800
                         )
                     if lease is None:
                         return
                     case_id = str(lease["payload"]["case_id"])
                     case = case_map[case_id]
-                    reservation = reserve_scorer_call(
-                        budget,
-                        task_key=(f"a2:{case_id}:attempt:{lease['current_attempt_id']}:"
-                                  f"generation:{lease['lease_generation']}"),
-                        budget_dir=budget_dir,
+                    task_key = (
+                        f"a2:{case_id}:attempt:{lease['current_attempt_id']}:"
+                        f"generation:{lease['lease_generation']}"
                     )
-                    if not reservation["allowed"]:
+                    adaptive = admission_limit(budget, lane="gold")
+                    foreground = local_background_admission(
+                        configured_concurrency=int(adaptive["effective_limit"])
+                    )
+                    if not foreground.allowed:
                         release_attempt_for_retry(
                             dispatch, attempt_id=int(lease["current_attempt_id"]),
                             lease_owner=str(lease["lease_owner"]),
                             lease_generation=int(lease["lease_generation"]),
-                            failure_code="a2_budget_stall", failure_detail=str(reservation["reason"]),
+                            failure_code="a2_foreground_reserved",
+                            failure_detail=(
+                                "foreground Codex has priority over background A2; "
+                                f"retry after {foreground.retry_after_seconds} seconds "
+                                f"({foreground.reason})"
+                            ),
                         )
-                        stop.set(); _notify(str(reservation["reason"])); return
+                        stop.set(); return
+                    admission = admit_gold_call(
+                        budget,
+                        task_key=task_key,
+                        lease_owner=str(lease["lease_owner"]),
+                        configured_concurrency=foreground.provider_concurrency_cap,
+                    )
+                    if not admission["allowed"]:
+                        release_attempt_for_retry(
+                            dispatch, attempt_id=int(lease["current_attempt_id"]),
+                            lease_owner=str(lease["lease_owner"]),
+                            lease_generation=int(lease["lease_generation"]),
+                            failure_code=str(admission["reason"]),
+                            failure_detail="shared GPT-5.6-Sol capacity circuit deferred A2",
+                        )
+                        if admission["reason"] == "gold_model_capacity_slots_full":
+                            await asyncio.sleep(1)
+                            return
+                        stop.set(); return
+                    admission_id = str(admission["admission_id"])
                     packet = packets[case["window_id"]]
                     gold = outputs["gold"][case["window_id"]]["events"][case["gold_index"]]
                     predicted = outputs["predicted"][case["window_id"]]["events"][case["predicted_index"]]
@@ -232,13 +292,30 @@ async def run_scorer_qualification(
                         + "\nTRANSCRIPT WINDOW END\n\nGOLD EVENT\n" + json.dumps(gold, sort_keys=True)
                         + "\n\nPREDICTED EVENT\n" + json.dumps(predicted, sort_keys=True)
                     )
+                    sidecar_path = result_root / f"{case_id}.sidecar.json"
+                    reservation: dict[str, Any] | None = None
                     settled = False
+                    provider_started = False
+                    started = time.monotonic()
                     try:
-                        result = await client.run_ephemeral_structured_turn(
-                            model="gpt-5.6-sol", effort="medium", base_instructions=SYSTEM_PROMPT,
-                            prompt=prompt, output_schema=OUTPUT_SCHEMA, cwd=project_root,
-                            sidecar_path=result_root / f"{case_id}.sidecar.json",
-                            output_path=result_root / f"{case_id}.json", timeout_seconds=900,
+                        async def invoke_provider_turn() -> Any:
+                            nonlocal reservation, provider_started
+                            reservation = reserve_scorer_call(
+                                budget, task_key=task_key, budget_dir=budget_dir,
+                            )
+                            if not reservation["allowed"]:
+                                raise RuntimeError(f"a2_budget_stall:{reservation['reason']}")
+                            provider_started = True
+                            return await client.run_ephemeral_structured_turn(
+                                model="gpt-5.6-sol", effort="medium", base_instructions=SYSTEM_PROMPT,
+                                prompt=prompt, output_schema=OUTPUT_SCHEMA, cwd=project_root,
+                                sidecar_path=sidecar_path,
+                                output_path=result_root / f"{case_id}.json", timeout_seconds=900,
+                            )
+
+                        result = await run_foreground_preemptible(
+                            invoke_provider_turn,
+                            configured_concurrency=foreground.provider_concurrency_cap,
                         )
                         usage = int(result.usage.total_tokens) if result.usage else RESERVE_TOKENS
                         settle_scorer_call(
@@ -250,17 +327,71 @@ async def run_scorer_qualification(
                             raise RuntimeError(result.error_class or result.status)
                         if result.output.get("case_id") != case_id:
                             raise RuntimeError("A2 case identity mismatch")
+                        record_outcome(
+                            budget, lane="gold", outcome="success",
+                            latency_seconds=time.monotonic() - started,
+                        )
+                        record_gold_admission_success(budget, admission_id=admission_id)
                     except Exception as exc:  # noqa: BLE001
-                        if not settled:
-                            settle_scorer_call(
-                                budget, reservation_id=str(reservation["reservation_id"]),
-                                actual_tokens=RESERVE_TOKENS,
+                        foreground_yield = isinstance(exc, BackgroundWorkDeferred)
+                        provider_capacity = not foreground_yield and is_model_capacity_error(
+                            error_code=capacity_error_from_sidecar(str(sidecar_path)),
+                            detail=str(exc),
+                        )
+                        detail_text = f"{type(exc).__name__}: {exc}".casefold()
+                        if not foreground_yield:
+                            record_outcome(
+                                budget,
+                                lane="gold",
+                                outcome=(
+                                    "rate_limit" if provider_capacity else
+                                    "timeout" if "timeout" in detail_text else
+                                    "parse_schema" if any(token in detail_text for token in (
+                                        "schema", "parse", "json", "validation"
+                                    )) else "failure"
+                                ),
+                                latency_seconds=time.monotonic() - started,
                             )
+                        if reservation and reservation.get("allowed") and not settled:
+                            if provider_started:
+                                settle_scorer_call(
+                                    budget,
+                                    reservation_id=str(reservation["reservation_id"]),
+                                    actual_tokens=RESERVE_TOKENS,
+                                )
+                            else:
+                                release_unstarted_scorer_reservation(
+                                    budget, reservation_id=str(reservation["reservation_id"])
+                                )
+                        detail = f"{type(exc).__name__}: {exc}"
+                        if foreground_yield:
+                            release_gold_admission(budget, admission_id=admission_id)
+                            release_attempt_for_retry(
+                                dispatch, attempt_id=int(lease["current_attempt_id"]),
+                                lease_owner=str(lease["lease_owner"]),
+                                lease_generation=int(lease["lease_generation"]),
+                                failure_code="a2_foreground_reserved",
+                                failure_detail=(
+                                    "foreground Codex resumed; cancelled background A2 "
+                                    f"({exc.admission.reason})"
+                                ),
+                            )
+                            stop.set(); return
+                        if provider_capacity:
+                            record_capacity_failure(
+                                budget,
+                                admission_id=admission_id,
+                                error_code=str(capacity_error_from_sidecar(str(sidecar_path)) or "serverOverloaded"),
+                            )
+                            failure_code = "a2_model_capacity_backoff"
+                        else:
+                            release_gold_admission(budget, admission_id=admission_id)
+                            failure_code = "a2_infrastructure_failure"
                         release_attempt_for_retry(
                             dispatch, attempt_id=int(lease["current_attempt_id"]),
                             lease_owner=str(lease["lease_owner"]),
                             lease_generation=int(lease["lease_generation"]),
-                            failure_code="a2_failure", failure_detail=f"{type(exc).__name__}: {exc}",
+                            failure_code=failure_code, failure_detail=detail,
                         )
                         stop.set(); _notify(str(exc)); return
                     complete_attempt(

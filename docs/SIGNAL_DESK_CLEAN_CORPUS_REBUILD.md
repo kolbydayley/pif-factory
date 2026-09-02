@@ -200,15 +200,26 @@ reads the live app-server rate-limit window; an old session-log snapshot is
 never authoritative. A `serverOverloaded` or model-capacity response opens an
 exponential backoff, admits no further Gold calls, then permits exactly one
 recovery probe. Three successful serialized probes are required before parallel
-provider admission returns. The capacity circuit is shared across development,
-validation, and holdout Gold runners, and supervisors must not launch other
-remote Codex fanout while a Gold provider admission is active. At 85% weekly
-consumption the lane notifies Kolby but continues. Actual provider exhaustion
-fails closed on a clean leased checkpoint and notifies the exact unblock; the
-supervisor resumes after calls succeed following a reset. A persistent kill at
-120% protects against ledger/provider drift. The grant expires automatically
-when all 804 A/B/C outputs and the three sealed audit slices complete, or after
-30 days, whichever comes first.
+provider admission returns. The circuit is shared by every background
+GPT-5.6-sol rebuild call: Gold development/validation/holdout, A1 frontier
+calibration, and A2 scorer qualification.
+
+Foreground Codex use has priority over all of those lanes. A background call
+may not start while ChatGPT/Codex is frontmost or until 120 seconds have passed
+since local input. A running background turn is interrupted when foreground
+activity resumes, leaving its leased work retryable; that is a clean checkpoint,
+not a provider failure. A turn that never starts releases its reservation; a
+turn already sent to the provider is conservatively settled. During uninterrupted idle
+time, provider admission ramps from one slot (2-15 minutes idle), to two
+(15-30), to four (30-45), and only then to the configured adaptive cap. This is
+intentionally not a model fallback: Gold remains GPT-5.6-sol medium. Supervisors
+must not launch other remote Codex fanout while a shared provider admission is
+active. At 85% weekly consumption the lane notifies Kolby but continues. Actual
+provider exhaustion fails closed on a clean leased checkpoint and notifies the
+exact unblock; the supervisor resumes after calls succeed following a reset. A
+persistent kill at 120% protects against ledger/provider drift. The grant
+expires automatically when all 804 A/B/C outputs and the three sealed audit
+slices complete, or after 30 days, whichever comes first.
 
 The transport canary averaged 25,654.2 tokens/call. Semantic prompt v1 failed
 closed because it produced `quoted_speech` without a `quoted_person_id`; no

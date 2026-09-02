@@ -95,3 +95,34 @@ def test_half_open_uses_one_probe_then_restores_only_after_three_successes():
     )
     assert normal_one["allowed"] and normal_two["allowed"]
     assert blocked["reason"] == "gold_model_capacity_slots_full"
+
+
+def test_gold_a1_and_a2_share_one_provider_admission_budget():
+    """Distinct rebuild lanes may not independently fill Sol capacity."""
+
+    conn = _conn()
+    gold = admit_gold_call(
+        conn,
+        task_key="gold:C:window-1",
+        lease_owner="gold-worker",
+        configured_concurrency=1,
+        at=_at(),
+    )
+    a1 = admit_gold_call(
+        conn,
+        task_key="a1:frontier:window-2",
+        lease_owner="frontier-worker",
+        configured_concurrency=1,
+        at=_at(),
+    )
+    a2 = admit_gold_call(
+        conn,
+        task_key="a2:scorer:case-3",
+        lease_owner="scorer-worker",
+        configured_concurrency=1,
+        at=_at(),
+    )
+
+    assert gold["allowed"]
+    assert a1["reason"] == "gold_model_capacity_slots_full"
+    assert a2["reason"] == "gold_model_capacity_slots_full"
