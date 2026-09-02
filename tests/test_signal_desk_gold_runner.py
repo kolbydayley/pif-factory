@@ -1,6 +1,7 @@
 from research_factory.signal_desk_gold_runner import (
     RESERVE_TOKENS,
     SYSTEM_PROMPTS,
+    archive_cancelled_sidecar_for_retry,
     repair_unique_evidence_offsets,
 )
 
@@ -65,3 +66,36 @@ def test_declared_span_may_restore_source_whitespace_only():
     )
     assert changed_count == 0
     assert changed["events"][0]["evidence_text"] == "caption best"
+
+
+def test_cancelled_sidecar_is_preserved_before_same_lineage_retry(tmp_path):
+    sidecar = tmp_path / "sidecars" / "window.json"
+    sidecar.parent.mkdir()
+    sidecar.write_text('{"state":"cancelled","turn_id":"t1"}\n', encoding="utf-8")
+    output = tmp_path / "results" / "window.json"
+
+    archived = archive_cancelled_sidecar_for_retry(
+        sidecar_path=sidecar,
+        output_path=output,
+        recovery_root=tmp_path / "recovery",
+        attempt_id=12,
+        lease_generation=3,
+    )
+
+    assert archived == tmp_path / "recovery/window.attempt-12.generation-3.json"
+    assert archived.read_text(encoding="utf-8").startswith('{"state":"cancelled"')
+    assert not sidecar.exists()
+
+
+def test_completed_sidecar_is_never_archived_for_retry(tmp_path):
+    sidecar = tmp_path / "window.json"
+    sidecar.write_text('{"state":"completed"}\n', encoding="utf-8")
+
+    assert archive_cancelled_sidecar_for_retry(
+        sidecar_path=sidecar,
+        output_path=tmp_path / "output.json",
+        recovery_root=tmp_path / "recovery",
+        attempt_id=1,
+        lease_generation=1,
+    ) is None
+    assert sidecar.exists()
