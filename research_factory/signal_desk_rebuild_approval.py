@@ -38,6 +38,9 @@ SCHEMA_VERSION = "pif_signal_desk_rebuild_approval_v1"
 EXPECTED_MODEL = "gpt-5.5"
 PROVIDER_LANE = "openai-codex/gpt-5.5"
 BUDGET_LANE = "signal_desk_rebuild_approval"
+APPROVAL_PACKET_SCHEMA_VERSION = "pif_signal_desk_rebuild_approval_packet_v1"
+MAX_APPROVAL_PACKET_CANDIDATES = 25
+MAX_APPROVAL_PACKET_INPUT_TOKENS = 12_000
 
 
 class ApprovalExecutionError(RuntimeError):
@@ -54,6 +57,10 @@ class ApprovalBudgetDenied(ApprovalExecutionError):
 
 class ApprovalResponseError(ApprovalExecutionError):
     """GPT-5.5 returned a response outside the frozen approval contract."""
+
+
+class ApprovalPacketLimitError(ApprovalExecutionError):
+    """An approval batch exceeds its immutable input-size contract."""
 
 
 @dataclass(frozen=True)
@@ -89,6 +96,126 @@ def _canonical(value: Any) -> str:
 
 def _digest(value: Any) -> str:
     return sha256_text(_canonical(value))
+
+
+def conservative_input_token_upper_bound(value: Any) -> int:
+    """Return a tokenizer-independent upper bound for serialized input tokens.
+
+    We use UTF-8 byte count rather than a provider tokenizer estimate. A byte
+    can always be represented by at least one token, so the result is safely
+    conservative across tokenizer changes. It may leave useful headroom, but
+    never lets a 12k-token packet silently become larger in production.
+    """
+
+    return len(_canonical(value).encode("utf-8"))
+
+
+def _packet_body(candidates: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    return {
+        "schema_version": APPROVAL_PACKET_SCHEMA_VERSION,
+        "model": EXPECTED_MODEL,
+        "allowed_actions": [action.value for action in ApprovalAction],
+        "candidates": [dict(item) for item in candidates],
+    }
+
+
+def _packet_with_metadata(candidates: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    body = _packet_body(candidates)
+    packet = {
+        **body,
+        "candidate_count": len(candidates),
+        "input_token_upper_bound": conservative_input_token_upper_bound(body),
+    }
+    packet["packet_sha256"] = _digest(packet)
+    return packet
+
+
+def validate_approval_packet(packet: Mapping[str, Any]) -> dict[str, Any]:
+    """Fail closed unless a packet exactly satisfies the GPT-5.5 limits."""
+
+    if packet.get("schema_version") != APPROVAL_PACKET_SCHEMA_VERSION:
+        raise ApprovalPacketLimitError("approval packet schema mismatch")
+    if packet.get("model") != EXPECTED_MODEL:
+        raise ApprovalPacketLimitError("approval packet must target gpt-5.5")
+    candidates = packet.get("candidates")
+    if not isinstance(candidates, list) or not candidates:
+        raise ApprovalPacketLimitError("approval packet requires at least one candidate")
+    if len(candidates) > MAX_APPROVAL_PACKET_CANDIDATES:
+        raise ApprovalPacketLimitError("approval packet exceeds 25 candidates")
+    if packet.get("candidate_count") != len(candidates):
+        raise ApprovalPacketLimitError("approval packet candidate count does not match payload")
+    if len({str(item.get("semantic_sample_id") or "") for item in candidates}) != len(candidates):
+        raise ApprovalPacketLimitError("approval packet contains duplicate semantic sample ids")
+    for item in candidates:
+        if (
+            not isinstance(item, Mapping)
+            or not isinstance(item.get("semantic_sample_id"), str)
+            or not str(item["semantic_sample_id"]).strip()
+            or not isinstance(item.get("candidate"), Mapping)
+            or not isinstance(item.get("context"), Mapping)
+        ):
+            raise ApprovalPacketLimitError("approval packet candidate has an invalid shape")
+    body = _packet_body(candidates)
+    expected_upper_bound = conservative_input_token_upper_bound(body)
+    if packet.get("input_token_upper_bound") != expected_upper_bound:
+        raise ApprovalPacketLimitError("approval packet token upper bound does not match payload")
+    if expected_upper_bound > MAX_APPROVAL_PACKET_INPUT_TOKENS:
+        raise ApprovalPacketLimitError("approval packet exceeds 12,000 input-token upper bound")
+    expected_hash = _digest({key: value for key, value in packet.items() if key != "packet_sha256"})
+    if packet.get("packet_sha256") != expected_hash:
+        raise ApprovalPacketLimitError("approval packet hash does not match payload")
+    return dict(packet)
+
+
+def plan_approval_packets(items: Sequence[Mapping[str, Any]]) -> tuple[dict[str, Any], ...]:
+    """Partition bounded approval inputs into safe, immutable GPT-5.5 packets.
+
+    The planner is deliberately transport-agnostic: provider adapters may send
+    a packet in parallel, but cannot dispatch an unbounded ad-hoc batch. Wide
+    context retries are planned as their own packet because they represent a
+    distinct approval attempt, never a new semantic sample.
+    """
+
+    packets: list[dict[str, Any]] = []
+    pending: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for item in items:
+        if not isinstance(item, Mapping):
+            raise ApprovalPacketLimitError("approval packet item must be a mapping")
+        semantic_sample_id = str(item.get("semantic_sample_id") or "").strip()
+        candidate = item.get("candidate")
+        context = item.get("context")
+        if not semantic_sample_id or not isinstance(candidate, Mapping) or not isinstance(context, Mapping):
+            raise ApprovalPacketLimitError("approval packet item has an invalid shape")
+        if semantic_sample_id in seen_ids:
+            raise ApprovalPacketLimitError("approval batch may not repeat a semantic sample id")
+        seen_ids.add(semantic_sample_id)
+        normalized = {
+            "semantic_sample_id": semantic_sample_id,
+            "candidate": dict(candidate),
+            "context": dict(context),
+        }
+        proposed = [*pending, normalized]
+        proposed_packet = _packet_with_metadata(proposed)
+        if (
+            len(proposed) > MAX_APPROVAL_PACKET_CANDIDATES
+            or proposed_packet["input_token_upper_bound"] > MAX_APPROVAL_PACKET_INPUT_TOKENS
+        ):
+            if not pending:
+                raise ApprovalPacketLimitError(
+                    f"approval candidate {semantic_sample_id} exceeds the 12,000-token packet limit"
+                )
+            packets.append(validate_approval_packet(_packet_with_metadata(pending)))
+            pending = [normalized]
+            if _packet_with_metadata(pending)["input_token_upper_bound"] > MAX_APPROVAL_PACKET_INPUT_TOKENS:
+                raise ApprovalPacketLimitError(
+                    f"approval candidate {semantic_sample_id} exceeds the 12,000-token packet limit"
+                )
+        else:
+            pending = proposed
+    if pending:
+        packets.append(validate_approval_packet(_packet_with_metadata(pending)))
+    return tuple(packets)
 
 
 def initialize_approval_schema(conn: sqlite3.Connection) -> None:
@@ -148,6 +275,22 @@ def initialize_approval_schema(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    # Existing local approval ledgers predate packet provenance. SQLite has no
+    # portable ADD COLUMN IF NOT EXISTS, so migrate idempotently after table
+    # creation without rewriting or deleting any prior call history.
+    columns = {
+        str(row[1])
+        for row in conn.execute("PRAGMA table_info(signal_desk_rebuild_approval_calls)")
+    }
+    for name, declaration in (
+        ("packet_batch_id", "TEXT"),
+        ("packet_candidate_count", "INTEGER"),
+        ("input_token_upper_bound", "INTEGER"),
+    ):
+        if name not in columns:
+            conn.execute(
+                f"ALTER TABLE signal_desk_rebuild_approval_calls ADD COLUMN {name} {declaration}"
+            )
     conn.execute(
         """
         CREATE INDEX IF NOT EXISTS signal_desk_rebuild_approval_calls_sample_idx
@@ -366,6 +509,16 @@ def run_approval(
         else:
             packet = {"context_scope": ContextScope.BOUNDED.value, **dict(bounded_packet)}
 
+        approval_packet = plan_approval_packets(
+            (
+                {
+                    "semantic_sample_id": semantic_sample_id,
+                    "candidate": candidate,
+                    "context": packet,
+                },
+            )
+        )[0]
+
         day, derived_window_start = subscription_budget_window(instant)
         gate = dict(
             budget_gate_fn(
@@ -393,7 +546,14 @@ def run_approval(
             "candidate": dict(candidate),
             "context": packet,
             "allowed_actions": [action.value for action in ApprovalAction],
+            "approval_packet_sha256": approval_packet["packet_sha256"],
+            "approval_packet_candidate_count": approval_packet["candidate_count"],
         }
+        request_input_token_upper_bound = conservative_input_token_upper_bound(request)
+        if request_input_token_upper_bound > MAX_APPROVAL_PACKET_INPUT_TOKENS:
+            raise ApprovalPacketLimitError(
+                "approval request exceeds the 12,000 input-token upper bound"
+            )
         provider_call_number = int(
             conn.execute(
                 "SELECT COUNT(*) FROM signal_desk_rebuild_approval_calls WHERE semantic_sample_id = ?",
@@ -406,8 +566,9 @@ def run_approval(
             INSERT INTO signal_desk_rebuild_approval_calls
               (semantic_sample_id, provider_call_number, context_scope,
                packet_json, packet_sha256, request_json, request_sha256,
-               budget_receipt_json, budget_receipt_sha256, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'started', ?)
+               budget_receipt_json, budget_receipt_sha256, status, created_at,
+               packet_batch_id, packet_candidate_count, input_token_upper_bound)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'started', ?, ?, ?, ?)
             """,
             (
                 semantic_sample_id,
@@ -420,6 +581,9 @@ def run_approval(
                 _canonical(gate),
                 _digest(gate),
                 created_at,
+                approval_packet["packet_sha256"],
+                approval_packet["candidate_count"],
+                request_input_token_upper_bound,
             ),
         )
         call_id = int(cursor.lastrowid)

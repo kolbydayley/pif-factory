@@ -18,7 +18,7 @@ from .signal_desk_rebuild_scorer import (
 )
 
 
-EVALUATION_VERSION = "pif_signal_desk_rebuild_evaluation_v2"
+EVALUATION_VERSION = "pif_signal_desk_rebuild_evaluation_v3"
 
 
 def _ratio(numerator: int, denominator: int) -> float:
@@ -80,8 +80,12 @@ def evaluate_windows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 
     totals = defaultdict(int)
     per_stratum: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    per_show: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     per_window_scores: list[dict[str, Any]] = []
     for row in rows:
+        show_id = str(row.get("show_id") or "").strip()
+        if not show_id:
+            raise ValueError("every evaluation row requires a stable show_id")
         gold = row["gold"]
         predicted = row["predicted"]
         structure = str(row["transcript_structure"])
@@ -113,7 +117,14 @@ def evaluate_windows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             )
             if overlapping_predictions == 1:
                 atomic_one_to_one += 1
-        correct_empty = not gold_events and not predicted_events
+        # Empty output receives recall/density credit only when the frozen Gold
+        # contract explicitly says this window has no consequential claims.
+        # A malformed or silently empty Gold output cannot become a free pass.
+        correct_empty = (
+            gold.get("window_disposition") == "no_consequential_claims"
+            and not gold_events
+            and not predicted_events
+        )
         counts = {
             "windows": 1,
             "gold_events": len(gold_events),
@@ -134,25 +145,57 @@ def evaluate_windows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         for key, value in counts.items():
             totals[key] += value
             per_stratum[structure][key] += value
+            per_show[show_id][key] += value
         precision = _ratio(strict["matched_events"], len(predicted_events))
         recall = _ratio(strict["matched_events"], len(gold_events))
+        event_f1 = _ratio(
+            2 * strict["matched_events"], len(gold_events) + len(predicted_events)
+        )
+        # Field accuracy is conditional on a claim-identity match, except a
+        # contract-declared correct-empty window. A model that misses every
+        # gold event must not receive a perfect attribution/stance score just
+        # because there are zero pairs to inspect.
+        empty_field_credit = 1.0 if correct_empty else 0.0
+        attribution = _ratio(field_correct["speaker"], len(pairs)) if pairs else empty_field_credit
+        speaker_role = _ratio(field_correct["speaker_role"], len(pairs)) if pairs else empty_field_credit
+        issue = _ratio(field_correct["issue"], len(pairs)) if pairs else empty_field_credit
+        stance = _ratio(field_correct["stance"], len(pairs)) if pairs else empty_field_credit
+        atomicity = (
+            _ratio(atomic_one_to_one, len(pairs))
+            if pairs
+            else (1.0 if correct_empty else 0.0)
+        )
         density_ratio = (
             min(len(gold_events), len(predicted_events))
             / max(len(gold_events), len(predicted_events))
             if gold_events or predicted_events
             else 1.0
         )
+        contamination = _ratio(len(predicted_events), len(predicted_events)) if not gold_events and predicted_events else 0.0
+        schema_validity = 1.0
+        evidence_grounding = 1.0
+        macro_composite = sum(
+            (event_f1, attribution, speaker_role, issue, stance, atomicity)
+        ) / 6.0
         per_window_scores.append(
             {
                 "window_id_sha256": hashlib.sha256(str(row["window_id"]).encode()).hexdigest(),
-                "show_id": row.get("show_id"),
+                "show_id": show_id,
                 "episode_id_sha256": hashlib.sha256(str(row.get("episode_id") or "").encode()).hexdigest(),
                 "transcript_structure": structure,
                 "event_precision": precision,
                 "event_recall": recall,
-                "event_f1": _ratio(2 * strict["matched_events"], len(gold_events) + len(predicted_events)),
-                "atomicity": _ratio(atomic_one_to_one, len(pairs)),
+                "event_f1": event_f1,
+                "macro_composite": macro_composite,
+                "attribution": attribution,
+                "speaker_role": speaker_role,
+                "issue": issue,
+                "stance": stance,
+                "atomicity": atomicity,
                 "density_ratio": density_ratio,
+                "contamination": contamination,
+                "schema_validity": schema_validity,
+                "evidence_grounding": evidence_grounding,
                 "correct_empty": correct_empty,
             }
         )
@@ -162,11 +205,19 @@ def evaluate_windows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         recall = _ratio(counts["matched_events"], counts["gold_events"])
         field_total = counts["diagnostic_pairs"]
         event_f1 = _ratio(2 * counts["matched_events"], counts["gold_events"] + counts["predicted_events"])
-        attribution = _ratio(counts["speaker_correct"], field_total)
-        speaker_role = _ratio(counts["speaker_role_correct"], field_total)
-        issue = _ratio(counts["issue_correct"], field_total)
-        stance = _ratio(counts["stance_correct"], field_total)
-        atomicity = _ratio(counts["atomic_one_to_one_matched"], counts["diagnostic_pairs"])
+        aggregate_correct_empty = (
+            not counts["gold_events"] and not counts["predicted_events"]
+        )
+        field_empty_credit = 1.0 if aggregate_correct_empty else 0.0
+        attribution = _ratio(counts["speaker_correct"], field_total) if field_total else field_empty_credit
+        speaker_role = _ratio(counts["speaker_role_correct"], field_total) if field_total else field_empty_credit
+        issue = _ratio(counts["issue_correct"], field_total) if field_total else field_empty_credit
+        stance = _ratio(counts["stance_correct"], field_total) if field_total else field_empty_credit
+        atomicity = (
+            _ratio(counts["atomic_one_to_one_matched"], counts["diagnostic_pairs"])
+            if counts["diagnostic_pairs"]
+            else (1.0 if not counts["gold_events"] and not counts["predicted_events"] else 0.0)
+        )
         density_ratio = (
             min(counts["gold_events"], counts["predicted_events"])
             / max(counts["gold_events"], counts["predicted_events"])
@@ -192,11 +243,33 @@ def evaluate_windows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             ),
         }
 
-    aggregate_metrics = metrics(totals)
+    micro_metrics = metrics(totals)
+    per_show_results = {
+        show_id: {
+            "counts": dict(counts),
+            "metrics": {key: round(value, 6) for key, value in metrics(counts).items()},
+        }
+        for show_id, counts in sorted(per_show.items())
+    }
+    if not per_show_results:
+        raise ValueError("evaluation requires at least one show")
+    metric_names = tuple(micro_metrics)
+    show_macro_metrics = {
+        key: sum(float(row["metrics"][key]) for row in per_show_results.values())
+        / len(per_show_results)
+        for key in metric_names
+    }
     return {
         "schema_version": EVALUATION_VERSION,
         "counts": dict(totals),
-        "metrics": {key: round(value, 6) for key, value in aggregate_metrics.items()},
+        "aggregation": {
+            "selection_metrics": "unweighted_show_macro",
+            "micro_metrics": "pooled_event_counts_diagnostic_only",
+            "show_count": len(per_show_results),
+        },
+        "metrics": {key: round(value, 6) for key, value in show_macro_metrics.items()},
+        "micro_metrics": {key: round(value, 6) for key, value in micro_metrics.items()},
+        "per_show": per_show_results,
         "strata": {
             name: {
                 "counts": dict(counts),

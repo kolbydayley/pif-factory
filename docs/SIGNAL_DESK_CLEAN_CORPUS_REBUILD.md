@@ -20,13 +20,13 @@ Campaign: `signal-desk-clean-corpus-2026-08-31`
 
 ## Blocking order
 
-Round 1 cannot start until all four receipts are frozen. Gold authoring precedes
-all four and follows one fixed sequence: Gold A, Gold B, and Gold C over all
-804 windows; a deterministic blind reliability audit over 81 windows (10% of
-804, rounded up); then one single-pass GPT-5.6-sol run over development. The
-same development prediction-vs-gold pairs supply both the A1 frontier ceiling
-and A2's stratified scorer decisions. A2 may add adjudication calls, but it may
-not create a second prediction run.
+Round 1 cannot start until all four receipts are frozen. Development Gold A,
+Gold B, Gold C, and its blind reliability audit complete first. Validation and
+holdout Gold may continue in sealed storage in parallel, but their item-level
+answers never enter prompt-author diagnostics. One single-pass GPT-5.6-sol run
+over development then supplies both the A1 frontier ceiling and A2's stratified
+scorer decisions. A2 may add adjudication calls, but it may not create a second
+prediction run.
 
 1. `scorer-qualified.json`: scorer specification/code/fixture hashes and a
    one-sided 95% Wilson LCB of at least 0.97 against GPT-5.6-sol adjudication.
@@ -52,12 +52,35 @@ development episode, two validation episodes, and one sealed episode, with
 three windows per episode. Four complete OOD shows remain source-disjoint and
 sealed.
 
-Gold audit begins at 81 windows, selected deterministically across the full
-804-window benchmark before answers are read, and expands in 40-window blocks until it
-contains at least 1,000 consequential events or exhausts the benchmark. The
-critical-error denominator is events; its one-sided 95% Wilson UCB must be below
-1%. Fabricated evidence, reversed meaning, wrong source, or unusable context is
-also a catastrophic window failure and must occur zero times.
+The development Gold audit begins with a deterministic blind slice of 19
+development windows, selected before audit answers are read, and expands in
+40-window blocks until it contains at least 1,000 consequential Gold-C events
+or exhausts development. A deterministic full-benchmark reliability audit is
+separate and keeps every validation/holdout item result sealed. The critical
+error denominator is events; its one-sided 95% Wilson UCB must be below 1%.
+Fabricated evidence, reversed meaning, wrong source/window, or unusable context
+is a catastrophic failure and must occur zero times. Four or more purported
+claims sharing one evidence span flags the window for Gold-C re-adjudication;
+it is never treated as a passing audit observation.
+
+### Measurement invariants
+
+The scorer is versioned independently of prompts. Version 5 first matches claim
+identity using evidence-span overlap of at least 0.5 and claim F1 of at least
+0.3, then scores attribution, speaker role, issue, and stance on every matched
+pair. Its atomicity metric measures one-to-one span matching plus a density
+ratio; it is not duplicate-label F1. Any scorer revision reruns affected
+aggregates and requires a fresh stratified qualification sample, including
+one-span/many-claim cases.
+
+Selection uses an unweighted macro over shows, not pooled event totals. The
+registry retains per-show rows and pooled diagnostics. Promotion is based on a
+bootstrap lower confidence bound over shows and must improve on at least 80% of
+shows with 50 or more consequential validation events. A1 freezes absolute
+quality gates from the frontier's window-bootstrap lower bound (and the
+contamination upper bound), never from an unbounded point estimate. Explicit
+`no_consequential_claims` windows are correct only when the prediction is also
+empty.
 
 OOD evaluation is shape-aware. Freakonomics, Fresh Air, This American Life,
 Hidden Brain, and On Being are claim-dense. The Moth, Ear Hustle, and 99%
@@ -240,6 +263,13 @@ failure. A campaign KILL is persistent. It means all ledgers must be reconciled
 and the bypass diagnosed. Only Kolby, or an operator explicitly delegated by
 Kolby in the current turn, may clear it.
 
+Every GPT-5.5 approval dispatch is hash-bound to a packet of no more than 25
+candidates and a conservative serialized-input upper bound of 12,000 tokens.
+Oversize single candidates fail closed rather than bypassing the packet limit.
+The five-day burn probe is an immutable receipt over one continuous provider
+window; duplicate days, quota/capacity failures, and an interrupted qualifying
+streak do not count as readiness evidence.
+
 Leased work separates semantic task lineages from append-only attempts. Lease
 expiry re-leases the same attempt. Semantic failure is terminal for that
 attempt. Explicit resurrection creates a new attempt under the same lineage;
@@ -254,6 +284,11 @@ ordinary enqueue never silently deduplicates into a dead attempt.
 - No third-party mention may appear as a person's own statement.
 - No public claim lacks accepted evidence, transcript location, and original
   source provenance.
+- The ten named regression fixtures (attribution, context clipping, chrome,
+  listing, analogy, and concept-confusion cases) execute against the exact
+  built static DOM. Their receipt binds the registry, source-window hashes,
+  rendered-DOM hashes, routes, and site-build hash; a boolean assertion alone
+  cannot satisfy this gate.
 - Funnel, quarantine, evidence, and roster totals reconcile from server data.
 - All stable entity/evidence routes crawl without a broken internal link.
 - Public payload, rendered DOM, 390px/430px mobile views, and Railway production

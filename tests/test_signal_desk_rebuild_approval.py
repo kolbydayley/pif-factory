@@ -11,7 +11,12 @@ from research_factory.signal_desk_rebuild_approval import (
     ApprovalBudgetDenied,
     ApprovalConflictError,
     ApprovalExecutionError,
+    ApprovalPacketLimitError,
     ApprovalResponseError,
+    MAX_APPROVAL_PACKET_CANDIDATES,
+    MAX_APPROVAL_PACKET_INPUT_TOKENS,
+    plan_approval_packets,
+    validate_approval_packet,
     initialize_approval_schema,
     run_approval,
 )
@@ -100,12 +105,14 @@ def test_accept_persists_candidate_packet_decision_hashes_and_usage(conn, budget
     call = conn.execute(
         """
         SELECT packet_sha256, request_sha256, decision_sha256, usage_tokens,
-               reported_action, effective_action
+               reported_action, effective_action, packet_candidate_count,
+               input_token_upper_bound
         FROM signal_desk_rebuild_approval_calls
         """
     ).fetchone()
     assert all(call[:3])
-    assert call[3:] == (321, "accept", "accept")
+    assert call[3:7] == (321, "accept", "accept", 1)
+    assert call[7] <= MAX_APPROVAL_PACKET_INPUT_TOKENS
     assert conn.execute(
         "SELECT SUM(tokens) FROM pif_subscription_budget_ledger"
     ).fetchone()[0] == 321
@@ -355,3 +362,48 @@ def test_schema_install_is_idempotent(conn):
     }
     assert "signal_desk_rebuild_approval_runs" in tables
     assert "signal_desk_rebuild_approval_calls" in tables
+
+
+def test_approval_packet_planner_caps_candidates_and_hash_binds_payload():
+    items = [
+        {
+            "semantic_sample_id": f"sample-{index}",
+            "candidate": {"claim": f"claim {index}"},
+            "context": {"turns": [{"text": "short"}]},
+        }
+        for index in range(MAX_APPROVAL_PACKET_CANDIDATES + 1)
+    ]
+    packets = plan_approval_packets(items)
+    assert [packet["candidate_count"] for packet in packets] == [25, 1]
+    assert all(packet["input_token_upper_bound"] <= MAX_APPROVAL_PACKET_INPUT_TOKENS for packet in packets)
+    assert validate_approval_packet(packets[0])["packet_sha256"] == packets[0]["packet_sha256"]
+    tampered = dict(packets[0])
+    tampered["candidate_count"] = 24
+    with pytest.raises(ApprovalPacketLimitError, match="candidate count"):
+        validate_approval_packet(tampered)
+
+
+def test_approval_packet_rejects_a_single_oversize_input(conn, budget):
+    oversized = "x" * (MAX_APPROVAL_PACKET_INPUT_TOKENS + 100)
+    with pytest.raises(ApprovalPacketLimitError, match="exceeds"):
+        plan_approval_packets(
+            [{
+                "semantic_sample_id": "oversize",
+                "candidate": {"claim": oversized},
+                "context": {"text": "short"},
+            }]
+        )
+    model_calls = []
+    with pytest.raises(ApprovalPacketLimitError, match="exceeds"):
+        run_approval(
+            conn,
+            semantic_sample_id="oversize-run",
+            candidate={"claim": oversized},
+            bounded_packet=bounded(),
+            full_segment="whole segment",
+            model_call=lambda request: model_calls.append(request),
+            budget=budget,
+            at=NOW,
+            budget_gate_fn=allowed_budget,
+        )
+    assert model_calls == []

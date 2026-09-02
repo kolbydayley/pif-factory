@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -19,7 +19,7 @@ from .util import dumps_json, now_iso, sha256_text
 
 
 SCHEMA_VERSION = "pif_signal_desk_rebuild_budget_grant_v1"
-BURN_PROBE_SCHEMA_VERSION = "pif_signal_desk_rebuild_burn_probe_v1"
+BURN_PROBE_SCHEMA_VERSION = "pif_signal_desk_rebuild_burn_probe_v2"
 EXPECTED_SCOPE = "signal-desk-clean-corpus-rebuild"
 MAX_GRANT_DAYS = 45
 MAX_DAILY_CAP_TOKENS = 20_000_000
@@ -187,33 +187,137 @@ def rebuild_budget_gate(
     }
 
 
-def qualify_burn_probe(receipts: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    """Verify 5-7 consecutive useful-work days near the authorized cap."""
+def _probe_day(value: object) -> date:
+    try:
+        return date.fromisoformat(str(value))
+    except (TypeError, ValueError) as exc:
+        raise RebuildBudgetError("burn probe receipt has an invalid day") from exc
 
-    normalized = sorted(receipts, key=lambda row: str(row.get("day") or ""))
-    qualifying: list[Mapping[str, Any]] = []
-    previous = None
-    consecutive = True
-    for receipt in normalized:
-        day = datetime.fromisoformat(str(receipt["day"]))
-        if previous is not None and (day.date() - previous.date()).days != 1:
-            consecutive = False
-        previous = day
-        if (
-            int(receipt.get("tokens") or 0) >= MIN_BURN_PROBE_TOKENS
-            and int(receipt.get("tokens") or 0) <= MAX_DAILY_CAP_TOKENS
-            and not bool(receipt.get("provider_quota_failure"))
-            and bool(receipt.get("useful_work", True))
-        ):
-            qualifying.append(receipt)
-    passed = consecutive and len(qualifying) >= MIN_BURN_PROBE_DAYS
-    return {
+
+def five_day_budget_burn_probe(
+    receipts: Sequence[Mapping[str, Any]],
+    *,
+    require_provider_window: bool = True,
+) -> dict[str, Any]:
+    """Evaluate a real five-to-seven-day capacity probe before Phase 4.
+
+    A qualifying day must demonstrate useful rebuild-lane work close to the
+    authorized 20M ceiling without quota/capacity failure. We search for a
+    *contiguous qualifying* streak, rather than treating five good days around
+    a failed day as a pass. With ``require_provider_window`` enabled, every
+    selected day must also attest the same real weekly provider window.
+    """
+
+    seen_days: set[date] = set()
+    normalized: list[dict[str, Any]] = []
+    duplicate_day = False
+    for raw in receipts:
+        if not isinstance(raw, Mapping):
+            raise RebuildBudgetError("burn probe receipts must be mappings")
+        day = _probe_day(raw.get("day"))
+        duplicate_day = duplicate_day or day in seen_days
+        seen_days.add(day)
+        try:
+            tokens = int(raw.get("tokens") or 0)
+        except (TypeError, ValueError) as exc:
+            raise RebuildBudgetError("burn probe tokens must be an integer") from exc
+        window_id = str(
+            raw.get("provider_window_id") or raw.get("weekly_window_id") or ""
+        ).strip()
+        qualifying = (
+            0 <= tokens <= MAX_DAILY_CAP_TOKENS
+            and tokens >= MIN_BURN_PROBE_TOKENS
+            and not bool(raw.get("provider_quota_failure"))
+            and not bool(raw.get("provider_capacity_failure"))
+            and bool(raw.get("useful_work", True))
+            and (bool(window_id) or not require_provider_window)
+        )
+        normalized.append(
+            {
+                "day": day,
+                "tokens": tokens,
+                "provider_window_id": window_id,
+                "qualifying": qualifying,
+            }
+        )
+    normalized.sort(key=lambda row: row["day"])
+    longest: list[dict[str, Any]] = []
+    current: list[dict[str, Any]] = []
+    for row in normalized:
+        same_window = (
+            not current
+            or not require_provider_window
+            or row["provider_window_id"] == current[0]["provider_window_id"]
+        )
+        contiguous = not current or (row["day"] - current[-1]["day"]).days == 1
+        if row["qualifying"] and contiguous and same_window:
+            current.append(row)
+        elif row["qualifying"]:
+            current = [row]
+        else:
+            current = []
+        if len(current) > len(longest):
+            longest = list(current)
+
+    qualifying_days = sum(int(row["qualifying"]) for row in normalized)
+    streak_days = len(longest)
+    provider_window_verified = bool(longest) and (
+        not require_provider_window or bool(longest[0]["provider_window_id"])
+    )
+    passed = (
+        not duplicate_day
+        and streak_days >= MIN_BURN_PROBE_DAYS
+        and provider_window_verified
+    )
+    body: dict[str, Any] = {
         "schema_version": BURN_PROBE_SCHEMA_VERSION,
         "passed": passed,
-        "consecutive": consecutive,
+        "status": "passed" if passed else "failed",
+        "probe_type": "five_day_weekly_window_capacity_burn",
         "observed_days": len(normalized),
-        "qualifying_days": len(qualifying),
-        "preferred_seven_day_probe": consecutive and len(qualifying) >= PREFERRED_BURN_PROBE_DAYS,
+        "qualifying_days": qualifying_days,
+        "longest_contiguous_qualifying_streak_days": streak_days,
+        "streak_start_day": longest[0]["day"].isoformat() if longest else None,
+        "streak_end_day": longest[-1]["day"].isoformat() if longest else None,
+        "weekly_window_id": longest[0]["provider_window_id"] if longest else None,
+        "provider_window_verified": provider_window_verified,
+        "duplicate_day_detected": duplicate_day,
+        "require_provider_window": require_provider_window,
+        "preferred_seven_day_probe": streak_days >= PREFERRED_BURN_PROBE_DAYS,
+        "minimum_days": MIN_BURN_PROBE_DAYS,
         "minimum_daily_tokens": MIN_BURN_PROBE_TOKENS,
         "maximum_daily_tokens": MAX_DAILY_CAP_TOKENS,
+        "receipt_exposes_provider_responses": False,
     }
+    body["receipt_sha256"] = sha256_text(dumps_json(body))
+    return body
+
+
+def write_five_day_budget_burn_probe(
+    path: Path,
+    *,
+    receipts: Sequence[Mapping[str, Any]],
+    require_provider_window: bool = True,
+) -> dict[str, Any]:
+    """Write one immutable probe receipt, including a failed probe for triage."""
+
+    if path.exists():
+        raise RebuildBudgetError("burn probe receipt is immutable")
+    result = five_day_budget_burn_probe(
+        receipts,
+        require_provider_window=require_provider_window,
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(dumps_json(result) + "\n", encoding="utf-8")
+    return result
+
+
+def qualify_burn_probe(receipts: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Backward-compatible local qualification helper without provider attestation.
+
+    Phase-4 release code must call ``five_day_budget_burn_probe`` with its
+    default strict provider-window contract. This helper remains for prior
+    offline tests and never constitutes a release receipt by itself.
+    """
+
+    return five_day_budget_burn_probe(receipts, require_provider_window=False)

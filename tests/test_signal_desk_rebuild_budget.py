@@ -107,3 +107,30 @@ def test_burn_probe_rejects_gaps():
         )
     ]
     assert budget.qualify_burn_probe(rows)["passed"] is False
+
+
+def test_strict_five_day_probe_requires_one_real_provider_window_and_contiguous_run(tmp_path):
+    rows = [
+        {
+            "day": f"2026-09-0{day}",
+            "tokens": 19_000_000,
+            "useful_work": True,
+            "provider_window_id": "weekly-reset-1",
+        }
+        for day in range(1, 6)
+    ]
+    receipt = budget.five_day_budget_burn_probe(rows)
+    assert receipt["passed"] is True
+    assert receipt["provider_window_verified"] is True
+    assert receipt["longest_contiguous_qualifying_streak_days"] == 5
+    written = budget.write_five_day_budget_burn_probe(
+        tmp_path / "burn-probe.json", receipts=rows
+    )
+    assert written["receipt_sha256"]
+    with pytest.raises(budget.RebuildBudgetError, match="immutable"):
+        budget.write_five_day_budget_burn_probe(
+            tmp_path / "burn-probe.json", receipts=rows
+        )
+
+    rows[2]["provider_quota_failure"] = True
+    assert budget.five_day_budget_burn_probe(rows)["passed"] is False

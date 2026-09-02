@@ -41,3 +41,50 @@ def test_aggregate_metrics_keep_strata_and_hashed_window_diagnostics():
     assert output["metrics"]["event_recall"] == 1.0
     assert output["strata"]["speaker_turn"]["counts"]["windows"] == 1
     assert output["per_window_scores"][0]["window_id_sha256"] != "secret-window"
+
+
+def test_selection_metrics_are_unweighted_show_macro_not_pooled_micro():
+    perfect_events = [_event(start=index * 30, end=index * 30 + 20) for index in range(100)]
+    output = evaluate_windows(
+        [
+            {
+                "window_id": "large-show-window",
+                "show_id": "large-show",
+                "episode_id": "episode-a",
+                "transcript_structure": "speaker_turn",
+                "gold": {"events": perfect_events},
+                "predicted": {"events": perfect_events},
+            },
+            {
+                "window_id": "small-show-window",
+                "show_id": "small-show",
+                "episode_id": "episode-b",
+                "transcript_structure": "speaker_turn",
+                "gold": {"events": [_event()]},
+                "predicted": {"events": []},
+            },
+        ]
+    )
+    assert output["aggregation"]["selection_metrics"] == "unweighted_show_macro"
+    assert output["metrics"]["event_recall"] == 0.5
+    assert output["micro_metrics"]["event_recall"] > 0.99
+    assert output["per_show"]["large-show"]["metrics"]["event_recall"] == 1.0
+    assert output["per_show"]["small-show"]["metrics"]["event_recall"] == 0.0
+
+
+def test_no_consequential_claims_is_correct_empty_for_recall_and_density():
+    output = evaluate_windows(
+        [
+            {
+                "window_id": "empty",
+                "show_id": "show-a",
+                "episode_id": "episode-a",
+                "transcript_structure": "speaker_turn",
+                "gold": {"window_disposition": "no_consequential_claims", "events": []},
+                "predicted": {"window_disposition": "no_consequential_claims", "events": []},
+            }
+        ]
+    )
+    assert output["metrics"]["event_recall"] == 1.0
+    assert output["metrics"]["density_ratio"] == 1.0
+    assert output["per_window_scores"][0]["correct_empty"] is True

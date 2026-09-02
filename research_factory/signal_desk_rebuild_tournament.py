@@ -7,10 +7,14 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Mapping
 
+from .signal_desk_rebuild_gates import (
+    evaluate_powered_show_promotion,
+    show_macro_composite_lcb,
+)
 from .util import dumps_json, now_iso, sha256_text
 
 
-SCHEMA_VERSION = "pif_signal_desk_rebuild_tournament_v1"
+SCHEMA_VERSION = "pif_signal_desk_rebuild_tournament_v2"
 FAMILY_TYPES = ("prompt", "representation")
 SPLITS = ("development", "validation", "sealed_holdout")
 
@@ -63,6 +67,28 @@ def ensure_tournament_schema(conn: sqlite3.Connection) -> None:
           metrics_sha256 TEXT NOT NULL,
           created_at TEXT NOT NULL,
           UNIQUE(variant_id, split, scorer_version)
+        );
+        CREATE TABLE IF NOT EXISTS signal_desk_rebuild_per_show_scores (
+          variant_id TEXT NOT NULL REFERENCES signal_desk_rebuild_experiments(variant_id),
+          split TEXT NOT NULL CHECK(split IN ('development','validation')),
+          scorer_version TEXT NOT NULL,
+          show_id TEXT NOT NULL,
+          counts_json TEXT NOT NULL,
+          metrics_json TEXT NOT NULL,
+          row_sha256 TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY(variant_id, split, scorer_version, show_id)
+        );
+        CREATE TABLE IF NOT EXISTS signal_desk_rebuild_promotions (
+          campaign_id TEXT NOT NULL,
+          candidate_variant_id TEXT NOT NULL REFERENCES signal_desk_rebuild_experiments(variant_id),
+          parent_variant_id TEXT REFERENCES signal_desk_rebuild_experiments(variant_id),
+          split TEXT NOT NULL,
+          scorer_version TEXT NOT NULL,
+          decision_json TEXT NOT NULL,
+          decision_sha256 TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY(campaign_id, candidate_variant_id, split, scorer_version)
         );
         CREATE TABLE IF NOT EXISTS signal_desk_rebuild_seal (
           campaign_id TEXT PRIMARY KEY,
@@ -160,7 +186,17 @@ def record_score(
         raise TournamentError("variant is not registered")
     if row["scorer_version"] != scorer_version:
         raise TournamentError("scorer change invalidates cross-round comparison")
-    metrics_json = dumps_json(dict(metrics))
+    metrics_payload = dict(metrics)
+    per_show = metrics_payload.pop("per_show", None)
+    if split == "sealed_holdout" and per_show is not None:
+        raise TournamentError("sealed holdout is aggregate-only and cannot persist per-show rows")
+    if per_show is not None and not isinstance(per_show, Mapping):
+        raise TournamentError("per_show score data must be a mapping")
+    aggregation = metrics_payload.get("aggregation")
+    if per_show is not None and isinstance(aggregation, Mapping):
+        if aggregation.get("selection_metrics") != "unweighted_show_macro":
+            raise TournamentError("per_show scores require show-macro selection metrics")
+    metrics_json = dumps_json(metrics_payload)
     conn.execute(
         """
         INSERT INTO signal_desk_rebuild_scores
@@ -169,6 +205,94 @@ def record_score(
         """,
         (variant_id, split, scorer_version, metrics_json, sha256_text(metrics_json), now_iso()),
     )
+    if per_show is None:
+        return
+    if split not in {"development", "validation"}:
+        raise TournamentError("per-show rows are only permitted for development or validation")
+    for show_id, payload in sorted(per_show.items()):
+        if not isinstance(show_id, str) or not show_id.strip() or not isinstance(payload, Mapping):
+            raise TournamentError("per_show rows require stable show ids and mappings")
+        counts = payload.get("counts")
+        show_metrics = payload.get("metrics")
+        if not isinstance(counts, Mapping) or not isinstance(show_metrics, Mapping):
+            raise TournamentError("per_show rows require counts and metrics")
+        counts_json = dumps_json(dict(counts))
+        show_metrics_json = dumps_json(dict(show_metrics))
+        row_hash = sha256_text(dumps_json({"counts": dict(counts), "metrics": dict(show_metrics)}))
+        conn.execute(
+            """INSERT INTO signal_desk_rebuild_per_show_scores
+               (variant_id,split,scorer_version,show_id,counts_json,metrics_json,row_sha256,created_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (
+                variant_id,
+                split,
+                scorer_version,
+                show_id,
+                counts_json,
+                show_metrics_json,
+                row_hash,
+                now_iso(),
+            ),
+        )
+
+
+def _load_per_show_score(
+    conn: sqlite3.Connection, *, variant_id: str, split: str, scorer_version: str
+) -> dict[str, dict[str, Any]]:
+    rows = conn.execute(
+        """SELECT show_id,counts_json,metrics_json
+           FROM signal_desk_rebuild_per_show_scores
+           WHERE variant_id=? AND split=? AND scorer_version=? ORDER BY show_id""",
+        (variant_id, split, scorer_version),
+    ).fetchall()
+    if not rows:
+        raise TournamentError("variant has no persisted per-show score rows")
+    return {
+        str(row["show_id"]): {
+            "counts": json.loads(row["counts_json"]),
+            "metrics": json.loads(row["metrics_json"]),
+        }
+        for row in rows
+    }
+
+
+def evaluate_variant_promotion(
+    conn: sqlite3.Connection,
+    *,
+    candidate_variant_id: str,
+    parent_variant_id: str,
+    split: str = "validation",
+    scorer_version: str,
+) -> dict[str, Any]:
+    """Evaluate a candidate on show-level LCB and 80%-of-powered-show gates."""
+
+    if split not in {"development", "validation"}:
+        raise TournamentError("promotion selection is only allowed on development or validation")
+    candidate = _load_per_show_score(
+        conn,
+        variant_id=candidate_variant_id,
+        split=split,
+        scorer_version=scorer_version,
+    )
+    parent = _load_per_show_score(
+        conn,
+        variant_id=parent_variant_id,
+        split=split,
+        scorer_version=scorer_version,
+    )
+    candidate_lcb = show_macro_composite_lcb(candidate)
+    parent_lcb = show_macro_composite_lcb(parent)
+    promotion = evaluate_powered_show_promotion(candidate, parent)
+    return {
+        "split": split,
+        "resampling_unit": "show",
+        "candidate_variant_id": candidate_variant_id,
+        "parent_variant_id": parent_variant_id,
+        "candidate_show_macro_composite": candidate_lcb,
+        "parent_show_macro_composite": parent_lcb,
+        "powered_show_promotion": promotion,
+        "passed": promotion["passed"] and candidate_lcb["lcb"] > parent_lcb["lcb"],
+    }
 
 
 def open_sealed_holdout_once(
@@ -180,11 +304,25 @@ def open_sealed_holdout_once(
 ) -> None:
     ensure_tournament_schema(conn)
     winner = conn.execute(
-        "SELECT campaign_id FROM signal_desk_rebuild_experiments WHERE variant_id = ?",
+        "SELECT * FROM signal_desk_rebuild_experiments WHERE variant_id = ?",
         (winner_variant_id,),
     ).fetchone()
     if winner is None or winner["campaign_id"] != campaign_id:
         raise TournamentError("winner is not registered to this campaign")
+    parent_variant_id = winner["parent_variant_id"]
+    promotion: Mapping[str, Any] | None = None
+    if parent_variant_id is not None:
+        promotion = evaluate_variant_promotion(
+            conn,
+            candidate_variant_id=winner_variant_id,
+            parent_variant_id=str(parent_variant_id),
+            split="validation",
+            scorer_version=str(winner["scorer_version"]),
+        )
+        if not promotion["passed"]:
+            raise TournamentError(
+                "winner cannot open the sealed holdout without show-macro LCB and 80%-powered-show promotion"
+            )
     try:
         conn.execute(
             "INSERT INTO signal_desk_rebuild_seal VALUES (?,?,?,?)",
@@ -197,6 +335,24 @@ def open_sealed_holdout_once(
         )
     except sqlite3.IntegrityError as exc:
         raise TournamentError("sealed holdout has already been opened") from exc
+    if promotion is not None:
+        decision_json = dumps_json(dict(promotion))
+        conn.execute(
+            """INSERT INTO signal_desk_rebuild_promotions
+               (campaign_id,candidate_variant_id,parent_variant_id,split,scorer_version,
+                decision_json,decision_sha256,created_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (
+                campaign_id,
+                winner_variant_id,
+                str(parent_variant_id),
+                "validation",
+                str(winner["scorer_version"]),
+                decision_json,
+                sha256_text(decision_json),
+                now_iso(),
+            ),
+        )
 
 
 def load_prompt(path: Path) -> str:

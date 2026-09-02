@@ -6,10 +6,14 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+from .signal_desk_rebuild_release_fixtures import (
+    ReleaseFixtureError,
+    validate_release_fixture_receipt,
+)
 from .util import dumps_json, now_iso, sha256_text
 
 
-SCHEMA_VERSION = "pif_signal_desk_clean_release_v1"
+SCHEMA_VERSION = "pif_signal_desk_clean_release_v2"
 
 
 class CleanReleaseError(RuntimeError):
@@ -23,6 +27,7 @@ def evaluate_release(evidence: Mapping[str, Any]) -> dict[str, Any]:
         "frontier_gates_frozen",
         "sealed_aggregate_gates_passed",
         "budget_burn_probe_passed",
+        "release_regression_fixtures_passed",
         "zero_person_attribution_violations",
         "zero_unsupported_public_claims",
         "zero_duplicate_canonical_people",
@@ -39,6 +44,12 @@ def evaluate_release(evidence: Mapping[str, Any]) -> dict[str, Any]:
     if missing:
         raise CleanReleaseError(f"release evidence missing: {', '.join(missing)}")
     checks = {name: evidence.get(name) is True for name in required_boolean_checks}
+    try:
+        validate_release_fixture_receipt(evidence.get("regression_fixture_receipt"))
+    except ReleaseFixtureError:
+        checks["release_regression_fixture_receipt"] = False
+    else:
+        checks["release_regression_fixture_receipt"] = True
     processed = int(evidence.get("shadow_processed_windows") or 0)
     approval_rate = float(evidence.get("shadow_approval_rate") or 0.0)
     checks["shadow_processed_windows"] = processed >= 1_000

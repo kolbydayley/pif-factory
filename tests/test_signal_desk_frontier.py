@@ -48,5 +48,7 @@ def test_frontier_requires_complete_development_and_freezes_measured_gates(tmp_p
     )
     assert receipt["passes"] == 1
     assert receipt["metrics"]["macro_composite"] == 1.0
-    assert gates["calibration"]["measured_ceiling"]["event_recall"] == 1.0
+    assert gates["calibration"]["measured_ceiling_point"]["event_recall"] == 1.0
+    assert gates["calibration"]["window_bootstrap_bounds"]["event_recall"]["lcb"] == 1.0
+    assert receipt["window_bootstrap_bounds"]["event_recall"]["resampling_unit"] == "window"
     assert gates["gates"]["event_recall"]["minimum"] == pytest.approx(0.97)

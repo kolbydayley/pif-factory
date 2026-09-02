@@ -6,10 +6,12 @@ from research_factory.signal_desk_rebuild_gates import (
     SignalDeskGateError,
     evaluate_attribution_strata,
     evaluate_gold_audit,
+    evaluate_powered_show_promotion,
     evaluate_per_show_validation,
     evaluate_rate_gate,
     freeze_frontier_ceiling,
     paired_stratified_bootstrap,
+    show_macro_composite_lcb,
     validate_holdout_report,
     wilson_bounds,
 )
@@ -31,6 +33,13 @@ def _ceiling() -> dict[str, float]:
     }
 
 
+def _window_bounds() -> dict[str, dict[str, float]]:
+    return {
+        metric: {"point": value, "lcb": value, "ucb": value}
+        for metric, value in _ceiling().items()
+    }
+
+
 def test_wilson_gates_use_conservative_one_sided_bound() -> None:
     lower, upper = wilson_bounds(97, 100)
     assert lower < 0.97 < upper
@@ -49,15 +58,51 @@ def test_paired_stratified_bootstrap_is_seeded_and_uses_difference_lcb() -> None
     assert first["difference_lcb"] == pytest.approx(-0.01)
 
 
+def test_show_macro_bootstrap_resamples_shows_not_event_volume() -> None:
+    per_show = {
+        "large": {"counts": {"gold_events": 10_000}, "metrics": {"macro_composite": 1.0}},
+        "small": {"counts": {"gold_events": 1}, "metrics": {"macro_composite": 0.0}},
+    }
+    first = show_macro_composite_lcb(per_show, iterations=500)
+    second = show_macro_composite_lcb(per_show, iterations=500)
+    assert first == second
+    assert first["resampling_unit"] == "show"
+    assert first["point"] == 0.5
+
+
+def test_promotion_requires_wilson_lcb_improvement_on_powered_shows() -> None:
+    parent = {
+        f"show-{index}": {
+            "counts": {"gold_events": 50},
+            "metrics": {"macro_composite": 0.70},
+        }
+        for index in range(100)
+    }
+    candidate = {
+        show_id: {
+            "counts": dict(value["counts"]),
+            "metrics": {"macro_composite": 0.71 if index < 90 else 0.69},
+        }
+        for index, (show_id, value) in enumerate(sorted(parent.items()))
+    }
+    report = evaluate_powered_show_promotion(candidate, parent)
+    assert report["improved_powered_show_count"] == 90
+    assert report["powered_show_count"] == 100
+    assert report["gate"]["bound"] >= 0.80
+    assert report["passed"] is True
+
+
 def test_frontier_freeze_converts_relative_tolerances_to_absolute_gates() -> None:
     manifest = freeze_frontier_ceiling(
         _ceiling(),
+        window_metric_bounds=_window_bounds(),
         scorer_sha256="a" * 64,
         contract_sha256="b" * 64,
         split_sha256="c" * 64,
         run_sha256="d" * 64,
     )
     assert manifest["frozen"] is True
+    assert manifest["version"] == "signal-desk-rebuild-gates-v2"
     assert manifest["calibration"]["passes"] == 1
     assert manifest["calibration"]["window_characters"] == 6000
     assert manifest["gates"]["event_recall"]["minimum"] == pytest.approx(0.85)

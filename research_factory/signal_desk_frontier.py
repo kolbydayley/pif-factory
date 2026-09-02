@@ -9,12 +9,15 @@ from typing import Any, Mapping
 
 from .signal_desk_rebuild_contracts import contract_sha256
 from .signal_desk_rebuild_evaluation import evaluate_windows
-from .signal_desk_rebuild_gates import freeze_frontier_ceiling
+from .signal_desk_rebuild_gates import (
+    bootstrap_window_metric_bounds,
+    freeze_frontier_ceiling,
+)
 from .signal_desk_rebuild_scorer import scorer_sha256
 from .util import now_iso
 
 
-SCHEMA_VERSION = "pif_signal_desk_frontier_ceiling_v1"
+SCHEMA_VERSION = "pif_signal_desk_frontier_ceiling_v2"
 
 
 class FrontierCalibrationError(RuntimeError):
@@ -77,8 +80,13 @@ def measure_frontier(
             for window_id in sorted(development)
         ]
     )
+    window_metric_bounds = bootstrap_window_metric_bounds(
+        evaluation["per_window_scores"],
+        metrics=tuple(sorted(evaluation["metrics"])),
+    )
     gates = freeze_frontier_ceiling(
         evaluation["metrics"],
+        window_metric_bounds=window_metric_bounds,
         scorer_sha256=scorer_sha256(),
         contract_sha256=contract_sha256(),
         split_sha256=split_sha,
@@ -94,6 +102,9 @@ def measure_frontier(
         "window_characters": 6000,
         "windows": len(rows),
         "metrics": evaluation["metrics"],
+        "micro_metrics": evaluation["micro_metrics"],
+        "aggregation": evaluation["aggregation"],
+        "window_bootstrap_bounds": window_metric_bounds,
         "counts": evaluation["counts"],
         "strata": evaluation["strata"],
         "item_outputs_exposed": False,

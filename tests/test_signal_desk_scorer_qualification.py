@@ -5,6 +5,7 @@ from research_factory.signal_desk_scorer_qualification import (
     qualification_receipt,
     select_qualification_cases,
 )
+from research_factory.signal_desk_gold_atomicity import ATOMICITY_REVIEW_WINDOW_IDS
 
 
 def _event(index, *, speaker="A", stance="warning"):
@@ -22,9 +23,19 @@ def _event(index, *, speaker="A", stance="warning"):
 def _rows():
     rows = []
     structures = ["speaker_turn", "paragraph", "flattened", "asr_diarized"]
+    stress_ids = sorted(ATOMICITY_REVIEW_WINDOW_IDS)
     for window in range(20):
         events = [_event(index) for index in range(6)]
         predictions = [dict(event) for event in events]
+        if window < len(stress_ids):
+            # Several distinct claims share one exact evidence span.  The
+            # scorer qualification must inspect this real split/merge shape.
+            for index in (1, 2):
+                events[index]["evidence_start"] = events[0]["evidence_start"]
+                events[index]["evidence_end"] = events[0]["evidence_end"]
+                predictions[index]["evidence_start"] = predictions[0]["evidence_start"]
+                predictions[index]["evidence_end"] = predictions[0]["evidence_end"]
+            predictions[2]["claim_text"] = "entirely unrelated proposition"
         # Cross-products supply real eligible and multiple ineligible families.
         if window % 2:
             predictions[0] = _event(0, speaker="B")
@@ -32,7 +43,7 @@ def _rows():
             predictions[1] = _event(1, stance="supportive")
         rows.append(
             {
-                "window_id": f"w{window}",
+                "window_id": stress_ids[window] if window < len(stress_ids) else f"w{window}",
                 "transcript_structure": structures[window % len(structures)],
                 "gold": {"events": events},
                 "predicted": {"events": predictions},
@@ -46,6 +57,7 @@ def test_selection_is_balanced_stratified_and_hash_frozen():
     assert selection["case_count"] == 100
     assert selection["expected_balance"] == {"scorer_match": 50, "scorer_no_match": 50}
     assert selection["error_family_count"] >= 10
+    assert selection["split_merge_stress_case_count"] >= 6
     assert len(selection["selection_sha256"]) == 64
 
 
