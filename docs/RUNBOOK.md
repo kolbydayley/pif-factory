@@ -91,6 +91,28 @@ tripped. Stop dispatch, reconcile every contributing ledger, identify the
 bypass, and record the diagnosis. It does not clear at midnight. Only Kolby or
 an operator explicitly delegated by Kolby in the current turn may remove it.
 
+### Gold runner keepalive
+
+`scripts/pif_signal_desk_gold_resume.py` is fail-closed: any resumable stop
+(one provider timeout, a weekly-gate stall, "checkpoint preserved") exits the
+process, and a contract failure on a single window now quarantines that window
+instead of stopping the swarm. Two layers relaunch a dead runner:
+
+- tmux session `signal-desk-gold`, window `keepalive`: `pif_signal_desk_gold_keepalive.py --loop` (60s).
+- codex-cron job `pif-gold-keepalive`: the same script with `--once` every 5 min; survives a reboot.
+
+Policy (`research_factory/signal_desk_gold_keepalive.py`): relaunch only when
+`pgrep -f 'python3 -B scripts/pif_signal_desk_gold_resume.py'` finds nothing
+AND `artifacts/gold-resume-supervisor.json` is resumable. It never relaunches
+over `KILL-signal-desk-gold-authoring.json`, a `complete` checkpoint, or an
+operator-required error (hash verification, symlink/0700, authorization,
+unknown split/phase, phase incomplete, non-complete receipt). Backoff 60s
+doubling to 30 min, reset after 30 min of healthy uptime. State and log:
+`artifacts/keepalive-state.json`, `logs/keepalive.log`. To hold it
+deliberately, drop the KILL receipt or `codex-cron disable pif-gold-keepalive`
+and kill the `keepalive` tmux window. A tmux pane showing `Python` is not proof
+the runner is alive; use the pgrep pattern above.
+
 ## Outage / quota exhaustion
 
 Signature: `codex exec` exits rc=1 in ~10s, log ends with *"You've hit your
