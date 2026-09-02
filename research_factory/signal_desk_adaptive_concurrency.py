@@ -177,6 +177,7 @@ def _trip_reason(
 ) -> str | None:
     if (
         not (lane == "gold" and gold_clock_period(now) == "peak")
+        and now >= float(state["cooldown_until"])
         and state["last_success_at"] is not None
         and now - float(state["last_success_at"]) > NO_SUCCESS_SECONDS
     ):
@@ -217,6 +218,7 @@ def _evaluate(conn: sqlite3.Connection, *, lane: str, now: float, force: bool = 
     has_new_events = newest_event_id > int(state.get("last_evaluated_event_id") or 0)
     no_success_due = (
         not (lane == "gold" and gold_clock_period(now) == "peak")
+        and now >= float(state["cooldown_until"])
         and state["last_success_at"] is not None
         and now - float(state["last_success_at"]) > NO_SUCCESS_SECONDS
         and state.get("last_trip_reason") != "no_success_15m"
