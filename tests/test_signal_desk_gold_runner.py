@@ -1,7 +1,7 @@
 from research_factory.signal_desk_gold_runner import (
     RESERVE_TOKENS,
     SYSTEM_PROMPTS,
-    archive_cancelled_sidecar_for_retry,
+    archive_retryable_sidecar_for_retry,
     repair_unique_evidence_offsets,
 )
 
@@ -74,7 +74,7 @@ def test_cancelled_sidecar_is_preserved_before_same_lineage_retry(tmp_path):
     sidecar.write_text('{"state":"cancelled","turn_id":"t1"}\n', encoding="utf-8")
     output = tmp_path / "results" / "window.json"
 
-    archived = archive_cancelled_sidecar_for_retry(
+    archived = archive_retryable_sidecar_for_retry(
         sidecar_path=sidecar,
         output_path=output,
         recovery_root=tmp_path / "recovery",
@@ -91,11 +91,50 @@ def test_completed_sidecar_is_never_archived_for_retry(tmp_path):
     sidecar = tmp_path / "window.json"
     sidecar.write_text('{"state":"completed"}\n', encoding="utf-8")
 
-    assert archive_cancelled_sidecar_for_retry(
+    assert archive_retryable_sidecar_for_retry(
         sidecar_path=sidecar,
         output_path=tmp_path / "output.json",
         recovery_root=tmp_path / "recovery",
         attempt_id=1,
         lease_generation=1,
+    ) is None
+    assert sidecar.exists()
+
+
+def test_allowlisted_provider_failure_is_preserved_for_retry(tmp_path):
+    sidecar = tmp_path / "window.json"
+    sidecar.write_text(
+        '{"state":"failed","error_class":"turn_failed",'
+        '"turn_error":{"codex_error_info":"serverOverloaded"}}\n',
+        encoding="utf-8",
+    )
+
+    archived = archive_retryable_sidecar_for_retry(
+        sidecar_path=sidecar,
+        output_path=tmp_path / "output.json",
+        recovery_root=tmp_path / "recovery",
+        attempt_id=8,
+        lease_generation=2,
+    )
+
+    assert archived is not None
+    assert archived.exists()
+    assert not sidecar.exists()
+
+
+def test_unknown_provider_failure_remains_fail_closed(tmp_path):
+    sidecar = tmp_path / "window.json"
+    sidecar.write_text(
+        '{"state":"failed","error_class":"turn_failed",'
+        '"turn_error":{"codex_error_info":"unknown"}}\n',
+        encoding="utf-8",
+    )
+
+    assert archive_retryable_sidecar_for_retry(
+        sidecar_path=sidecar,
+        output_path=tmp_path / "output.json",
+        recovery_root=tmp_path / "recovery",
+        attempt_id=8,
+        lease_generation=2,
     ) is None
     assert sidecar.exists()

@@ -89,22 +89,37 @@ def _load_outputs(root: Path, turn_type: str) -> dict[str, Mapping[str, Any]]:
     return result
 
 
-def archive_cancelled_sidecar_for_retry(
+RETRYABLE_TURN_ERROR_INFO = {
+    "serverOverloaded",
+    "rateLimitExceeded",
+    "serviceUnavailable",
+}
+
+
+def archive_retryable_sidecar_for_retry(
     *, sidecar_path: Path, output_path: Path, recovery_root: Path,
     attempt_id: int, lease_generation: int,
 ) -> Path | None:
     """Archive an explicitly cancelled transport record before a safe retry.
 
-    A cancelled sidecar proves that no completed structured output was
-    accepted.  It is therefore safe to preserve that transport receipt and
-    retry the same semantic attempt lineage.  Completed or malformed sidecars
-    remain fail-closed and require operator adjudication.
+    A cancelled sidecar, or a failed sidecar carrying an allowlisted provider
+    transport error, proves that no completed structured output was accepted.
+    It is therefore safe to preserve that transport receipt and retry the same
+    semantic attempt lineage.  Completed, semantic, or unknown failures remain
+    fail-closed and require operator adjudication.
     """
 
     if not sidecar_path.exists():
         return None
     payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
-    if payload.get("state") != "cancelled":
+    state = payload.get("state")
+    retryable_failure = (
+        state == "failed"
+        and payload.get("error_class") == "turn_failed"
+        and (payload.get("turn_error") or {}).get("codex_error_info")
+        in RETRYABLE_TURN_ERROR_INFO
+    )
+    if state != "cancelled" and not retryable_failure:
         return None
     if output_path.exists():
         raise RuntimeError("cancelled sidecar unexpectedly has a completed output artifact")
@@ -232,7 +247,7 @@ async def run_dev_gold(
                     prompt += "\n\nGOLD B OUTPUT\n" + json.dumps(b, sort_keys=True)
                 output_path = result_root / turn_type / f"{window_id}.json"
                 sidecar_path = result_root / "sidecars" / turn_type / f"{window_id}.json"
-                archive_cancelled_sidecar_for_retry(
+                archive_retryable_sidecar_for_retry(
                     sidecar_path=sidecar_path,
                     output_path=output_path,
                     recovery_root=result_root / "recovery-sidecars" / turn_type,
