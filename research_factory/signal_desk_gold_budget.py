@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 import subprocess
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from .util import dumps_json, now_iso, stable_id
 
 SCHEMA_VERSION = "pif_signal_desk_gold_authoring_grant_v2"
 RECEIPT_VERSION = "pif_signal_desk_gold_authoring_weekly_draw_v1"
+RESUME_CLEARANCE_RECEIPT_VERSION = "pif_signal_desk_gold_authoring_resume_clearance_v1"
 EXPECTED_SCOPE = "gpt_5_6_sol_gold_authoring"
 EXPECTED_MODEL = "gpt-5.6-sol"
 EXPECTED_PURPOSE = "frozen_804_benchmark_gold_a_b_c_and_blind_audit_only"
@@ -27,6 +29,13 @@ KILL_PERCENT = 120.0
 MIN_CONCURRENCY = 2
 MAX_CONCURRENCY = 8
 TURN_TYPES = frozenset({"A", "B", "C", "AUDIT"})
+GOLD_LEASE_SECONDS = 1_800
+RESUME_GUARD_CONTRACT = {
+    "adaptive_concurrency": {"minimum": 2, "maximum": 8},
+    "gold_call_deadline_seconds": 900,
+    "gold_lease_seconds": 1_800,
+    "latency_p95_degradation_seconds": 900,
+}
 
 
 class GoldBudgetError(RuntimeError):
@@ -141,6 +150,209 @@ def ensure_gold_budget_schema(conn: sqlite3.Connection) -> None:
 
 def gold_kill_path(budget_dir: Path) -> Path:
     return budget_dir / "KILL-signal-desk-gold-authoring.json"
+
+
+def _receipt_hash(payload: Mapping[str, Any]) -> str:
+    return hashlib.sha256(
+        dumps_json({key: value for key, value in payload.items() if key != "receipt_sha256"}).encode("utf-8")
+    ).hexdigest()
+
+
+def clear_operator_requested_gold_kill(
+    *, grant_path: Path, budget_dir: Path, authorization_source: str,
+    at: datetime | None = None, receipt_dir: Path | None = None,
+    pre_resume_reconciliation: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Clear only an explicitly operator-requested Gold stop with a receipt.
+
+    The durable 120%-usage kill is intentionally *not* clearable through this
+    path.  The caller must provide a concise source label for current-turn
+    owner authorization; the exact conversation text is not persisted.  The
+    prior kill is moved into an immutable archive rather than deleted, and a
+    hash-bound receipt links the clearance to the active grant.
+    """
+
+    source = str(authorization_source or "").strip()
+    if not source:
+        raise GoldBudgetError("operator resume clearance requires an authorization source")
+    instant = _instant(at or datetime.now(timezone.utc))
+    grant = load_gold_grant(grant_path, at=instant)
+    kill_path = gold_kill_path(budget_dir)
+    try:
+        raw_kill = kill_path.read_bytes()
+        kill = json.loads(raw_kill.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise GoldBudgetError("operator-requested Gold kill is unreadable") from exc
+    if not isinstance(kill, Mapping):
+        raise GoldBudgetError("operator-requested Gold kill has an invalid shape")
+    if (
+        kill.get("schema_version") != "pif_signal_desk_gold_authoring_kill_v2"
+        or kill.get("reason") != "operator_requested_stop"
+        or kill.get("operator_requested") is not True
+        or kill.get("clear_requires") != "explicit authorization"
+        or kill.get("lane") != EXPECTED_SCOPE
+    ):
+        raise GoldBudgetError("this clearance path only accepts an operator-requested Gold stop")
+
+    timestamp = instant.strftime("%Y%m%dT%H%M%SZ")
+    archive_dir = budget_dir / "cleared-kills"
+    destination_dir = receipt_dir or budget_dir / "receipts"
+    archived_kill_path = archive_dir / f"KILL-signal-desk-gold-authoring.{timestamp}.json"
+    receipt_path = destination_dir / f"signal-desk-gold-resume-{timestamp}.json"
+    if archived_kill_path.exists() or receipt_path.exists():
+        raise GoldBudgetError("Gold resume receipt or archived kill already exists for this clearance instant")
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    destination_dir.mkdir(parents=True, exist_ok=True)
+
+    receipt: dict[str, Any] = {
+        "schema_version": RESUME_CLEARANCE_RECEIPT_VERSION,
+        "cleared_at": instant.isoformat().replace("+00:00", "Z"),
+        "authorization": {
+            "authorized_by": "Kolby",
+            "source": source,
+            "source_sha256": hashlib.sha256(source.encode("utf-8")).hexdigest(),
+        },
+        "grant": {
+            "path": str(grant.path),
+            "grant_sha256": str(grant.payload["grant_sha256"]),
+            "scope": EXPECTED_SCOPE,
+            "model": EXPECTED_MODEL,
+            "expires_at": grant.expires_at.isoformat().replace("+00:00", "Z"),
+        },
+        "cleared_kill": {
+            "original_path": str(kill_path),
+            "archived_path": str(archived_kill_path),
+            "kill_sha256": hashlib.sha256(raw_kill).hexdigest(),
+            "engaged_at": str(kill.get("engaged_at") or ""),
+            "reason": "operator_requested_stop",
+        },
+        "resume_guard_contract": dict(RESUME_GUARD_CONTRACT),
+        "pre_resume_reconciliation": dict(pre_resume_reconciliation or {}),
+        "provider_calls_started_by_clearance": 0,
+    }
+    receipt["receipt_sha256"] = _receipt_hash(receipt)
+
+    # A clearance must be recoverable if the receipt cannot be made durable.
+    # Move rather than delete the KILL, then restore it if the exclusive receipt
+    # write fails for any reason.
+    os.replace(kill_path, archived_kill_path)
+    try:
+        with receipt_path.open("x", encoding="utf-8") as handle:
+            handle.write(dumps_json(receipt) + "\n")
+        receipt_path.chmod(0o600)
+    except BaseException:
+        if not kill_path.exists() and archived_kill_path.exists():
+            os.replace(archived_kill_path, kill_path)
+        raise
+    return {**receipt, "receipt_path": str(receipt_path)}
+
+
+def reconcile_orphaned_started_gold_reservations(
+    conn: sqlite3.Connection,
+    *, at: datetime | None = None, minimum_age_seconds: int = GOLD_LEASE_SECONDS,
+    task_keys: set[str] | None = None,
+    actual_tokens_by_reservation: Mapping[str, int] | None = None,
+) -> dict[str, Any]:
+    """Conservatively settle old started reservations before a clean resume.
+
+    A process can die after the app-server turn begins and before its normal
+    ``finally`` settles the reservation. Such a row must never be released:
+    provider usage may already have occurred. Once it is older than the Gold
+    lease and is explicitly within this resume's task set (when supplied), the
+    only safe action is to charge the original reservation and preserve the
+    task for a fresh, fenced retry attempt. A caller may provide exact tokens
+    from a completed, hash-bound sidecar; otherwise the full reservation is
+    charged conservatively.
+    """
+
+    if minimum_age_seconds < GOLD_LEASE_SECONDS:
+        raise GoldBudgetError("orphaned Gold reservations require at least one full lease age")
+    instant = _instant(at or datetime.now(timezone.utc))
+    ensure_gold_budget_schema(conn)
+    rows = conn.execute(
+        """SELECT id,weekly_resets_at,task_key,turn_type,reserved_tokens,created_at
+           FROM signal_desk_gold_budget_reservations
+           WHERE status='active' AND provider_started=1 AND lane=? AND model=?
+           ORDER BY created_at,id""",
+        (EXPECTED_SCOPE, EXPECTED_MODEL),
+    ).fetchall()
+    settled: list[dict[str, Any]] = []
+    skipped_recent = 0
+    skipped_unscoped = 0
+    normalized_keys = None if task_keys is None else {str(value) for value in task_keys}
+    exact_usage = {
+        str(reservation_id): int(tokens)
+        for reservation_id, tokens in (actual_tokens_by_reservation or {}).items()
+    }
+    if any(tokens < 0 for tokens in exact_usage.values()):
+        raise GoldBudgetError("orphaned Gold sidecar usage must be non-negative")
+    examined_ids: set[str] = set()
+    for row in rows:
+        mapping = dict(row) if isinstance(row, sqlite3.Row) else {
+            "id": row[0], "weekly_resets_at": row[1], "task_key": row[2],
+            "turn_type": row[3], "reserved_tokens": row[4], "created_at": row[5],
+        }
+        if normalized_keys is not None and str(mapping["task_key"]) not in normalized_keys:
+            skipped_unscoped += 1
+            continue
+        age_seconds = (instant - _instant(str(mapping["created_at"]))).total_seconds()
+        if age_seconds < minimum_age_seconds:
+            skipped_recent += 1
+            continue
+        reservation_id = str(mapping["id"])
+        examined_ids.add(reservation_id)
+        reserved_tokens = int(mapping["reserved_tokens"])
+        charged_tokens = exact_usage.get(reservation_id, reserved_tokens)
+        settlement_basis = (
+            "completed_sidecar_usage" if reservation_id in exact_usage
+            else "full_reservation_conservative"
+        )
+        # This mirrors normal settlement, intentionally charging the full
+        # reservation because a started provider call has no trustworthy usage
+        # result after a process loss.
+        record_usage(
+            conn,
+            day=f"weekly:{int(mapping['weekly_resets_at'])}",
+            provider_lane="codex_subscription",
+            lane=EXPECTED_SCOPE,
+            run_id=f"gold:{reservation_id}",
+            tokens=charged_tokens,
+            provider_calls=1,
+        )
+        changed = conn.execute(
+            """UPDATE signal_desk_gold_budget_reservations
+               SET status='settled',actual_tokens=?,provider_calls=1,settled_at=?
+               WHERE id=? AND status='active' AND provider_started=1""",
+            (charged_tokens, now_iso(), reservation_id),
+        ).rowcount
+        if changed != 1:
+            conn.rollback()
+            raise GoldBudgetError("orphaned Gold reservation changed during reconciliation")
+        conn.commit()
+        settled.append({
+            "reservation_id": reservation_id,
+            "task_key": str(mapping["task_key"]),
+            "turn_type": str(mapping["turn_type"]),
+            "charged_tokens": charged_tokens,
+            "settlement_basis": settlement_basis,
+            "age_seconds": int(age_seconds),
+        })
+    unused_usage = sorted(set(exact_usage) - examined_ids)
+    if unused_usage:
+        raise GoldBudgetError("orphaned Gold sidecar usage references a non-reconciled reservation")
+    result = {
+        "schema_version": "pif_signal_desk_gold_orphaned_reservation_reconciliation_v1",
+        "reconciled_at": instant.isoformat().replace("+00:00", "Z"),
+        "minimum_age_seconds": minimum_age_seconds,
+        "settled_count": len(settled),
+        "settled_reserved_tokens": sum(item["charged_tokens"] for item in settled),
+        "settled": settled,
+        "skipped_recent": skipped_recent,
+        "skipped_outside_resume_scope": skipped_unscoped,
+        "exact_usage_reservation_count": len(exact_usage),
+    }
+    result["reconciliation_sha256"] = hashlib.sha256(dumps_json(result).encode("utf-8")).hexdigest()
+    return result
 
 
 def _notify_once(

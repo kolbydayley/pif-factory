@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -117,3 +118,81 @@ def test_started_reservation_cannot_be_released(tmp_path, monkeypatch):
     gold.mark_provider_started(conn, reserved["reservation_id"])
     with pytest.raises(gold.GoldBudgetError, match="unstarted"):
         gold.release_unstarted_reservation(conn, reserved["reservation_id"])
+
+
+def test_operator_requested_kill_is_archived_with_an_authorized_resume_receipt(tmp_path):
+    budget_dir = tmp_path / "budget"
+    budget_dir.mkdir()
+    kill = gold.gold_kill_path(budget_dir)
+    kill.write_text(json.dumps({
+        "schema_version": "pif_signal_desk_gold_authoring_kill_v2",
+        "engaged_at": "2026-09-02T01:51:00Z",
+        "lane": gold.EXPECTED_SCOPE,
+        "reason": "operator_requested_stop",
+        "operator_requested": True,
+        "clear_requires": "explicit authorization",
+    }), encoding="utf-8")
+
+    receipt = gold.clear_operator_requested_gold_kill(
+        grant_path=_grant(tmp_path),
+        budget_dir=budget_dir,
+        authorization_source="kolby_explicit_gold_resume_authorization_2026_09_02",
+        at=datetime(2026, 9, 2, 13, tzinfo=timezone.utc),
+        pre_resume_reconciliation={"settled_count": 3, "settled_reserved_tokens": 138_540},
+    )
+
+    assert not kill.exists()
+    assert (budget_dir / "cleared-kills" / "KILL-signal-desk-gold-authoring.20260902T130000Z.json").is_file()
+    written = json.loads(Path(receipt["receipt_path"]).read_text(encoding="utf-8"))
+    assert written["authorization"]["authorized_by"] == "Kolby"
+    assert written["grant"]["grant_sha256"]
+    assert written["pre_resume_reconciliation"]["settled_count"] == 3
+    assert written["provider_calls_started_by_clearance"] == 0
+
+
+def test_usage_kill_cannot_be_cleared_through_operator_stop_path(tmp_path):
+    budget_dir = tmp_path / "budget"
+    budget_dir.mkdir()
+    gold.gold_kill_path(budget_dir).write_text(json.dumps({
+        "schema_version": "pif_signal_desk_gold_authoring_kill_v2",
+        "lane": gold.EXPECTED_SCOPE,
+        "reason": "weekly_usage_kill",
+        "operator_requested": False,
+        "clear_requires": "reconcile weekly ledger",
+    }), encoding="utf-8")
+
+    with pytest.raises(gold.GoldBudgetError, match="only accepts"):
+        gold.clear_operator_requested_gold_kill(
+            grant_path=_grant(tmp_path), budget_dir=budget_dir,
+            authorization_source="kolby_explicit_gold_resume_authorization_2026_09_02",
+            at=datetime(2026, 9, 2, 13, tzinfo=timezone.utc),
+        )
+    assert gold.gold_kill_path(budget_dir).exists()
+
+
+def test_orphaned_started_reservations_use_exact_completed_sidecar_usage(tmp_path):
+    conn = _conn()
+    gold.ensure_gold_budget_schema(conn)
+    conn.execute(
+        """INSERT INTO signal_desk_gold_budget_reservations
+           (id,weekly_resets_at,task_key,turn_type,model,lane,reserved_tokens,status,provider_started,created_at)
+           VALUES ('r1',100,'dev:C:w1:attempt:1:generation:1','C',?,?,57000,'active',1,?)""",
+        (gold.EXPECTED_MODEL, gold.EXPECTED_SCOPE, "2026-09-01T12:00:00Z"),
+    )
+    conn.commit()
+
+    result = gold.reconcile_orphaned_started_gold_reservations(
+        conn,
+        at=datetime(2026, 9, 2, 13, tzinfo=timezone.utc),
+        actual_tokens_by_reservation={"r1": 45_158},
+    )
+
+    assert result["settled_count"] == 1
+    assert result["settled_reserved_tokens"] == 45_158
+    assert result["settled"][0]["settlement_basis"] == "completed_sidecar_usage"
+    assert tuple(conn.execute(
+        "SELECT status,actual_tokens FROM signal_desk_gold_budget_reservations WHERE id='r1'"
+    ).fetchone()) == ("settled", 45_158)
+    assert tuple(conn.execute(
+        "SELECT tokens,provider_calls FROM pif_subscription_budget_ledger"
+    ).fetchone()) == (45_158, 1)
