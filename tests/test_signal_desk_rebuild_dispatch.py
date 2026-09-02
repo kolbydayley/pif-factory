@@ -345,6 +345,38 @@ def test_dispatch_order_recovers_expired_work_before_pending(conn) -> None:
     assert pending["task_key"] == "window:2"
 
 
+def test_lease_prefix_keeps_staged_workers_in_their_partition(conn) -> None:
+    enqueue(conn, "dev:C:window-1")
+    enqueue(conn, "dev:A:window-1")
+
+    a_lease = acquire_lease(
+        conn,
+        lease_owner="gold-a",
+        lease_seconds=60,
+        task_key_prefix="dev:A:",
+        now=T0,
+    )
+    assert a_lease is not None
+    assert a_lease["task_key"] == "dev:A:window-1"
+    assert acquire_lease(
+        conn,
+        lease_owner="gold-b",
+        lease_seconds=60,
+        task_key_prefix="dev:B:",
+        now=T0,
+    ) is None
+
+    c_lease = acquire_lease(
+        conn,
+        lease_owner="gold-c",
+        lease_seconds=60,
+        task_key_prefix="dev:C:",
+        now=T0,
+    )
+    assert c_lease is not None
+    assert c_lease["task_key"] == "dev:C:window-1"
+
+
 def test_snapshot_round_trips_canonical_payload(conn) -> None:
     enqueue_task(
         conn,

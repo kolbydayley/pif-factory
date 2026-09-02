@@ -19,13 +19,19 @@ def _latest_failure(database: Path) -> tuple[bool, str]:
     conn = sqlite3.connect(database)
     try:
         terminal = conn.execute(
-            "SELECT COUNT(*) FROM signal_desk_rebuild_attempts WHERE status='terminal_failed'"
+            """SELECT COUNT(*)
+               FROM signal_desk_rebuild_tasks t
+               JOIN signal_desk_rebuild_attempts a ON a.id=t.current_attempt_id
+               WHERE t.status='terminal_failed' AND a.status='terminal_failed'"""
         ).fetchone()[0]
         row = conn.execute(
-            """SELECT COALESCE(semantic_failure_detail,infrastructure_failure_detail,'')
-               FROM signal_desk_rebuild_attempts
-               WHERE semantic_failure_detail IS NOT NULL OR infrastructure_failure_detail IS NOT NULL
-               ORDER BY id DESC LIMIT 1"""
+            """SELECT COALESCE(a.semantic_failure_detail,a.infrastructure_failure_detail,'')
+               FROM signal_desk_rebuild_tasks t
+               JOIN signal_desk_rebuild_attempts a ON a.id=t.current_attempt_id
+               WHERE t.status IN ('pending','running','terminal_failed')
+                 AND (a.semantic_failure_detail IS NOT NULL
+                      OR a.infrastructure_failure_detail IS NOT NULL)
+               ORDER BY a.updated_at DESC LIMIT 1"""
         ).fetchone()
         return bool(terminal), str(row[0] if row else "")
     finally:

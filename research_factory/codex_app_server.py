@@ -427,11 +427,19 @@ class CodexAppServerClient:
         try:
             await asyncio.wait_for(self.process.wait(), timeout=2)
         except asyncio.TimeoutError:
-            self.process.terminate()
+            try:
+                self.process.terminate()
+            except ProcessLookupError:
+                # The child may exit between wait_for timing out and the
+                # termination signal.  Treat that cleanup race as closed.
+                pass
             try:
                 await asyncio.wait_for(self.process.wait(), timeout=2)
             except asyncio.TimeoutError:
-                self.process.kill()
+                try:
+                    self.process.kill()
+                except ProcessLookupError:
+                    pass
                 await self.process.wait()
         current = asyncio.current_task()
         for task in (self._reader_task, self._wait_task, self._stderr_task):

@@ -261,9 +261,15 @@ def acquire_lease(
     *,
     lease_owner: str,
     lease_seconds: float,
+    task_key_prefix: Optional[str] = None,
     now: Optional[datetime] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Lease pending work, or reclaim an expired running attempt atomically."""
+    """Lease pending work, or reclaim an expired running attempt atomically.
+
+    ``task_key_prefix`` scopes a worker to one semantic queue partition.  This
+    is required by staged runners: a resumed Gold-C task must never be leased
+    while the runner is validating or authoring Gold-A.
+    """
 
     if not lease_owner.strip():
         raise ValueError("lease_owner must be non-empty")
@@ -272,18 +278,26 @@ def acquire_lease(
     instant = _as_utc(now)
     timestamp = _timestamp(instant)
     lease_until = _timestamp(instant + timedelta(seconds=lease_seconds))
+    prefix_clause = ""
+    parameters: list[Any] = [timestamp]
+    if task_key_prefix is not None:
+        if not task_key_prefix:
+            raise ValueError("task_key_prefix must be non-empty when provided")
+        prefix_clause = "AND substr(t.task_key, 1, length(?)) = ?"
+        parameters.extend((task_key_prefix, task_key_prefix))
     with _write_transaction(conn):
         row = conn.execute(
-            """
+            f"""
             SELECT a.id, a.task_id, a.status
             FROM signal_desk_rebuild_attempts a
             JOIN signal_desk_rebuild_tasks t ON t.current_attempt_id = a.id
-            WHERE (a.status = 'pending')
-               OR (a.status = 'running' AND a.lease_until <= ?)
+            WHERE ((a.status = 'pending')
+               OR (a.status = 'running' AND a.lease_until <= ?))
+              {prefix_clause}
             ORDER BY CASE a.status WHEN 'running' THEN 0 ELSE 1 END, a.id
             LIMIT 1
             """,
-            (timestamp,),
+            tuple(parameters),
         ).fetchone()
         if row is None:
             return None

@@ -287,6 +287,7 @@ async def run_dev_gold(
                             lease = acquire_lease(
                                 dispatch, lease_owner=f"dev-gold-{turn_type}-{worker_id}",
                                 lease_seconds=1200,
+                                task_key_prefix=f"dev:{turn_type}:",
                             )
                         if lease is None:
                             return
