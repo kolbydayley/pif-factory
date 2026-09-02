@@ -35,7 +35,7 @@ def test_throttled_current_turn_launch_requires_fixed_four_configured_slots(tmp_
         admission = local_background_admission(configured_concurrency=4)
         assert admission.allowed
         assert admission.reason == "operator_current_turn_foreground_override"
-        assert admission.provider_concurrency_cap == 2
+        assert admission.provider_concurrency_cap == 3
         return {
             "status": "deferred",
             "reason": "gold_model_capacity_backoff",
@@ -72,7 +72,7 @@ def test_throttled_current_turn_launch_requires_fixed_four_configured_slots(tmp_
         "source": "kolby_current_turn_throttled_gold_2026_09_02",
         "scope": "current_process_only",
         "configured_concurrency_cap": 4,
-        "provider_concurrency_cap": 2,
+        "provider_concurrency_cap": 3,
         "normal_foreground_policy_preserved_outside_scope": True,
     }
     assert stat.S_IMODE(receipts[0].stat().st_mode) == 0o600

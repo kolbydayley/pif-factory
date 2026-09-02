@@ -40,7 +40,7 @@ TWO_SLOTS_UNTIL_IDLE_SECONDS = 30 * 60.0
 FOUR_SLOTS_UNTIL_IDLE_SECONDS = 45 * 60.0
 POLL_SECONDS = 2.0
 CURRENT_TURN_FOREGROUND_OVERRIDE_MAX_CONFIGURED_CONCURRENCY = 4
-CURRENT_TURN_FOREGROUND_OVERRIDE_PROVIDER_CAP = 2
+CURRENT_TURN_FOREGROUND_OVERRIDE_PROVIDER_CAP = 3
 
 
 @dataclass(frozen=True)
@@ -59,7 +59,7 @@ class CurrentTurnForegroundOverride:
     """A deliberately narrow, process-local operator authorization.
 
     This is not a general foreground bypass.  It exists only for an explicitly
-    authorized current-turn Gold launch, and it never permits more than two
+    authorized current-turn Gold launch, and it never permits more than three
     provider calls.  The context is reset when the invoking process exits its
     ``with`` block; it is not read from a file, environment variable, or any
     durable setting.
@@ -108,7 +108,7 @@ def _validate_current_turn_override(
     if not label:
         raise ValueError("current-turn foreground override requires a source label")
     # The CLI also applies this contract.  Keeping it here prevents a future
-    # programmatic caller from silently broadening the two-call safety bound.
+    # programmatic caller from silently broadening the three-call safety bound.
     if int(configured_concurrency) != CURRENT_TURN_FOREGROUND_OVERRIDE_MAX_CONFIGURED_CONCURRENCY:
         raise ValueError(
             "current-turn foreground override requires configured concurrency "
@@ -150,7 +150,7 @@ def current_turn_foreground_override_admission(
         return None
     configured = _bounded(configured_concurrency)
     # ``configured`` is normally the adaptive effective limit, which can only
-    # be less than the CLI's fixed cap. Never return a cap greater than two.
+    # be less than the CLI's fixed cap. Never return a cap greater than three.
     return BackgroundAdmission(
         allowed=True,
         reason="operator_current_turn_foreground_override",

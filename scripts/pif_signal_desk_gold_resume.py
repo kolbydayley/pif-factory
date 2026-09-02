@@ -129,7 +129,7 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "explicitly allow this one process to run Gold despite foreground Codex; "
-            "requires a source label and fixes the cap at two provider calls"
+            "requires a source label and fixes the cap at three provider calls"
         ),
     )
     parser.add_argument(

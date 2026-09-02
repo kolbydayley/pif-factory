@@ -62,7 +62,7 @@ def test_recent_or_unknown_input_fails_closed():
     assert not unknown.allowed
 
 
-def test_current_turn_override_is_explicit_process_local_and_two_slots(monkeypatch):
+def test_current_turn_override_is_explicit_process_local_and_three_slots(monkeypatch):
     import research_factory.signal_desk_background_admission as admission_module
 
     monkeypatch.setattr(admission_module, "macos_input_idle_seconds", lambda: 0.0)
@@ -79,7 +79,7 @@ def test_current_turn_override_is_explicit_process_local_and_two_slots(monkeypat
         allowed = local_background_admission(configured_concurrency=4)
         assert allowed.allowed
         assert allowed.reason == "operator_current_turn_foreground_override"
-        assert allowed.provider_concurrency_cap == 2
+        assert allowed.provider_concurrency_cap == 3
         assert allowed.input_idle_seconds is None
 
     blocked_again = local_background_admission(configured_concurrency=4)

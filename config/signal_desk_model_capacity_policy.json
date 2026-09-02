@@ -4,7 +4,7 @@
   "active_background_lane": "gpt_5_6_sol_gold_authoring",
   "foreground_override": {
     "configured_concurrency": 4,
-    "provider_concurrency_cap": 2
+    "provider_concurrency_cap": 3
   },
   "health": {
     "capacity_error_rate_red": 0.02,

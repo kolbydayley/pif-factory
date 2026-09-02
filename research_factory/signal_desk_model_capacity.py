@@ -63,7 +63,7 @@ def load_capacity_policy(path: Path) -> dict[str, Any]:
         or not isinstance(health, dict)
         or not isinstance(override, dict)
         or override.get("configured_concurrency") != 4
-        or override.get("provider_concurrency_cap") != 2
+        or override.get("provider_concurrency_cap") != 3
         or health.get("history_window_seconds") != 600
         or health.get("orphan_after_seconds") != 1800
         or health.get("capacity_error_rate_red") != 0.02
