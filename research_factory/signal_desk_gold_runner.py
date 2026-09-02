@@ -156,6 +156,27 @@ def compact_adjudication_output(output: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def acquire_pipeline_lease(
+    dispatch: sqlite3.Connection,
+    *,
+    task_namespace: str,
+    lease_owner: str,
+    lease_seconds: int,
+) -> Mapping[str, Any] | None:
+    """Prefer finishing a window before admitting more first-pass work."""
+
+    for turn_type in ("C", "B", "A"):
+        lease = acquire_lease(
+            dispatch,
+            lease_owner=lease_owner,
+            lease_seconds=lease_seconds,
+            task_key_prefix=f"{task_namespace}:{turn_type}:",
+        )
+        if lease is not None:
+            return lease
+    return None
+
+
 def _notify_stall(kind: str, detail: str, next_step: str) -> None:
     subprocess.run(
         ["codex-ops", "notify", "--source", "signal-desk-gold-authoring",
@@ -987,13 +1008,21 @@ async def _run_gold_split_phases(
                             await asyncio.sleep(10)
                             continue
                         async with lock:
-                            lease = acquire_lease(
-                                dispatch, lease_owner=f"{task_namespace}-gold-{turn_type}-{worker_id}",
-                                lease_seconds=1800,
-                                task_key_prefix=(
-                                    f"{task_namespace}:" if pipeline_mode
-                                    else f"{task_namespace}:{turn_type}:"
-                                ),
+                            owner = f"{task_namespace}-gold-{turn_type}-{worker_id}"
+                            lease = (
+                                acquire_pipeline_lease(
+                                    dispatch,
+                                    task_namespace=task_namespace,
+                                    lease_owner=owner,
+                                    lease_seconds=1800,
+                                )
+                                if pipeline_mode
+                                else acquire_lease(
+                                    dispatch,
+                                    lease_owner=owner,
+                                    lease_seconds=1800,
+                                    task_key_prefix=f"{task_namespace}:{turn_type}:",
+                                )
                             )
                         if lease is None:
                             if pipeline_mode and any(

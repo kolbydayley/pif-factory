@@ -11,11 +11,17 @@ from research_factory.signal_desk_gold_runner import (
     GoldCapacityDeferred,
     GoldResumePlanError,
     archive_retryable_sidecar_for_retry,
+    acquire_pipeline_lease,
     build_gold_resume_plan,
     compact_adjudication_output,
     repair_unique_evidence_offsets,
     run_gold_resume_supervisor,
     run_gold_split_phase,
+)
+from research_factory.signal_desk_rebuild_dispatch import (
+    complete_attempt,
+    enqueue_task,
+    initialize_dispatch_schema,
 )
 
 
@@ -67,6 +73,37 @@ def test_compact_adjudication_input_drops_reconstructable_bulk():
     assert "evidence_start" not in compact["events"][0]
     assert "evidence_end" not in compact["events"][0]
     assert "issue_aliases" not in compact["events"][0]
+
+
+def test_pipeline_lease_finishes_c_then_b_before_admitting_more_a():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    initialize_dispatch_schema(conn)
+    for turn_type, window_id in (("A", "w1"), ("A", "w2"), ("B", "w3"), ("C", "w4")):
+        enqueue_task(
+            conn,
+            task_key=f"validation:{turn_type}:{window_id}",
+            task_type="gold_window",
+            payload={"turn_type": turn_type, "window_id": window_id},
+        )
+    observed = []
+    for index in range(4):
+        lease = acquire_pipeline_lease(
+            conn,
+            task_namespace="validation",
+            lease_owner=f"worker-{index}",
+            lease_seconds=60,
+        )
+        assert lease is not None
+        observed.append(lease["payload"]["turn_type"])
+        complete_attempt(
+            conn,
+            attempt_id=lease["current_attempt_id"],
+            lease_owner=lease["lease_owner"],
+            lease_generation=lease["lease_generation"],
+            output={"ok": True},
+        )
+    assert observed == ["C", "B", "A", "A"]
 
 
 def test_ambiguous_excerpt_is_never_rebound():
