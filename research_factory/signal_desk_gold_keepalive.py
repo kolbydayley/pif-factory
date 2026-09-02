@@ -1,0 +1,206 @@
+"""Keep the Signal Desk Gold resume runner alive across resumable stops.
+
+The runner is deliberately fail-closed: a single infrastructure fault, a
+weekly-gate stall, or (before quarantine) one malformed answer stops the
+swarm with "checkpoint preserved" and exits.  Every such stop is resumable
+from dispatch leases, but nothing relaunched the process, so a stop at
+15:02 cost the campaign the rest of the afternoon on 2026-09-02.
+
+This module decides, from durable state only, whether a dead runner should
+be relaunched.  It never relaunches over an operator KILL receipt, a
+completed campaign, or a checkpoint whose error names a contract, manifest,
+authorization, or prerequisite fault that needs a human.  Relaunches back
+off exponentially so a runner that dies immediately cannot flap.
+"""
+from __future__ import annotations
+
+import json
+import shlex
+import subprocess
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable, Mapping
+
+from .signal_desk_gold_budget import gold_kill_path
+
+TMUX_SESSION = "signal-desk-gold"
+RUNNER_PATTERN = "python3 -B scripts/pif_signal_desk_gold_resume.py"
+RELAUNCH_ARGV = (
+    "/usr/bin/caffeinate", "-i", "/usr/bin/python3", "-B",
+    "scripts/pif_signal_desk_gold_resume.py", "--allow-sealed-holdout",
+    "--concurrency", "8",
+)
+MIN_BACKOFF_SECONDS = 60
+MAX_BACKOFF_SECONDS = 1800
+HEALTHY_UPTIME_SECONDS = 1800
+
+# Checkpoint errors that require a human before any relaunch.  Everything
+# else ("Gold stopped during A; checkpoint preserved", a non-transient
+# deferred state, a crash with no checkpoint at all) resumes from leases.
+OPERATOR_REQUIRED_MARKERS = (
+    "hash verification failed",
+    "symbolic link",
+    "permissions are not 0700",
+    "requires explicit authorization",
+    "unknown Gold split",
+    "unsupported phase",
+    "must not repeat a phase",
+    "no frozen",
+    "non-complete receipt",
+    "is incomplete",
+    "worker pool is empty",
+    "invalid turn type",
+    "requires the complete, frozen",
+    "1,000-event floor",
+    "split-specific dispatch",
+    "cannot reach",
+)
+
+
+@dataclass(frozen=True)
+class Decision:
+    action: str  # noop | relaunch | hold | done
+    reason: str
+    wait_seconds: int = 0
+
+
+def classify_checkpoint(checkpoint: Mapping[str, Any] | None) -> str:
+    """complete | operator_required | resumable."""
+
+    if not checkpoint:
+        return "resumable"
+    status = str(checkpoint.get("status") or "")
+    if status == "complete":
+        return "complete"
+    error = str(checkpoint.get("error") or checkpoint.get("reason") or "")
+    if any(marker in error for marker in OPERATOR_REQUIRED_MARKERS):
+        return "operator_required"
+    return "resumable"
+
+
+def decide(
+    *,
+    runner_alive: bool,
+    kill_present: bool,
+    checkpoint: Mapping[str, Any] | None,
+    state: Mapping[str, Any],
+    now: float,
+) -> Decision:
+    consecutive = int(state.get("consecutive_relaunches") or 0)
+    last_launch = float(state.get("last_launch_at") or 0.0)
+    if runner_alive:
+        return Decision("noop", "runner alive")
+    if kill_present:
+        return Decision("hold", "operator KILL receipt present; not relaunching")
+    kind = classify_checkpoint(checkpoint)
+    if kind == "complete":
+        return Decision("done", "campaign checkpoint is complete")
+    if kind == "operator_required":
+        error = str((checkpoint or {}).get("error") or (checkpoint or {}).get("reason") or "")
+        return Decision("hold", f"checkpoint needs an operator: {error[:200]}")
+    backoff = min(MAX_BACKOFF_SECONDS, MIN_BACKOFF_SECONDS * (2 ** consecutive))
+    elapsed = now - last_launch
+    if last_launch and elapsed < backoff:
+        return Decision("noop", f"backing off {int(backoff - elapsed)}s before relaunch", int(backoff - elapsed))
+    return Decision("relaunch", f"runner dead with resumable checkpoint ({kind}); relaunch #{consecutive + 1}")
+
+
+def next_state(state: Mapping[str, Any], decision: Decision, *, now: float) -> dict[str, Any]:
+    result = dict(state)
+    if decision.action == "relaunch":
+        result["consecutive_relaunches"] = int(state.get("consecutive_relaunches") or 0) + 1
+        result["last_launch_at"] = now
+        result["last_relaunch_reason"] = decision.reason
+    elif decision.action == "noop" and decision.reason == "runner alive":
+        last_launch = float(state.get("last_launch_at") or 0.0)
+        # A runner that has stayed up for a healthy stretch earns a fresh
+        # backoff ladder for whatever kills it next.
+        if last_launch and now - last_launch >= HEALTHY_UPTIME_SECONDS:
+            result["consecutive_relaunches"] = 0
+    result["last_check_at"] = now
+    result["last_action"] = decision.action
+    result["last_reason"] = decision.reason
+    return result
+
+
+# --- runtime -----------------------------------------------------------------
+
+def runner_alive() -> bool:
+    proc = subprocess.run(["pgrep", "-f", RUNNER_PATTERN], capture_output=True, text=True, check=False)
+    return proc.returncode == 0 and bool(proc.stdout.strip())
+
+
+def read_json(path: Path) -> dict[str, Any] | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def tmux_relaunch(project_root: Path, log_path: Path) -> None:
+    inner = (
+        f"cd {shlex.quote(str(project_root))} && exec "
+        + " ".join(shlex.quote(part) for part in RELAUNCH_ARGV)
+        + f" >> {shlex.quote(str(log_path))} 2>&1"
+    )
+    window = f"runner-{time.strftime('%H%M%S')}"
+    has_session = subprocess.run(
+        ["tmux", "has-session", "-t", TMUX_SESSION], capture_output=True, check=False
+    ).returncode == 0
+    argv = (
+        ["tmux", "new-window", "-d", "-t", TMUX_SESSION, "-n", window, inner]
+        if has_session
+        else ["tmux", "new-session", "-d", "-s", TMUX_SESSION, "-n", window, inner]
+    )
+    subprocess.run(argv, check=True, capture_output=True, text=True)
+
+
+def notify(kind: str, detail: str, next_step: str, *, severity: str = "high") -> None:
+    subprocess.run(
+        ["codex-ops", "notify", "--source", "signal-desk-gold-keepalive",
+         "--summary", f"Signal Desk gold keepalive: {kind}",
+         "--severity", severity, "--details", detail, "--next-step", next_step,
+         "--dedupe-key", f"signal-desk-gold-keepalive:{kind}", "--telegram-mode", "prefer", "--json"],
+        capture_output=True, text=True, timeout=30, check=False,
+    )
+
+
+def run_once(
+    *,
+    project_root: Path,
+    gold_root: Path,
+    budget_dir: Path,
+    now: float | None = None,
+    alive: Callable[[], bool] = runner_alive,
+    relaunch: Callable[[Path, Path], None] = tmux_relaunch,
+    notifier: Callable[..., None] = notify,
+) -> Decision:
+    now = time.time() if now is None else now
+    state_path = gold_root / "artifacts" / "keepalive-state.json"
+    log_path = gold_root / "logs" / "keepalive.log"
+    state = read_json(state_path) or {}
+    decision = decide(
+        runner_alive=alive(),
+        kill_present=gold_kill_path(budget_dir).exists(),
+        checkpoint=read_json(gold_root / "artifacts" / "gold-resume-supervisor.json"),
+        state=state,
+        now=now,
+    )
+    if decision.action == "relaunch":
+        relaunch(project_root, gold_root / "logs" / "resume.log")
+        notifier(
+            "relaunched", decision.reason,
+            "No action needed unless relaunches keep repeating; see logs/keepalive.log.",
+            severity="medium",
+        )
+    elif decision.action == "hold" and state.get("last_action") != "hold":
+        notifier("held", decision.reason, "Resolve the operator condition, then the keepalive resumes on its own.")
+    updated = next_state(state, decision, now=now)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps(updated, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if decision.action != "noop" or decision.reason != "runner alive":
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S%z', time.localtime(now))} {decision.action}: {decision.reason}\n")
+    return decision
