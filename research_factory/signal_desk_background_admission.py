@@ -27,8 +27,10 @@ import platform
 import re
 import subprocess
 from collections.abc import Awaitable, Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterator
 
 
 SCHEMA_VERSION = "pif_signal_desk_foreground_safe_background_admission_v1"
@@ -37,6 +39,8 @@ ONE_SLOT_UNTIL_IDLE_SECONDS = 15 * 60.0
 TWO_SLOTS_UNTIL_IDLE_SECONDS = 30 * 60.0
 FOUR_SLOTS_UNTIL_IDLE_SECONDS = 45 * 60.0
 POLL_SECONDS = 2.0
+CURRENT_TURN_FOREGROUND_OVERRIDE_MAX_CONFIGURED_CONCURRENCY = 2
+CURRENT_TURN_FOREGROUND_OVERRIDE_PROVIDER_CAP = 1
 
 
 @dataclass(frozen=True)
@@ -48,6 +52,29 @@ class BackgroundAdmission:
     retry_after_seconds: int
     provider_concurrency_cap: int
     input_idle_seconds: float | None
+
+
+@dataclass(frozen=True)
+class CurrentTurnForegroundOverride:
+    """A deliberately narrow, process-local operator authorization.
+
+    This is not a general foreground bypass.  It exists only for an explicitly
+    authorized current-turn Gold launch, and it never permits more than one
+    provider call.  The context is reset when the invoking process exits its
+    ``with`` block; it is not read from a file, environment variable, or any
+    durable setting.
+    """
+
+    source: str
+    configured_concurrency_cap: int = (
+        CURRENT_TURN_FOREGROUND_OVERRIDE_MAX_CONFIGURED_CONCURRENCY
+    )
+    provider_concurrency_cap: int = CURRENT_TURN_FOREGROUND_OVERRIDE_PROVIDER_CAP
+
+
+_CURRENT_TURN_FOREGROUND_OVERRIDE: ContextVar[CurrentTurnForegroundOverride | None] = (
+    ContextVar("signal_desk_current_turn_foreground_override", default=None)
+)
 
 
 class BackgroundWorkDeferred(RuntimeError):
@@ -70,6 +97,70 @@ def _bounded(configured_concurrency: int) -> int:
     if not 1 <= value <= 8:
         raise ValueError("configured background GPT-5.6-Sol concurrency must be 1-8")
     return value
+
+
+def _validate_current_turn_override(
+    *, source: str, configured_concurrency: int,
+) -> CurrentTurnForegroundOverride:
+    """Build the non-persistent foreground override after strict bounds checks."""
+
+    label = str(source).strip()
+    if not label:
+        raise ValueError("current-turn foreground override requires a source label")
+    # The CLI also applies this contract.  Keeping it here prevents a future
+    # programmatic caller from silently broadening the one-call safety bound.
+    if int(configured_concurrency) != CURRENT_TURN_FOREGROUND_OVERRIDE_MAX_CONFIGURED_CONCURRENCY:
+        raise ValueError(
+            "current-turn foreground override requires configured concurrency "
+            f"{CURRENT_TURN_FOREGROUND_OVERRIDE_MAX_CONFIGURED_CONCURRENCY}"
+        )
+    return CurrentTurnForegroundOverride(source=label)
+
+
+@contextmanager
+def current_turn_foreground_override(
+    *, source: str, configured_concurrency: int,
+) -> Iterator[CurrentTurnForegroundOverride]:
+    """Temporarily allow one throttled Gold admission despite foreground use.
+
+    The normal policy remains unchanged outside this lexical scope.  This
+    context is intentionally local to the running process, so a later
+    unattended invocation must supply a new explicit authorization rather than
+    inheriting this one.
+    """
+
+    override = _validate_current_turn_override(
+        source=source,
+        configured_concurrency=configured_concurrency,
+    )
+    token = _CURRENT_TURN_FOREGROUND_OVERRIDE.set(override)
+    try:
+        yield override
+    finally:
+        _CURRENT_TURN_FOREGROUND_OVERRIDE.reset(token)
+
+
+def current_turn_foreground_override_admission(
+    *, configured_concurrency: int,
+) -> BackgroundAdmission | None:
+    """Return an admitted one-slot decision only inside the explicit scope."""
+
+    override = _CURRENT_TURN_FOREGROUND_OVERRIDE.get()
+    if override is None:
+        return None
+    configured = _bounded(configured_concurrency)
+    # ``configured`` is normally the adaptive effective limit, which can only
+    # be less than the CLI's fixed cap.  Never return a cap greater than one.
+    return BackgroundAdmission(
+        allowed=True,
+        reason="operator_current_turn_foreground_override",
+        retry_after_seconds=0,
+        provider_concurrency_cap=min(
+            configured,
+            override.provider_concurrency_cap,
+        ),
+        input_idle_seconds=None,
+    )
 
 
 def _is_codex_foreground(frontmost_application: str | None) -> bool:
@@ -179,6 +270,12 @@ def macos_frontmost_application() -> str | None:
 
 def local_background_admission(*, configured_concurrency: int) -> BackgroundAdmission:
     """Read current local interaction state without exposing any user content."""
+
+    override = current_turn_foreground_override_admission(
+        configured_concurrency=configured_concurrency,
+    )
+    if override is not None:
+        return override
 
     return evaluate_background_admission(
         configured_concurrency=configured_concurrency,

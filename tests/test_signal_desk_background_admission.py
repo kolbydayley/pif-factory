@@ -7,7 +7,9 @@ import pytest
 from research_factory.signal_desk_background_admission import (
     BackgroundWorkDeferred,
     BackgroundWorkPreempted,
+    current_turn_foreground_override,
     evaluate_background_admission,
+    local_background_admission,
     run_foreground_preemptible,
 )
 
@@ -58,6 +60,64 @@ def test_recent_or_unknown_input_fails_closed():
     assert not recent.allowed
     assert unknown.reason == "foreground_state_unknown"
     assert not unknown.allowed
+
+
+def test_current_turn_override_is_explicit_process_local_and_one_slot(monkeypatch):
+    import research_factory.signal_desk_background_admission as admission_module
+
+    monkeypatch.setattr(admission_module, "macos_input_idle_seconds", lambda: 0.0)
+    monkeypatch.setattr(admission_module, "macos_frontmost_application", lambda: "ChatGPT")
+
+    blocked = local_background_admission(configured_concurrency=2)
+    assert not blocked.allowed
+    assert blocked.reason == "foreground_codex_active"
+
+    with current_turn_foreground_override(
+        source="kolby_current_turn_throttled_gold_2026_09_02",
+        configured_concurrency=2,
+    ):
+        allowed = local_background_admission(configured_concurrency=2)
+        assert allowed.allowed
+        assert allowed.reason == "operator_current_turn_foreground_override"
+        assert allowed.provider_concurrency_cap == 1
+        assert allowed.input_idle_seconds is None
+
+    blocked_again = local_background_admission(configured_concurrency=2)
+    assert not blocked_again.allowed
+    assert blocked_again.reason == "foreground_codex_active"
+
+
+def test_current_turn_override_rejects_any_broader_configured_concurrency():
+    with pytest.raises(ValueError, match="configured concurrency 2"):
+        with current_turn_foreground_override(
+            source="kolby_current_turn_throttled_gold_2026_09_02",
+            configured_concurrency=3,
+        ):
+            pass
+
+
+def test_current_turn_override_reaches_preemptible_default_gate_without_provider_call():
+    async def scenario():
+        calls = 0
+
+        async def operation():
+            nonlocal calls
+            calls += 1
+            return "completed"
+
+        with current_turn_foreground_override(
+            source="kolby_current_turn_throttled_gold_2026_09_02",
+            configured_concurrency=2,
+        ):
+            result = await run_foreground_preemptible(
+                operation,
+                configured_concurrency=2,
+                poll_seconds=0.001,
+            )
+        assert result == "completed"
+        assert calls == 1
+
+    asyncio.run(scenario())
 
 
 def test_preemptible_turn_never_starts_while_foreground_is_active():
