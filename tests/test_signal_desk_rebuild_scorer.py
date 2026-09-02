@@ -39,7 +39,7 @@ def _event(
     }
 
 
-def test_eligibility_requires_overlap_role_identity_issue_and_stance() -> None:
+def test_eligibility_uses_claim_identity_and_scores_role_identity_issue_and_stance() -> None:
     gold = _event(issue="issue-ai-employment")
     predicted = _event(
         speaker="Dr. Ajeya Cotra",
@@ -57,12 +57,12 @@ def test_eligibility_requires_overlap_role_identity_issue_and_stance() -> None:
     assert result["evidence_overlap"] == 0.5
 
     wrong_role = event_eligibility(gold, {**predicted, "speaker_role": "third_party_mention"})
-    assert wrong_role["eligible"] is False
-    assert "speaker_role_disagreement" in wrong_role["failures"]
+    assert wrong_role["eligible"] is True
+    assert wrong_role["field_agreement"]["speaker_role"] is False
 
     wrong_stance = event_eligibility(gold, {**predicted, "issue_id": "issue-ai-employment", "stance": "supportive"})
-    assert wrong_stance["eligible"] is False
-    assert "stance_disagreement" in wrong_stance["failures"]
+    assert wrong_stance["eligible"] is True
+    assert wrong_stance["field_agreement"]["stance"] is False
 
     different_claim = event_eligibility(
         gold,
@@ -106,7 +106,9 @@ def test_clean_event_role_entities_are_binding() -> None:
         "quoted_person_id": "Dario Amodei",
     }
     wrong_quote = {**quoted, "quoted_person_id": "Sam Altman"}
-    assert "quoted_person_disagreement" in event_eligibility(quoted, wrong_quote)["failures"]
+    quote_decision = event_eligibility(quoted, wrong_quote)
+    assert quote_decision["eligible"] is True
+    assert quote_decision["field_agreement"]["quoted_person"] is False
 
     mentioned = {
         **_event(subject=""),
@@ -114,9 +116,9 @@ def test_clean_event_role_entities_are_binding() -> None:
         "mentioned_person_ids": ["Dario Amodei", "Sam Altman"],
     }
     missing_person = {**mentioned, "mentioned_person_ids": ["Dario Amodei"]}
-    assert "mentioned_people_disagreement" in event_eligibility(
-        mentioned, missing_person
-    )["failures"]
+    mention_decision = event_eligibility(mentioned, missing_person)
+    assert mention_decision["eligible"] is True
+    assert mention_decision["field_agreement"]["mentioned_people"] is False
 
 
 def test_issue_is_scored_after_matching_not_used_to_hide_event_recall() -> None:
@@ -136,8 +138,8 @@ def test_flattened_gold_rewards_indeterminable_and_penalizes_fabricated_speaker(
 
     fabricated = _event(speaker="Famous Host", role="direct_speech")
     wrong = event_eligibility(gold, fabricated, transcript_structure="flattened")
-    assert wrong["eligible"] is False
-    assert "unsupported_attribution" in wrong["failures"]
+    assert wrong["eligible"] is True
+    assert wrong["unsupported_attribution"] is True
     scored = match_events([gold], [fabricated], transcript_structure="flattened")
     assert scored["unsupported_attributions"] == 1
 
@@ -167,9 +169,9 @@ def test_asr_entities_bind_surface_and_only_frozen_canonical_alias() -> None:
     )
     assert surface["eligible"] is True
     assert canonical["eligible"] is True
-    assert invented["eligible"] is False
-    assert "speaker_disagreement" in invented["failures"]
-    assert "subject_disagreement" in invented["failures"]
+    assert invented["eligible"] is True
+    assert invented["field_agreement"]["speaker"] is False
+    assert invented["field_agreement"]["subject"] is False
 
 
 def test_split_and_merge_credit_is_strictly_one_to_one() -> None:

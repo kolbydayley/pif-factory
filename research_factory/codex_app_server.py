@@ -776,6 +776,37 @@ class CodexAppServerClient:
             raise AppServerProtocolError("thread/goal/set did not preserve the requested status")
         return goal
 
+    async def read_weekly_rate_limit(self) -> dict[str, Any]:
+        """Read the live managed-account weekly window without starting a model turn.
+
+        Workload governors must not infer capacity from an old transcript of a
+        UI session.  The app-server protocol exposes this read directly; keep
+        only numeric capacity metadata so callers cannot accidentally persist
+        account identity or other account fields.
+        """
+
+        self._require_started()
+        result = await self._request("account/rateLimits/read", None)
+        snapshot = result.get("rateLimits") if isinstance(result, dict) else None
+        primary = snapshot.get("primary") if isinstance(snapshot, dict) else None
+        if not isinstance(primary, dict):
+            raise AppServerProtocolError("account/rateLimits/read has no primary window")
+        used = primary.get("usedPercent")
+        resets_at = primary.get("resetsAt")
+        if isinstance(used, bool) or not isinstance(used, (int, float)):
+            raise AppServerProtocolError("rate-limit used percentage is invalid")
+        if isinstance(resets_at, bool) or not isinstance(resets_at, int) or resets_at <= 0:
+            raise AppServerProtocolError("rate-limit reset timestamp is invalid")
+        duration = primary.get("windowDurationMins")
+        if duration is not None and (isinstance(duration, bool) or not isinstance(duration, int)):
+            raise AppServerProtocolError("rate-limit window duration is invalid")
+        return {
+            "used_percent": float(used),
+            "resets_at": resets_at,
+            "window_minutes": duration,
+            "source": "app_server_live",
+        }
+
     async def run_ephemeral_structured_turn(
         self,
         *,
@@ -1162,7 +1193,7 @@ class CodexAppServerClient:
     def _model_available(self, model: str) -> bool:
         return any(item.get("id") == model or item.get("model") == model for item in self.models)
 
-    async def _request(self, method: str, params: dict[str, Any]) -> Any:
+    async def _request(self, method: str, params: dict[str, Any] | None) -> Any:
         self._require_started(
             allow_initializing=method in {"initialize", "account/read", "model/list"}
         )

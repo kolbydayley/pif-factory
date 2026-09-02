@@ -2,8 +2,8 @@
 
 The scorer deliberately answers a narrow question: whether a predicted event
 is eligible to represent one adjudicated gold event.  It does not use an LLM,
-embeddings, or hidden transcript context.  Eligibility is strict; diagnostic
-field scores are calculated only after an eligible one-to-one match exists.
+embeddings, or hidden transcript context. Claim identity controls matching;
+attribution, issue, and stance are scored on every matched pair.
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ from statistics import NormalDist
 from typing import Any, Mapping, Optional, Sequence
 
 
-SCORER_VERSION = "signal-desk-rebuild-scorer-v4"
-SPEC_VERSION = "signal-desk-rebuild-scorer-spec-v4"
+SCORER_VERSION = "signal-desk-rebuild-scorer-v5"
+SPEC_VERSION = "signal-desk-rebuild-scorer-spec-v5"
 EVIDENCE_OVERLAP_FLOOR = 0.50
 CLAIM_TEXT_F1_FLOOR = 0.30
 QUALIFICATION_ALPHA = 0.05
@@ -270,52 +270,25 @@ def event_eligibility(
         and g["speaker_role"] == "unresolved_speaker"
         and not g["speaker"]
     )
-    if flattened_indeterminable:
-        if p["speaker"] or p["speaker_role"] != "unresolved_speaker":
-            failures.append("unsupported_attribution")
-    for field in ("speaker", "speaker_role", "stance"):
-        if flattened_indeterminable and field in {"speaker", "speaker_role"}:
-            continue
-        if not g[field] or not p[field]:
-            failures.append(f"missing_{field}")
-        elif g[field] != p[field]:
-            if structure == "asr_diarized" and field in {"speaker", "subject"}:
-                alias_field = "speaker_id" if field == "speaker" else "subject_id"
-                if p[field] not in _gold_entity_forms(gold, alias_field, g[field]):
-                    failures.append(f"{field}_disagreement")
-            else:
-                failures.append(f"{field}_disagreement")
-    # Subject is a legacy optional field and is absent from the clean-event
-    # contract. It remains binding when either side supplies it, avoiding a
-    # silent compatibility regression without penalizing clean v2 events.
-    if g["subject"] or p["subject"]:
-        if not g["subject"] or not p["subject"]:
-            failures.append("missing_subject")
-        elif g["subject"] != p["subject"]:
-            if structure == "asr_diarized" and p["subject"] in _gold_entity_forms(
-                gold, "subject_id", g["subject"]
-            ):
-                pass
-            else:
-                failures.append("subject_disagreement")
-    if g["speaker_role"] == "quoted_speech":
-        if not g["quoted_person"] or not p["quoted_person"]:
-            failures.append("missing_quoted_person")
-        elif g["quoted_person"] != p["quoted_person"]:
-            failures.append("quoted_person_disagreement")
-    if g["speaker_role"] == "third_party_mention":
-        if not g["mentioned_people"] or not p["mentioned_people"]:
-            failures.append("missing_mentioned_people")
-        elif g["mentioned_people"] != p["mentioned_people"]:
-            failures.append("mentioned_people_disagreement")
+    unsupported_attribution = bool(
+        flattened_indeterminable
+        and (p["speaker"] or p["speaker_role"] != "unresolved_speaker")
+    )
+    speaker_agreement = g["speaker"] == p["speaker"]
+    subject_agreement = g["subject"] == p["subject"]
+    if structure == "asr_diarized" and not speaker_agreement:
+        speaker_agreement = p["speaker"] in _gold_entity_forms(gold, "speaker_id", g["speaker"])
+    if structure == "asr_diarized" and not subject_agreement:
+        subject_agreement = p["subject"] in _gold_entity_forms(gold, "subject_id", g["subject"])
     if overlap < evidence_overlap_floor:
         failures.append("insufficient_evidence_overlap")
     claim_f1 = _token_f1(g["claim"], p["claim"])
     if claim_f1 < CLAIM_TEXT_F1_FLOOR:
         failures.append("insufficient_claim_text_agreement")
     eligible = not failures
-    # Eligibility fields are deliberately hard constraints.  Weight breaks
-    # ties among eligible edges and is never partial TP credit.
+    # Only evidence and atomic-claim identity control matching. Field quality
+    # is measured on the resulting pair and can therefore never disappear into
+    # recall or inflate accuracy by pre-filtering disagreements.
     weight = (0.70 * overlap) + (0.30 * claim_f1) if eligible else 0.0
     return {
         "eligible": eligible,
@@ -326,11 +299,11 @@ def event_eligibility(
         "gold_surface": g,
         "predicted_surface": p,
         "transcript_structure": structure,
-        "unsupported_attribution": "unsupported_attribution" in failures,
+        "unsupported_attribution": unsupported_attribution,
         "field_agreement": {
-            "speaker": g["speaker"] == p["speaker"],
+            "speaker": speaker_agreement,
             "speaker_role": g["speaker_role"] == p["speaker_role"],
-            "subject": g["subject"] == p["subject"],
+            "subject": subject_agreement,
             "issue": g["issue"] == p["issue"],
             "stance": g["stance"] == p["stance"],
             "quoted_person": g["quoted_person"] == p["quoted_person"],
@@ -461,15 +434,11 @@ def scorer_specification() -> dict[str, Any]:
             "cross_source_numeric_spans": "ineligible",
             "text_fallback": "multiset_token_overlap_coefficient",
         },
-        "hard_agreement_fields": [
-            "speaker",
-            "speaker_role",
-            "stance",
-            "quoted_person_when_quoted_speech",
-            "mentioned_people_when_third_party_mention",
-            "subject_when_legacy_field_present",
+        "matching_fields": ["evidence_overlap", "claim_text_token_f1"],
+        "diagnostic_agreement_fields": [
+            "speaker", "speaker_role", "subject", "issue", "stance",
+            "quoted_person", "mentioned_people", "unsupported_attribution",
         ],
-        "diagnostic_agreement_fields": ["issue"],
         "issue_policy": (
             "issue labels are extraction-time proposals and do not control event matching; "
             "issue agreement is scored on eligible matched pairs after canonicalization"
@@ -507,7 +476,9 @@ def scorer_specification() -> dict[str, Any]:
             "purpose": "prevent different atomic propositions sharing one span from matching",
         },
         "merge_policy": "one_prediction_matches_at_most_one_gold_event",
-        "split_policy": "each_prediction_may_match_one_distinct_gold_event",
+        "split_policy": (
+            "one-to-one assignment plus separate same-span multiplicity atomicity penalty"
+        ),
         "duplicate_policy": "unmatched_predictions_are_false_positives",
         "weight": {"evidence_overlap": 0.70, "claim_text_token_f1": 0.30},
     }

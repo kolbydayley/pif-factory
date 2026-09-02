@@ -33,7 +33,12 @@ def _sha(value: Any) -> str:
 
 def _family(decision: Mapping[str, Any], structure: str) -> str:
     if decision["eligible"]:
-        return f"eligible:{structure}"
+        if decision.get("unsupported_attribution"):
+            return f"eligible:unsupported_attribution:{structure}"
+        for field, agreed in (decision.get("field_agreement") or {}).items():
+            if not agreed:
+                return f"eligible:{field}_disagreement:{structure}"
+        return f"eligible:all_fields:{structure}"
     failures = list(decision.get("failures") or ["unknown"])
     return f"{failures[0]}:{structure}"
 

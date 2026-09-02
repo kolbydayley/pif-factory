@@ -2,7 +2,11 @@ import json
 
 import pytest
 
-from research_factory.signal_desk_gold_audit import GoldAuditError, evaluate_dev_audit
+from research_factory.signal_desk_gold_audit import (
+    GoldAuditError,
+    evaluate_dev_audit,
+    select_dev_audit_windows,
+)
 
 
 def _output(window_id, speaker="A"):
@@ -41,7 +45,9 @@ def test_dev_audit_passes_identical_outputs(tmp_path):
         (root / turn).mkdir(parents=True)
         (root / turn / "w1.json").write_text(json.dumps(_output("w1")))
     receipt = evaluate_dev_audit(
-        manifest_path=manifest_path, result_root=root, expected_windows=1
+        manifest_path=manifest_path, result_root=root, expected_windows=1,
+        initial_windows=1, minimum_events=1,
+        agreement_minimum=0.0, critical_error_maximum=1.0,
     )
     assert receipt["passed"] is True
     assert receipt["agreement"]["point"] == 1.0
@@ -66,9 +72,38 @@ def test_dev_audit_fails_closed_when_incomplete_or_critical(tmp_path):
     (root / "C").mkdir(parents=True)
     (root / "C" / "w1.json").write_text(json.dumps(_output("w1")))
     with pytest.raises(GoldAuditError, match="incomplete"):
-        evaluate_dev_audit(manifest_path=path, result_root=root, expected_windows=1)
+        evaluate_dev_audit(
+            manifest_path=path, result_root=root, expected_windows=1,
+            initial_windows=1, minimum_events=1,
+            agreement_minimum=0.0, critical_error_maximum=0.5,
+        )
     (root / "AUDIT").mkdir()
     (root / "AUDIT" / "w1.json").write_text(json.dumps(_output("w1", speaker="B")))
-    receipt = evaluate_dev_audit(manifest_path=path, result_root=root, expected_windows=1)
+    receipt = evaluate_dev_audit(
+        manifest_path=path, result_root=root, expected_windows=1,
+        initial_windows=1, minimum_events=1,
+        agreement_minimum=0.0, critical_error_maximum=0.5,
+    )
     assert receipt["passed"] is False
     assert receipt["critical_errors"]["errors"] == 1
+    assert receipt["catastrophic_windows"] == 0
+
+
+def test_dev_audit_expands_in_40_window_blocks_to_event_floor():
+    manifest = {
+        "windows": [
+            {"window_id": f"w{i:03d}", "split": "development"}
+            for i in range(100)
+        ]
+    }
+    counts = {f"w{i:03d}": 20 for i in range(100)}
+    selected = select_dev_audit_windows(
+        manifest,
+        counts,
+        initial_window_ids=[f"w{i:03d}" for i in range(19)],
+    )
+    assert selected["initial_windows"] == 19
+    assert selected["expanded_windows"] == 59
+    assert selected["expansion_blocks"] == 1
+    assert selected["event_denominator"] == 1180
+    assert selected["decision_ready"] is True

@@ -13,6 +13,16 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .codex_app_server import CodexAppServerClient
+from .signal_desk_gold_capacity import (
+    admit_gold_call,
+    capacity_error_from_sidecar,
+    is_model_capacity_error,
+    record_capacity_failure,
+    record_gold_admission_success,
+    release_gold_admission,
+)
+from .signal_desk_gold_atomicity import ATOMICITY_REVIEW_WINDOW_IDS
+from .signal_desk_gold_audit import select_dev_audit_windows
 from .signal_desk_gold_budget import mark_provider_started, reserve_gold_call, settle_gold_call
 from .signal_desk_gold_measurement import (
     A_SYSTEM_PROMPT, AUDIT_SYSTEM_PROMPT, B_SYSTEM_PROMPT, C_SYSTEM_PROMPT,
@@ -168,11 +178,14 @@ async def run_dev_gold(
         manifest, project_root=project_root, gold_pass="A", splits=("development",)
     )
     by_window = {str(packet["input"]["window_id"]): packet for packet in packets}
-    audit_ids = set(select_blind_gold_audit_windows(manifest)) & set(by_window)
+    blind_audit_ids = set(select_blind_gold_audit_windows(manifest)) & set(by_window)
+    atomicity_review_ids = set(ATOMICITY_REVIEW_WINDOW_IDS) & set(by_window)
+    audit_ids = blind_audit_ids | atomicity_review_ids
+    audit_plan: dict[str, Any] | None = None
     imported = _import_seed_outputs(
         seed_roots, result_root,
         {"A": set(by_window), "B": set(by_window), "C": set(by_window),
-         "AUDIT": set(audit_ids)},
+         "AUDIT": set(by_window)},
     )
     dispatch_database.parent.mkdir(parents=True, exist_ok=True)
     dispatch = sqlite3.connect(dispatch_database)
@@ -186,6 +199,18 @@ async def run_dev_gold(
 
     try:
         for turn_type in ("A", "B", "C", "AUDIT"):
+            if turn_type == "AUDIT":
+                c_outputs = _load_outputs(result_root, "C")
+                if set(c_outputs) != set(by_window):
+                    raise RuntimeError("dev Gold C must be complete before audit expansion")
+                audit_plan = select_dev_audit_windows(
+                    manifest,
+                    {window_id: len(output["events"]) for window_id, output in c_outputs.items()},
+                    initial_window_ids=sorted(blind_audit_ids),
+                )
+                if not audit_plan["decision_ready"]:
+                    raise RuntimeError("development audit cannot reach the 1,000-event floor")
+                audit_ids = set(audit_plan["window_ids"]) | atomicity_review_ids
             target_ids = sorted(audit_ids if turn_type == "AUDIT" else by_window)
             existing = _load_outputs(result_root, turn_type)
             for window_id in set(existing) & set(target_ids):
@@ -218,16 +243,43 @@ async def run_dev_gold(
                 payload = lease["payload"]
                 window_id = str(payload["window_id"])
                 packet = by_window[window_id]
-                reservation = reserve_gold_call(
-                    budget, grant_path=grant_path, session_root=session_root,
-                    budget_dir=budget_dir,
-                    task_key=(
-                        f"dev:{turn_type}:{window_id}:attempt:{lease['current_attempt_id']}:"
-                        f"generation:{lease['lease_generation']}"
-                    ),
-                    turn_type=turn_type, reserve_tokens=RESERVE_TOKENS[turn_type],
+                capacity_task_key = (
+                    f"dev:{turn_type}:{window_id}:attempt:{lease['current_attempt_id']}:"
+                    f"generation:{lease['lease_generation']}"
                 )
+                admission = admit_gold_call(
+                    budget,
+                    task_key=capacity_task_key,
+                    lease_owner=str(lease["lease_owner"]),
+                    configured_concurrency=concurrency,
+                )
+                if not admission["allowed"]:
+                    release_attempt_for_retry(
+                        dispatch, attempt_id=int(lease["current_attempt_id"]),
+                        lease_owner=str(lease["lease_owner"]), lease_generation=int(lease["lease_generation"]),
+                        failure_code=str(admission["reason"]),
+                        failure_detail=(
+                            "provider capacity circuit is protecting the shared GPT-5.6-sol lane; "
+                            f"retry after {int(admission.get('retry_after_seconds') or 0)} seconds"
+                        ),
+                    )
+                    stop.set()
+                    return
+                admission_id = str(admission["admission_id"])
+                try:
+                    live_snapshot = await client.read_weekly_rate_limit()
+                    reservation = reserve_gold_call(
+                        budget, grant_path=grant_path, session_root=session_root,
+                        budget_dir=budget_dir,
+                        task_key=capacity_task_key,
+                        turn_type=turn_type, reserve_tokens=RESERVE_TOKENS[turn_type],
+                        live_snapshot=live_snapshot,
+                    )
+                except Exception:
+                    release_gold_admission(budget, admission_id=admission_id)
+                    raise
                 if not reservation.get("allowed"):
+                    release_gold_admission(budget, admission_id=admission_id)
                     release_attempt_for_retry(
                         dispatch, attempt_id=int(lease["current_attempt_id"]),
                         lease_owner=str(lease["lease_owner"]), lease_generation=int(lease["lease_generation"]),
@@ -238,7 +290,11 @@ async def run_dev_gold(
                                   "Restore/reset the weekly subscription window; the runner can resume from leases.")
                     return
                 reservation_id = str(reservation["reservation_id"])
-                mark_provider_started(budget, reservation_id)
+                try:
+                    mark_provider_started(budget, reservation_id)
+                except Exception:
+                    release_gold_admission(budget, admission_id=admission_id)
+                    raise
                 prompt = _prompt(packet)
                 if turn_type == "C":
                     a = json.loads((result_root / "A" / f"{window_id}.json").read_text())
@@ -256,6 +312,7 @@ async def run_dev_gold(
                 )
                 started = time.monotonic()
                 reservation_settled = False
+                result = None
                 try:
                     result = await client.run_ephemeral_structured_turn(
                         model="gpt-5.6-sol", effort="medium",
@@ -282,7 +339,13 @@ async def run_dev_gold(
                         output_path.write_text(
                             json.dumps(repaired, indent=2, sort_keys=True) + "\n", encoding="utf-8"
                         )
+                    record_gold_admission_success(budget, admission_id=admission_id)
                 except Exception as exc:  # noqa: BLE001
+                    capacity_error_code = capacity_error_from_sidecar(str(sidecar_path))
+                    provider_capacity = is_model_capacity_error(
+                        error_code=capacity_error_code,
+                        detail=str(exc),
+                    )
                     if not reservation_settled:
                         # The provider call started, but an exception denied us
                         # authoritative usage. Charge the full reservation so
@@ -299,20 +362,42 @@ async def run_dev_gold(
                         output_path.replace(rejected)
                     detail = f"{type(exc).__name__}: {str(exc)[:300]}"
                     if "EvidenceContract" in type(exc).__name__:
+                        release_gold_admission(budget, admission_id=admission_id)
                         fail_attempt_semantically(
                             dispatch, attempt_id=int(lease["current_attempt_id"]),
                             lease_owner=str(lease["lease_owner"]), lease_generation=int(lease["lease_generation"]),
                             failure_code="gold_contract_failure", failure_detail=detail,
                         )
                     else:
+                        if provider_capacity:
+                            capacity = record_capacity_failure(
+                                budget, admission_id=admission_id,
+                                error_code=str(capacity_error_code or "serverOverloaded"),
+                            )
+                            failure_code = "gold_model_capacity_backoff"
+                            detail = (
+                                f"{detail}; capacity circuit opened for "
+                                f"{int(capacity['backoff_seconds'])} seconds"
+                            )
+                        else:
+                            release_gold_admission(budget, admission_id=admission_id)
+                            failure_code = "gold_infrastructure_failure"
                         release_attempt_for_retry(
                             dispatch, attempt_id=int(lease["current_attempt_id"]),
                             lease_owner=str(lease["lease_owner"]), lease_generation=int(lease["lease_generation"]),
-                            failure_code="gold_infrastructure_failure", failure_detail=detail,
+                            failure_code=failure_code, failure_detail=detail,
                         )
                     stop.set()
-                    _notify_stall(type(exc).__name__, detail,
-                                  "Inspect the failed lease; resume uses the same semantic task lineage.")
+                    if provider_capacity:
+                        _notify_stall(
+                            "model_capacity",
+                            detail,
+                            "Gold is checkpointed. Wait for the capacity circuit's single-call probe "
+                            "instead of restarting or increasing concurrency.",
+                        )
+                    else:
+                        _notify_stall(type(exc).__name__, detail,
+                                      "Inspect the failed lease; resume uses the same semantic task lineage.")
                     return
                 complete_attempt(
                     dispatch, attempt_id=int(lease["current_attempt_id"]),
@@ -337,7 +422,7 @@ async def run_dev_gold(
                         async with lock:
                             lease = acquire_lease(
                                 dispatch, lease_owner=f"dev-gold-{turn_type}-{worker_id}",
-                                lease_seconds=1200,
+                                lease_seconds=1800,
                                 task_key_prefix=f"dev:{turn_type}:",
                             )
                         if lease is None:
@@ -366,6 +451,9 @@ async def run_dev_gold(
             "schema_version": "pif_signal_desk_dev_gold_run_v1", "created_at": now_iso(),
             "complete": True, "manifest_sha256": manifest["manifest_sha256"],
             "development_windows": len(by_window), "development_audit_windows": len(audit_ids),
+            "development_blind_audit_windows": len(blind_audit_ids),
+            "development_atomicity_review_windows": len(atomicity_review_ids),
+            "development_audit_power_plan": audit_plan,
             "concurrency": concurrency, "imported_seed_outputs": imported,
             "phases": phase_receipts, "wall_seconds": time.monotonic() - run_started,
         }

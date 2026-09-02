@@ -132,6 +132,20 @@ class CodexAppServerClientTest(unittest.IsolatedAsyncioTestCase):
             ["initialize", "initialized", "account/read", "model/list"],
         )
 
+    async def test_live_weekly_rate_limit_read_is_numeric_and_account_safe(self) -> None:
+        async with self.client() as client:
+            rate_limit = await client.read_weekly_rate_limit()
+        self.assertEqual(
+            rate_limit,
+            {
+                "used_percent": 17.0,
+                "resets_at": 1_788_748_260,
+                "window_minutes": 10_080,
+                "source": "app_server_live",
+            },
+        )
+        self.assertIn("account/rateLimits/read", self.methods("success"))
+
     async def test_goal_status_control_uses_official_rpc_without_rewriting_goal(self) -> None:
         request = AsyncMock(
             side_effect=[

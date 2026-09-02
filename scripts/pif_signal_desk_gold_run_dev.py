@@ -12,6 +12,7 @@ from pathlib import Path
 PIF_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PIF_ROOT))
 from research_factory.signal_desk_gold_runner import run_dev_gold  # noqa: E402
+from research_factory.signal_desk_gold_capacity import capacity_status  # noqa: E402
 from research_factory.pif_budget_governor import read_weekly_snapshot  # noqa: E402
 
 
@@ -38,10 +39,20 @@ def _latest_failure(database: Path) -> tuple[bool, str]:
         conn.close()
 
 
-def _wait_for_retry(database: Path) -> None:
+def _wait_for_retry(database: Path, *, capacity_database: Path) -> None:
     terminal, detail = _latest_failure(database)
     if terminal:
         raise RuntimeError("semantic gold failure requires explicit resurrection")
+    with sqlite3.connect(capacity_database) as conn:
+        conn.row_factory = sqlite3.Row
+        capacity = capacity_status(conn)
+    if capacity["state"] in {"open", "half_open"}:
+        # A capacity response is never a normal 60-second retry.  Wait until
+        # the durable circuit permits exactly one recovery probe; repeated
+        # processes share this same state and therefore cannot stampede it.
+        delay = max(1, int(capacity.get("retry_after_seconds") or 0))
+        time.sleep(min(delay, 300))
+        return
     quota_failure = any(
         token in detail.casefold()
         for token in ("rate_limit", "rate limit", "quota", "usage", "exhaust")
@@ -88,7 +99,7 @@ def main() -> int:
         except RuntimeError:
             if args.once:
                 raise
-            _wait_for_retry(dispatch_database)
+            _wait_for_retry(dispatch_database, capacity_database=PIF_ROOT / "data/factory.sqlite")
 
 
 if __name__ == "__main__": raise SystemExit(main())

@@ -263,6 +263,21 @@ def main() -> int:
                     },
                 }
             )
+        elif method == "account/rateLimits/read":
+            emit(
+                {
+                    "id": request_id,
+                    "result": {
+                        "rateLimits": {
+                            "primary": {
+                                "usedPercent": 17,
+                                "resetsAt": 1_788_748_260,
+                                "windowDurationMins": 10_080,
+                            }
+                        }
+                    },
+                }
+            )
         elif method == "model/list":
             emit(
                 {

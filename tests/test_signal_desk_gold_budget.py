@@ -87,6 +87,28 @@ def test_reservation_and_settlement_are_weekly_lane_metered(tmp_path, monkeypatc
     assert tuple(row) == ("weekly:1788748260", gold.EXPECTED_SCOPE, 35_000)
 
 
+def test_live_app_server_snapshot_overrides_stale_session_log(tmp_path, monkeypatch):
+    conn = _conn()
+    monkeypatch.setattr(
+        gold,
+        "read_weekly_snapshot",
+        lambda _root: {"used_percent": 99.0, "resets_at": 1},
+    )
+    health = gold.weekly_health(
+        conn,
+        session_root=tmp_path,
+        budget_dir=tmp_path,
+        live_snapshot={
+            "used_percent": 17.0,
+            "resets_at": 1_788_748_267,
+            "source": "app_server_live",
+        },
+    )
+    assert health["allowed"] is True
+    assert health["used_percent"] == 17.0
+    assert health["provider_resets_at"] == 1_788_748_267
+
+
 def test_started_reservation_cannot_be_released(tmp_path, monkeypatch):
     conn = _conn(); monkeypatch.setattr(gold, "read_weekly_snapshot", lambda _root: {"used_percent": 14.0, "resets_at": 99})
     reserved = gold.reserve_gold_call(conn, grant_path=_grant(tmp_path), session_root=tmp_path,

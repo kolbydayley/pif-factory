@@ -193,8 +193,16 @@ Gold authoring has its own owner-authorized grant at
 GPT-5.6-sol medium Gold A/B/C and blind-audit calls for the frozen 804-window
 benchmark and cannot fund GPT-5.5 approval or any other work. The grant has no
 daily ceiling: the provider weekly subscription window is binding, with
-per-call reservations and usage settlement still mandatory. Concurrency adapts
-within 2-8 and begins at the measured-safe concurrency four. At 85% weekly
+per-call reservations and usage settlement still mandatory. Worker concurrency
+adapts within 2-8, but provider admission is separately protected by a global
+GPT-5.6-sol capacity circuit stored with the shared budget ledger. Every call
+reads the live app-server rate-limit window; an old session-log snapshot is
+never authoritative. A `serverOverloaded` or model-capacity response opens an
+exponential backoff, admits no further Gold calls, then permits exactly one
+recovery probe. Three successful serialized probes are required before parallel
+provider admission returns. The capacity circuit is shared across development,
+validation, and holdout Gold runners, and supervisors must not launch other
+remote Codex fanout while a Gold provider admission is active. At 85% weekly
 consumption the lane notifies Kolby but continues. Actual provider exhaustion
 fails closed on a clean leased checkpoint and notifies the exact unblock; the
 supervisor resumes after calls succeed following a reset. A persistent kill at

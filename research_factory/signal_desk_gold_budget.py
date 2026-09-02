@@ -173,10 +173,13 @@ def _notify_once(
 
 def weekly_health(
     conn: sqlite3.Connection, *, session_root: Path, budget_dir: Path,
-    notify: bool = True,
+    notify: bool = True, live_snapshot: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     ensure_gold_budget_schema(conn)
-    snapshot = read_weekly_snapshot(session_root)
+    # The live app-server read is authoritative when present.  Session-log
+    # snapshots remain only a compatibility fallback for recovery tooling;
+    # they are not allowed to override a fresh account read.
+    snapshot = dict(live_snapshot) if live_snapshot is not None else read_weekly_snapshot(session_root)
     if not snapshot:
         synthetic = {"used_percent": 100.0, "resets_at": 0}
         if notify:
@@ -227,11 +230,14 @@ def reserve_gold_call(
     budget_dir: Path, task_key: str, turn_type: str, reserve_tokens: int,
     model: str = EXPECTED_MODEL, at: datetime | None = None,
     completion_receipt: Mapping[str, Any] | None = None,
+    live_snapshot: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     grant = load_gold_grant(grant_path, at=at, completion_receipt=completion_receipt)
     if turn_type not in TURN_TYPES or model != EXPECTED_MODEL or reserve_tokens <= 0:
         raise GoldBudgetError("call is outside the authorized gold lane contract")
-    health = weekly_health(conn, session_root=session_root, budget_dir=budget_dir)
+    health = weekly_health(
+        conn, session_root=session_root, budget_dir=budget_dir, live_snapshot=live_snapshot
+    )
     if not health["allowed"]:
         return health
     resets_at = int(health["resets_at"])

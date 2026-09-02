@@ -12,12 +12,13 @@ from .signal_desk_rebuild_scorer import (
     CLAIM_TEXT_F1_FLOOR,
     EVIDENCE_OVERLAP_FLOOR,
     _maximum_weight_assignment,
+    evidence_overlap,
     event_eligibility,
     match_events,
 )
 
 
-EVALUATION_VERSION = "pif_signal_desk_rebuild_evaluation_v1"
+EVALUATION_VERSION = "pif_signal_desk_rebuild_evaluation_v2"
 
 
 def _ratio(numerator: int, denominator: int) -> float:
@@ -103,6 +104,16 @@ def evaluate_windows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
                 if agreement[field]:
                     field_correct[field] += 1
         unsupported = strict["unsupported_attributions"]
+        atomic_one_to_one = 0
+        for pair in pairs:
+            gold_event = gold_events[int(pair["gold_index"])]
+            overlapping_predictions = sum(
+                evidence_overlap(gold_event, predicted_event) >= EVIDENCE_OVERLAP_FLOOR
+                for predicted_event in predicted_events
+            )
+            if overlapping_predictions == 1:
+                atomic_one_to_one += 1
+        correct_empty = not gold_events and not predicted_events
         counts = {
             "windows": 1,
             "gold_events": len(gold_events),
@@ -117,12 +128,20 @@ def evaluate_windows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             "contaminants": len(predicted_events) if not gold_events else 0,
             "schema_valid": 1,
             "evidence_grounded_events": len(predicted_events),
+            "atomic_one_to_one_matched": atomic_one_to_one,
+            "correct_empty_windows": int(correct_empty),
         }
         for key, value in counts.items():
             totals[key] += value
             per_stratum[structure][key] += value
         precision = _ratio(strict["matched_events"], len(predicted_events))
         recall = _ratio(strict["matched_events"], len(gold_events))
+        density_ratio = (
+            min(len(gold_events), len(predicted_events))
+            / max(len(gold_events), len(predicted_events))
+            if gold_events or predicted_events
+            else 1.0
+        )
         per_window_scores.append(
             {
                 "window_id_sha256": hashlib.sha256(str(row["window_id"]).encode()).hexdigest(),
@@ -132,6 +151,9 @@ def evaluate_windows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
                 "event_precision": precision,
                 "event_recall": recall,
                 "event_f1": _ratio(2 * strict["matched_events"], len(gold_events) + len(predicted_events)),
+                "atomicity": _ratio(atomic_one_to_one, len(pairs)),
+                "density_ratio": density_ratio,
+                "correct_empty": correct_empty,
             }
         )
 
@@ -144,7 +166,13 @@ def evaluate_windows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         speaker_role = _ratio(counts["speaker_role_correct"], field_total)
         issue = _ratio(counts["issue_correct"], field_total)
         stance = _ratio(counts["stance_correct"], field_total)
-        atomicity = _ratio(2 * counts["diagnostic_pairs"], counts["gold_events"] + counts["predicted_events"])
+        atomicity = _ratio(counts["atomic_one_to_one_matched"], counts["diagnostic_pairs"])
+        density_ratio = (
+            min(counts["gold_events"], counts["predicted_events"])
+            / max(counts["gold_events"], counts["predicted_events"])
+            if counts["gold_events"] or counts["predicted_events"]
+            else 1.0
+        )
         contamination = _ratio(counts["contaminants"], counts["predicted_events"]) if counts["predicted_events"] else 0.0
         components = (event_f1, attribution, speaker_role, issue, stance, atomicity)
         return {
@@ -156,6 +184,7 @@ def evaluate_windows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             "issue": issue,
             "stance": stance,
             "atomicity": atomicity,
+            "density_ratio": density_ratio,
             "contamination": contamination,
             "schema_validity": _ratio(counts["schema_valid"], counts["windows"]),
             "evidence_grounding": _ratio(
