@@ -488,5 +488,75 @@ def test_supervisor_calls_only_the_authorized_stages_in_order_and_checkpoints_ea
         "turn_type": "C",
         "receipt_sha256": "receipt-1",
         "target_windows": 1,
+        "quarantined_windows": 0,
     }
     assert checkpoints[-1]["status"] == "complete"
+
+
+def test_contract_quarantine_is_durable_and_never_revived_by_reenqueue():
+    from research_factory.signal_desk_gold_runner import (
+        _phase_required_ids,
+        quarantined_window_ids,
+    )
+    from research_factory.signal_desk_rebuild_dispatch import (
+        acquire_lease,
+        fail_attempt_semantically,
+    )
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    initialize_dispatch_schema(conn)
+    for window_id in ("w1", "w2", "w3"):
+        enqueue_task(
+            conn,
+            task_key=f"validation:A:{window_id}",
+            task_type="gold_window",
+            payload={"turn_type": "A", "window_id": window_id},
+        )
+    # A different split's failure must never leak into this namespace.
+    enqueue_task(
+        conn, task_key="dev:A:w9", task_type="gold_window",
+        payload={"turn_type": "A", "window_id": "w9"},
+    )
+    assert quarantined_window_ids(conn, task_namespace="validation") == {}
+
+    lease = acquire_lease(
+        conn, lease_owner="worker-0", lease_seconds=60, task_key_prefix="validation:A:"
+    )
+    assert lease["payload"]["window_id"] == "w1"
+    fail_attempt_semantically(
+        conn,
+        attempt_id=lease["current_attempt_id"],
+        lease_owner=lease["lease_owner"],
+        lease_generation=lease["lease_generation"],
+        failure_code="gold_contract_failure",
+        failure_detail="EvidenceContractError: excerpt does not match declared offsets",
+    )
+    other = acquire_lease(
+        conn, lease_owner="worker-9", lease_seconds=60, task_key_prefix="dev:A:"
+    )
+    fail_attempt_semantically(
+        conn, attempt_id=other["current_attempt_id"], lease_owner=other["lease_owner"],
+        lease_generation=other["lease_generation"], failure_code="gold_contract_failure",
+        failure_detail="other split",
+    )
+
+    quarantined = quarantined_window_ids(conn, task_namespace="validation")
+    assert quarantined == {
+        "w1": {"turn_type": "A", "failure_code": "gold_contract_failure"}
+    }
+    # Resume re-enqueues every missing window; the quarantined one stays terminal.
+    outcome = enqueue_task(
+        conn, task_key="validation:A:w1", task_type="gold_window",
+        payload={"turn_type": "A", "window_id": "w1"},
+    )
+    assert outcome["status"] == "terminal_failed"
+    assert quarantined_window_ids(conn, task_namespace="validation") == quarantined
+    # The other windows are still leasable, so the campaign keeps moving.
+    remaining = []
+    while (lease := acquire_lease(
+        conn, lease_owner="worker-1", lease_seconds=60, task_key_prefix="validation:A:"
+    )) is not None:
+        remaining.append(lease["payload"]["window_id"])
+    assert remaining == ["w2", "w3"]
+    assert _phase_required_ids(["w1", "w2", "w3"], quarantined) == ["w2", "w3"]

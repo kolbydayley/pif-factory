@@ -187,6 +187,49 @@ def _notify_stall(kind: str, detail: str, next_step: str) -> None:
     )
 
 
+def quarantined_window_ids(
+    dispatch: sqlite3.Connection, *, task_namespace: str
+) -> dict[str, dict[str, str]]:
+    """Windows whose Gold task was terminalized by a semantic failure.
+
+    A contract failure is terminal in dispatch (only explicit resurrection can
+    retry it), so it is the durable quarantine record: a resumed runner must
+    exclude these windows instead of spinning forever waiting for outputs
+    that no lease will ever produce.  Nothing here touches item content.
+    """
+
+    rows = dispatch.execute(
+        """
+        SELECT t.task_key, t.payload_json, a.semantic_failure_code
+        FROM signal_desk_rebuild_tasks t
+        JOIN signal_desk_rebuild_attempts a ON a.id = t.current_attempt_id
+        WHERE t.status = 'terminal_failed'
+          AND substr(t.task_key, 1, length(?)) = ?
+        ORDER BY t.task_key
+        """,
+        (f"{task_namespace}:", f"{task_namespace}:"),
+    ).fetchall()
+    result: dict[str, dict[str, str]] = {}
+    for row in rows:
+        payload = json.loads(row["payload_json"])
+        window_id = str(payload["window_id"])
+        # A window is quarantined at its earliest failed turn; later turns
+        # are never enqueued for it, so first-seen is the authoritative one.
+        result.setdefault(window_id, {
+            "turn_type": str(payload["turn_type"]),
+            "failure_code": str(row["semantic_failure_code"] or ""),
+        })
+    return result
+
+
+def _phase_required_ids(
+    target_ids: Sequence[str], quarantined: Mapping[str, Any]
+) -> list[str]:
+    """Windows a phase must complete: every target not under quarantine."""
+
+    return [window_id for window_id in target_ids if window_id not in quarantined]
+
+
 def _load_outputs(root: Path, turn_type: str) -> dict[str, Mapping[str, Any]]:
     output_dir = root / turn_type
     result = {}
@@ -725,6 +768,10 @@ async def _run_gold_split_phases(
                     payload={"window_id": window_id, "turn_type": enqueue_turn,
                              "text_sha256": hashlib.sha256(packet["input"]["window_text"].encode()).hexdigest()},
                 )
+            # Durable across resumes: a terminal_failed task is never revived
+            # by re-enqueue, so quarantine is read back from dispatch rather
+            # than remembered only in this process.
+            quarantined = quarantined_window_ids(dispatch, task_namespace=task_namespace)
             phase_start = time.monotonic()
             completed_rows: list[dict[str, Any]] = []
 
@@ -918,12 +965,30 @@ async def _run_gold_split_phases(
                             failure_code=failure_code, failure_detail=detail,
                         )
                     elif "EvidenceContract" in type(exc).__name__:
+                        # One malformed answer is a data-quality fault in a
+                        # single window, not a lane-wide problem.  Quarantine
+                        # that window (terminal in dispatch, never retried,
+                        # never accepted) and keep the other workers going
+                        # instead of idling the whole campaign.
                         release_gold_admission(budget, admission_id=admission_id)
                         fail_attempt_semantically(
                             dispatch, attempt_id=int(lease["current_attempt_id"]),
                             lease_owner=str(lease["lease_owner"]), lease_generation=int(lease["lease_generation"]),
                             failure_code="gold_contract_failure", failure_detail=detail,
                         )
+                        quarantined[window_id] = {
+                            "turn_type": task_turn_type,
+                            "failure_code": "gold_contract_failure",
+                        }
+                        window_hash = hashlib.sha256(window_id.encode()).hexdigest()[:16]
+                        _notify_stall(
+                            "gold_contract_quarantine",
+                            f"{split} Gold {task_turn_type} window {window_hash} quarantined: {detail}; "
+                            f"{len(quarantined)} window(s) quarantined, other windows continue",
+                            "Inspect the rejected output under rejected/; resurrect the task explicitly "
+                            "to retry, otherwise the split completes without this window.",
+                        )
+                        return
                     else:
                         if provider_capacity:
                             backend_message = capacity_backend_message_from_sidecar(
@@ -1027,7 +1092,7 @@ async def _run_gold_split_phases(
                         if lease is None:
                             if pipeline_mode and any(
                                 not (result_root / "C" / f"{window_id}.json").exists()
-                                for window_id in target_ids
+                                for window_id in _phase_required_ids(target_ids, quarantined)
                             ):
                                 await asyncio.sleep(1)
                                 continue
@@ -1063,9 +1128,10 @@ async def _run_gold_split_phases(
                     f"{split} Gold stopped during {turn_type}; checkpoint preserved"
                 )
             completed_phase_types = ("A", "B", "C") if pipeline_mode else (turn_type,)
+            required_ids = _phase_required_ids(target_ids, quarantined)
             for completed_type in completed_phase_types:
                 final_outputs = _load_outputs(result_root, completed_type)
-                if any(window_id not in final_outputs for window_id in target_ids):
+                if any(window_id not in final_outputs for window_id in required_ids):
                     raise GoldRunnerError(
                         f"{split} Gold phase {completed_type} is incomplete"
                     )
@@ -1076,6 +1142,7 @@ async def _run_gold_split_phases(
                 phase_receipts.append({
                     "turn_type": completed_type,
                     "target_windows": len(target_ids),
+                    "quarantined_windows": len(quarantined),
                     "worker_concurrency": worker_concurrency,
                     "reused_outputs": len(existing_by_turn[completed_type]),
                     "new_outputs": len(rows),
@@ -1106,6 +1173,10 @@ async def _run_gold_split_phases(
             "task_namespace": task_namespace,
             "dispatch_database": dispatch_database.name,
             "imported_seed_outputs": imported,
+            "quarantined_windows": len(quarantined),
+            "quarantined_window_id_sha256": sorted(
+                hashlib.sha256(window_id.encode()).hexdigest() for window_id in quarantined
+            ),
             "phases": phase_receipts,
             "wall_seconds": time.monotonic() - run_started,
             "contains_a1_or_a2": False,
@@ -1342,6 +1413,7 @@ async def run_gold_resume_supervisor(
             "turn_type": stage["turn_type"],
             "receipt_sha256": receipt.get("receipt_sha256"),
             "target_windows": (receipt.get("phases") or [{}])[-1].get("target_windows"),
+            "quarantined_windows": int(receipt.get("quarantined_windows") or 0),
         })
         _write_resume_supervision_checkpoint(
             gold_root=gold_root,
