@@ -237,6 +237,7 @@ async def run_frontier_calibration(
                         task_key=task_key,
                         lease_owner=str(lease["lease_owner"]),
                         configured_concurrency=foreground.provider_concurrency_cap,
+                        lane="gpt_5_6_sol_frontier_calibration",
                     )
                     if not admission["allowed"]:
                         release_attempt_for_retry(

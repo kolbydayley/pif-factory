@@ -23,7 +23,7 @@ def _load_resume_script():
     return module
 
 
-def test_throttled_current_turn_launch_requires_fixed_two_configured_slots(tmp_path, monkeypatch):
+def test_throttled_current_turn_launch_requires_fixed_four_configured_slots(tmp_path, monkeypatch):
     script = _load_resume_script()
     observed: dict[str, object] = {}
 
@@ -32,10 +32,10 @@ def test_throttled_current_turn_launch_requires_fixed_two_configured_slots(tmp_p
         observed.update(kwargs)
         from research_factory.signal_desk_background_admission import local_background_admission
 
-        admission = local_background_admission(configured_concurrency=2)
+        admission = local_background_admission(configured_concurrency=4)
         assert admission.allowed
         assert admission.reason == "operator_current_turn_foreground_override"
-        assert admission.provider_concurrency_cap == 1
+        assert admission.provider_concurrency_cap == 2
         return {
             "status": "deferred",
             "reason": "gold_model_capacity_backoff",
@@ -54,13 +54,13 @@ def test_throttled_current_turn_launch_requires_fixed_two_configured_slots(tmp_p
             "--foreground-override-source",
             "kolby_current_turn_throttled_gold_2026_09_02",
             "--concurrency",
-            "2",
+            "4",
             "--once",
         ]
     )
 
     assert exit_code == 0
-    assert observed["concurrency"] == 2
+    assert observed["concurrency"] == 4
     artifacts = tmp_path / "work/signal-desk-rebuild/gold-authoring-v2/artifacts"
     receipts = list((artifacts / "receipts").glob("gold-current-turn-foreground-override-*.json"))
     assert len(receipts) == 1
@@ -71,8 +71,8 @@ def test_throttled_current_turn_launch_requires_fixed_two_configured_slots(tmp_p
         "enabled": True,
         "source": "kolby_current_turn_throttled_gold_2026_09_02",
         "scope": "current_process_only",
-        "configured_concurrency_cap": 2,
-        "provider_concurrency_cap": 1,
+        "configured_concurrency_cap": 4,
+        "provider_concurrency_cap": 2,
         "normal_foreground_policy_preserved_outside_scope": True,
     }
     assert stat.S_IMODE(receipts[0].stat().st_mode) == 0o600
@@ -89,7 +89,7 @@ def test_current_turn_flag_refuses_a_broader_configured_pool():
                 "--foreground-override-source",
                 "kolby_current_turn_throttled_gold_2026_09_02",
                 "--concurrency",
-                "8",
+                "2",
                 "--once",
             ]
         )

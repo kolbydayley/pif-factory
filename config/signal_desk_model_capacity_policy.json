@@ -1,0 +1,48 @@
+{
+  "schema_version": "pif_signal_desk_model_capacity_policy_v1",
+  "model": "gpt-5.6-sol",
+  "active_background_lane": "gpt_5_6_sol_gold_authoring",
+  "foreground_override": {
+    "configured_concurrency": 4,
+    "provider_concurrency_cap": 2
+  },
+  "health": {
+    "capacity_error_rate_red": 0.02,
+    "history_window_seconds": 600,
+    "orphan_after_seconds": 1800,
+    "weekly_warning_percent": 85.0,
+    "weekly_kill_percent": 120.0
+  },
+  "lanes": [
+    {
+      "lane": "interactive_codex",
+      "priority": 0,
+      "mode": "reserved",
+      "reason": "User-initiated Codex work always has first claim on the shared model."
+    },
+    {
+      "lane": "gpt_5_6_sol_gold_authoring",
+      "priority": 10,
+      "mode": "active",
+      "reason": "Kolby explicitly authorized the frozen 804-window Gold campaign to dominate background usage."
+    },
+    {
+      "lane": "gpt_5_6_sol_frontier_calibration",
+      "priority": 20,
+      "mode": "gated",
+      "reason": "A1 starts only after development Gold and its blind audit pass."
+    },
+    {
+      "lane": "gpt_5_6_sol_scorer_qualification",
+      "priority": 30,
+      "mode": "gated",
+      "reason": "A2 starts only after A1 predictions exist and scorer v5 is frozen."
+    },
+    {
+      "lane": "other_pif_codex_subscription",
+      "priority": 50,
+      "mode": "paused",
+      "reason": "Unrelated PIF Codex subscription work does not compete with the active Gold campaign."
+    }
+  ]
+}

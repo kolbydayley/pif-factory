@@ -268,6 +268,7 @@ async def run_scorer_qualification(
                         task_key=task_key,
                         lease_owner=str(lease["lease_owner"]),
                         configured_concurrency=foreground.provider_concurrency_cap,
+                        lane="gpt_5_6_sol_scorer_qualification",
                     )
                     if not admission["allowed"]:
                         release_attempt_for_retry(

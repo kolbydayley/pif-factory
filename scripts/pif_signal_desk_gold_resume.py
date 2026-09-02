@@ -129,7 +129,7 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "explicitly allow this one process to run Gold despite foreground Codex; "
-            "requires a source label and fixes the cap at one provider call"
+            "requires a source label and fixes the cap at two provider calls"
         ),
     )
     parser.add_argument(
@@ -166,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(
                 "--allow-current-turn-foreground requires "
                 f"--concurrency {CURRENT_TURN_FOREGROUND_OVERRIDE_MAX_CONFIGURED_CONCURRENCY}; "
-                "the actual provider cap remains 1"
+                f"the actual provider cap remains {CURRENT_TURN_FOREGROUND_OVERRIDE_PROVIDER_CAP}"
             )
 
     gold_root = PIF_ROOT / "work/signal-desk-rebuild/gold-authoring-v2"

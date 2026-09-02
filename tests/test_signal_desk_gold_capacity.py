@@ -113,6 +113,7 @@ def test_gold_a1_and_a2_share_one_provider_admission_budget():
         task_key="a1:frontier:window-2",
         lease_owner="frontier-worker",
         configured_concurrency=1,
+        lane="gpt_5_6_sol_frontier_calibration",
         at=_at(),
     )
     a2 = admit_gold_call(
@@ -120,9 +121,18 @@ def test_gold_a1_and_a2_share_one_provider_admission_budget():
         task_key="a2:scorer:case-3",
         lease_owner="scorer-worker",
         configured_concurrency=1,
+        lane="gpt_5_6_sol_scorer_qualification",
         at=_at(),
     )
 
     assert gold["allowed"]
     assert a1["reason"] == "gold_model_capacity_slots_full"
     assert a2["reason"] == "gold_model_capacity_slots_full"
+    events = conn.execute(
+        "SELECT lane,event_type FROM signal_desk_model_capacity_events ORDER BY id"
+    ).fetchall()
+    assert [(row["lane"], row["event_type"]) for row in events] == [
+        ("gpt_5_6_sol_gold_authoring", "admitted"),
+        ("gpt_5_6_sol_frontier_calibration", "denied"),
+        ("gpt_5_6_sol_scorer_qualification", "denied"),
+    ]

@@ -23,6 +23,10 @@ from .util import now_iso, stable_id
 
 SCHEMA_VERSION = "pif_signal_desk_gold_capacity_v1"
 MODEL = "gpt-5.6-sol"
+GOLD_LANE = "gpt_5_6_sol_gold_authoring"
+FRONTIER_LANE = "gpt_5_6_sol_frontier_calibration"
+SCORER_LANE = "gpt_5_6_sol_scorer_qualification"
+ALLOWED_LANES = frozenset({GOLD_LANE, FRONTIER_LANE, SCORER_LANE})
 INITIAL_BACKOFF_SECONDS = 300
 MAX_BACKOFF_SECONDS = 21_600
 SUCCESSFUL_PROBES_TO_CLOSE = 3
@@ -89,12 +93,39 @@ def ensure_gold_capacity_schema(conn: sqlite3.Connection) -> None:
             """CREATE TABLE IF NOT EXISTS signal_desk_gold_capacity_leases (
                  admission_id TEXT PRIMARY KEY,
                  model TEXT NOT NULL,
+                 lane TEXT NOT NULL DEFAULT 'gpt_5_6_sol_gold_authoring',
                  task_key TEXT NOT NULL,
                  lease_owner TEXT NOT NULL,
                  lease_until TEXT NOT NULL,
                  created_at TEXT NOT NULL,
                  UNIQUE(model, task_key)
                )"""
+        )
+        columns = {
+            str(row[1])
+            for row in conn.execute("PRAGMA table_info(signal_desk_gold_capacity_leases)")
+        }
+        if "lane" not in columns:
+            conn.execute(
+                "ALTER TABLE signal_desk_gold_capacity_leases "
+                "ADD COLUMN lane TEXT NOT NULL DEFAULT 'gpt_5_6_sol_gold_authoring'"
+            )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS signal_desk_model_capacity_events (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 occurred_at TEXT NOT NULL,
+                 model TEXT NOT NULL,
+                 lane TEXT NOT NULL,
+                 event_type TEXT NOT NULL,
+                 reason TEXT,
+                 state TEXT NOT NULL,
+                 task_key TEXT,
+                 active_admissions INTEGER NOT NULL
+               )"""
+        )
+        conn.execute(
+            """CREATE INDEX IF NOT EXISTS signal_desk_model_capacity_events_recent_idx
+               ON signal_desk_model_capacity_events(model, occurred_at DESC)"""
         )
         conn.execute(
             """CREATE INDEX IF NOT EXISTS signal_desk_gold_capacity_leases_active_idx
@@ -141,6 +172,36 @@ def _active_count(conn: sqlite3.Connection, *, now: datetime) -> int:
     )
 
 
+def _record_event(
+    conn: sqlite3.Connection,
+    *,
+    now: datetime,
+    lane: str,
+    event_type: str,
+    reason: str | None,
+    state: str,
+    task_key: str | None,
+    active: int,
+) -> None:
+    """Append sanitized ownership telemetry inside the caller's transaction."""
+
+    conn.execute(
+        """INSERT INTO signal_desk_model_capacity_events
+           (occurred_at,model,lane,event_type,reason,state,task_key,active_admissions)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (
+            _timestamp(now),
+            MODEL,
+            lane,
+            event_type,
+            reason,
+            state,
+            task_key,
+            int(active),
+        ),
+    )
+
+
 def capacity_status(conn: sqlite3.Connection, *, at: datetime | None = None) -> dict[str, Any]:
     """Read only, sanitized status for receipts and supervisor wait decisions."""
 
@@ -167,6 +228,7 @@ def admit_gold_call(
     task_key: str,
     lease_owner: str,
     configured_concurrency: int,
+    lane: str = GOLD_LANE,
     at: datetime | None = None,
 ) -> dict[str, Any]:
     """Atomically admit a Gold provider call or return a zero-call wait.
@@ -176,6 +238,8 @@ def admit_gold_call(
     eight worker configuration without allowing a retry stampede.
     """
 
+    if lane not in ALLOWED_LANES:
+        raise ValueError("unrecognized GPT-5.6-sol capacity lane")
     if not 1 <= configured_concurrency <= 8:
         raise ValueError("configured Gold concurrency must be 1-8")
     ensure_gold_capacity_schema(conn)
@@ -191,19 +255,23 @@ def admit_gold_call(
         current_state = str(state["state"])
         if current_state == "open":
             if next_probe is not None and now < next_probe:
-                return {
+                decision = {
                     "allowed": False,
                     "reason": "gold_model_capacity_backoff",
                     "retry_after_seconds": max(1, int((next_probe - now).total_seconds())),
                     "state": current_state,
                 }
+                _record_event(conn, now=now, lane=lane, event_type="denied", reason=decision["reason"], state=current_state, task_key=task_key, active=active)
+                return decision
             if active:
-                return {
+                decision = {
                     "allowed": False,
                     "reason": "gold_model_capacity_probe_in_progress",
                     "retry_after_seconds": LEASE_SECONDS,
                     "state": current_state,
                 }
+                _record_event(conn, now=now, lane=lane, event_type="denied", reason=decision["reason"], state=current_state, task_key=task_key, active=active)
+                return decision
             conn.execute(
                 """UPDATE signal_desk_gold_capacity_state
                    SET state='half_open', updated_at=? WHERE model=?""",
@@ -212,26 +280,30 @@ def admit_gold_call(
             current_state = "half_open"
         limit = 1 if current_state == "half_open" else configured_concurrency
         if active >= limit:
-            return {
+            decision = {
                 "allowed": False,
                 "reason": "gold_model_capacity_slots_full",
                 "retry_after_seconds": 60,
                 "state": current_state,
             }
+            _record_event(conn, now=now, lane=lane, event_type="denied", reason=decision["reason"], state=current_state, task_key=task_key, active=active)
+            return decision
         admission_id = stable_id(MODEL, task_key, lease_owner, _timestamp(now), prefix="sdgc_")
         conn.execute(
             """INSERT INTO signal_desk_gold_capacity_leases
-               (admission_id,model,task_key,lease_owner,lease_until,created_at)
-               VALUES (?,?,?,?,?,?)""",
+               (admission_id,model,lane,task_key,lease_owner,lease_until,created_at)
+               VALUES (?,?,?,?,?,?,?)""",
             (
                 admission_id,
                 MODEL,
+                lane,
                 task_key,
                 lease_owner,
                 _timestamp(now + timedelta(seconds=LEASE_SECONDS)),
                 _timestamp(now),
             ),
         )
+        _record_event(conn, now=now, lane=lane, event_type="admitted", reason=None, state=current_state, task_key=task_key, active=active + 1)
         return {
             "allowed": True,
             "admission_id": admission_id,
@@ -243,9 +315,17 @@ def admit_gold_call(
 def release_gold_admission(conn: sqlite3.Connection, *, admission_id: str) -> None:
     ensure_gold_capacity_schema(conn)
     with _transaction(conn):
+        lease = conn.execute(
+            "SELECT lane,task_key FROM signal_desk_gold_capacity_leases WHERE admission_id=?",
+            (admission_id,),
+        ).fetchone()
         conn.execute(
             "DELETE FROM signal_desk_gold_capacity_leases WHERE admission_id=?", (admission_id,)
         )
+        if lease is not None:
+            lane, task_key = str(lease[0]), str(lease[1])
+            state = str(_state(conn)["state"])
+            _record_event(conn, now=_utc(), lane=lane, event_type="released", reason="without_provider_outcome", state=state, task_key=task_key, active=_active_count(conn, now=_utc()))
 
 
 def _backoff_seconds(consecutive_failures: int) -> int:
@@ -269,9 +349,16 @@ def record_capacity_failure(
     ensure_gold_capacity_schema(conn)
     now = _utc(at)
     with _transaction(conn):
+        lease = conn.execute(
+            "SELECT lane,task_key FROM signal_desk_gold_capacity_leases WHERE admission_id=?",
+            (admission_id,),
+        ).fetchone()
+        lane = str(lease[0]) if lease is not None else "unknown"
+        task_key = str(lease[1]) if lease is not None else None
         conn.execute(
             "DELETE FROM signal_desk_gold_capacity_leases WHERE admission_id=?", (admission_id,)
         )
+        _record_event(conn, now=now, lane=lane, event_type="capacity_failure", reason=str(error_code), state="open", task_key=task_key, active=_active_count(conn, now=now))
         state = _state(conn)
         failures = int(state["consecutive_capacity_failures"]) + 1
         delay = _backoff_seconds(failures)
@@ -299,11 +386,18 @@ def record_gold_admission_success(
     ensure_gold_capacity_schema(conn)
     now = _utc(at)
     with _transaction(conn):
+        lease = conn.execute(
+            "SELECT lane,task_key FROM signal_desk_gold_capacity_leases WHERE admission_id=?",
+            (admission_id,),
+        ).fetchone()
+        lane = str(lease[0]) if lease is not None else "unknown"
+        task_key = str(lease[1]) if lease is not None else None
         conn.execute(
             "DELETE FROM signal_desk_gold_capacity_leases WHERE admission_id=?", (admission_id,)
         )
         state = _state(conn)
         if state["state"] != "half_open":
+            _record_event(conn, now=now, lane=lane, event_type="success", reason=None, state=str(state["state"]), task_key=task_key, active=_active_count(conn, now=now))
             return {"state": state["state"], "successful_probe_count": int(state["successful_probe_count"])}
         successes = int(state["successful_probe_count"]) + 1
         if successes >= SUCCESSFUL_PROBES_TO_CLOSE:
@@ -313,6 +407,7 @@ def record_gold_admission_success(
                        next_probe_at=NULL, last_error_code=NULL, updated_at=? WHERE model=?""",
                 (_timestamp(now), MODEL),
             )
+            _record_event(conn, now=now, lane=lane, event_type="success", reason="circuit_closed", state="closed", task_key=task_key, active=_active_count(conn, now=now))
             return {"state": "closed", "successful_probe_count": successes}
         # Re-open with no delay so the next call is a deliberately serialized
         # probe too.  It retains the one-call half-open admission limit.
@@ -321,6 +416,7 @@ def record_gold_admission_success(
                SET state='open', successful_probe_count=?, next_probe_at=?, updated_at=? WHERE model=?""",
             (successes, _timestamp(now), _timestamp(now), MODEL),
         )
+        _record_event(conn, now=now, lane=lane, event_type="success", reason="probe_succeeded", state="open", task_key=task_key, active=_active_count(conn, now=now))
         return {"state": "open", "successful_probe_count": successes}
 
 

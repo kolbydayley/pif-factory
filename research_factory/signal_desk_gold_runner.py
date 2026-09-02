@@ -721,6 +721,7 @@ async def _run_gold_split_phases(
                     task_key=capacity_task_key,
                     lease_owner=str(lease["lease_owner"]),
                     configured_concurrency=foreground.provider_concurrency_cap,
+                    lane="gpt_5_6_sol_gold_authoring",
                 )
                 if not admission["allowed"]:
                     release_attempt_for_retry(

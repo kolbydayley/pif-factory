@@ -62,33 +62,33 @@ def test_recent_or_unknown_input_fails_closed():
     assert not unknown.allowed
 
 
-def test_current_turn_override_is_explicit_process_local_and_one_slot(monkeypatch):
+def test_current_turn_override_is_explicit_process_local_and_two_slots(monkeypatch):
     import research_factory.signal_desk_background_admission as admission_module
 
     monkeypatch.setattr(admission_module, "macos_input_idle_seconds", lambda: 0.0)
     monkeypatch.setattr(admission_module, "macos_frontmost_application", lambda: "ChatGPT")
 
-    blocked = local_background_admission(configured_concurrency=2)
+    blocked = local_background_admission(configured_concurrency=4)
     assert not blocked.allowed
     assert blocked.reason == "foreground_codex_active"
 
     with current_turn_foreground_override(
         source="kolby_current_turn_throttled_gold_2026_09_02",
-        configured_concurrency=2,
+        configured_concurrency=4,
     ):
-        allowed = local_background_admission(configured_concurrency=2)
+        allowed = local_background_admission(configured_concurrency=4)
         assert allowed.allowed
         assert allowed.reason == "operator_current_turn_foreground_override"
-        assert allowed.provider_concurrency_cap == 1
+        assert allowed.provider_concurrency_cap == 2
         assert allowed.input_idle_seconds is None
 
-    blocked_again = local_background_admission(configured_concurrency=2)
+    blocked_again = local_background_admission(configured_concurrency=4)
     assert not blocked_again.allowed
     assert blocked_again.reason == "foreground_codex_active"
 
 
-def test_current_turn_override_rejects_any_broader_configured_concurrency():
-    with pytest.raises(ValueError, match="configured concurrency 2"):
+def test_current_turn_override_rejects_any_other_configured_concurrency():
+    with pytest.raises(ValueError, match="configured concurrency 4"):
         with current_turn_foreground_override(
             source="kolby_current_turn_throttled_gold_2026_09_02",
             configured_concurrency=3,
@@ -107,11 +107,11 @@ def test_current_turn_override_reaches_preemptible_default_gate_without_provider
 
         with current_turn_foreground_override(
             source="kolby_current_turn_throttled_gold_2026_09_02",
-            configured_concurrency=2,
+            configured_concurrency=4,
         ):
             result = await run_foreground_preemptible(
                 operation,
-                configured_concurrency=2,
+                configured_concurrency=4,
                 poll_seconds=0.001,
             )
         assert result == "completed"

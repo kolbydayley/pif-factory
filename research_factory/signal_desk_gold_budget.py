@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .pif_budget_governor import read_weekly_snapshot
+from .signal_desk_model_capacity import record_capacity_snapshot
 from .subscription_budget import ensure_budget_schema, record_usage
 from .util import dumps_json, now_iso, stable_id
 
@@ -402,6 +403,11 @@ def weekly_health(
                 next_step="Restore a fresh Codex weekly usage snapshot; authoring resumes automatically afterward.",
             )
         return {"allowed": False, "reason": "weekly_snapshot_missing", "notified": notify}
+    if "source" not in snapshot:
+        snapshot["source"] = (
+            "app_server_live" if live_snapshot is not None else "session_log_fallback"
+        )
+    record_capacity_snapshot(conn, lane=EXPECTED_SCOPE, snapshot=snapshot)
     snapshot = {
         **snapshot,
         "provider_resets_at": int(snapshot["resets_at"]),
