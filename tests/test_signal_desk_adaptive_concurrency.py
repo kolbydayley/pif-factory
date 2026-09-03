@@ -147,3 +147,37 @@ def test_trip_is_charged_once_per_event_window_not_on_every_evaluation():
         record_outcome(conn, lane="gold", outcome="success", latency_seconds=300.0, now=later + j)
     again = record_outcome(conn, lane="gold", outcome="parse_schema", latency_seconds=0.0, now=later + 130)
     assert again["effective_limit"] == 4
+
+
+def test_reinitializing_a_lane_baselines_last_success_so_a_pause_is_not_an_outage():
+    import sqlite3
+    from research_factory.signal_desk_adaptive_concurrency import (
+        GOLD_BOUNDS,
+        NO_SUCCESS_SECONDS,
+        ensure_adaptive_concurrency_schema,
+        initialize_lane,
+        lane_status,
+        record_outcome,
+    )
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    ensure_adaptive_concurrency_schema(conn)
+    t = 1_800_000_000.0  # off-peak UTC hour
+    initialize_lane(conn, lane="gold", bounds=GOLD_BOUNDS, initial_limit=8, now=t)
+    record_outcome(conn, lane="gold", outcome="success", latency_seconds=300.0, now=t + 10)
+    # Deliberate pause: nothing happens for far longer than NO_SUCCESS_SECONDS.
+    resume = t + 10 + 4 * 3600
+    # Re-initialising on resume must baseline last_success_at to now...
+    initialize_lane(conn, lane="gold", bounds=GOLD_BOUNDS, initial_limit=8, now=resume)
+    assert lane_status(conn, lane="gold", now=resume)["effective_limit"] == 8
+    # ...so the first post-resume evaluation (a fresh event, past the 120s
+    # interval) does not trip no_success_15m on the stale pre-pause timestamp.
+    state = record_outcome(conn, lane="gold", outcome="success", latency_seconds=300.0, now=resume + 130)
+    assert state["effective_limit"] == 8
+    assert state.get("last_trip_reason") != "no_success_15m"
+    # A genuine silence AFTER the restart still trips as designed.
+    conn.execute("UPDATE signal_desk_adaptive_concurrency_state SET last_evaluated_at=? WHERE lane='gold'", (resume + 130,))
+    conn.commit()
+    silent = record_outcome(conn, lane="gold", outcome="failure", latency_seconds=1.0, now=resume + 130 + NO_SUCCESS_SECONDS + 200)
+    assert silent["effective_limit"] < 8

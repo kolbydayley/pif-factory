@@ -136,11 +136,18 @@ def initialize_lane(
         else:
             state = _mapping(current)
             effective = max(bounds.minimum, min(bounds.maximum, int(state["effective_limit"])))
+            # A (re)start is a fresh baseline for the no-success rule.  That
+            # rule exists to catch a live lane going silent; a lane that was
+            # deliberately stopped (a 4h user pause on 2026-09-03) is not an
+            # outage, yet its stale last_success_at tripped no_success_15m on
+            # resume and throttled the lane into the evening peak freeze.
+            # Rate-limit, timeout and p95 rules still react immediately.
             conn.execute(
                 """UPDATE signal_desk_adaptive_concurrency_state
-                   SET effective_limit=?, minimum_limit=?, maximum_limit=?, latency_p95_seconds=?, updated_at=?
+                   SET effective_limit=?, minimum_limit=?, maximum_limit=?, latency_p95_seconds=?,
+                       last_success_at=?, updated_at=?
                    WHERE lane=?""",
-                (effective, bounds.minimum, bounds.maximum, bounds.latency_p95_seconds, now, lane),
+                (effective, bounds.minimum, bounds.maximum, bounds.latency_p95_seconds, now, now, lane),
             )
         return _status_from_state(_mapping(_row(conn, lane)), lane=lane, now=now)
 

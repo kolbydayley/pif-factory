@@ -114,9 +114,17 @@ over `KILL-signal-desk-gold-authoring.json`, a `complete` checkpoint, or an
 operator-required error (hash verification, symlink/0700, authorization,
 unknown split/phase, phase incomplete, non-complete receipt). Backoff 60s
 doubling to 30 min, reset after 30 min of healthy uptime. State and log:
-`artifacts/keepalive-state.json`, `logs/keepalive.log`. To hold it
-deliberately, drop the KILL receipt or `codex-cron disable pif-gold-keepalive`
-and kill the `keepalive` tmux window.
+`artifacts/keepalive-state.json`, `logs/keepalive.log`.
+
+Pausing (reboot, maintenance): **first** `touch
+work/signal-desk-rebuild/gold-authoring-v2/artifacts/keepalive.PAUSE` - both
+the loop and the cron tick then hold and will not relaunch - and only then
+`kill -INT` the runner's python pid. Disabling the cron job alone is racy:
+a tick already queued by the scheduler relaunched the runner two minutes
+after a pause on 2026-09-03, right before the reboot killed it. Resume by
+removing the PAUSE file (the next tick relaunches from the checkpoint). A
+resumed lane starts with a fresh no-success baseline, so a long pause does
+not read as an outage to the adaptive limiter.
 
 Throughput: the adaptive limiter (`signal_desk_adaptive_concurrency`, lane
 `gold`, bounds 2-8) drops 2 slots on `rate_limit>2%`, `timeout>5%`,

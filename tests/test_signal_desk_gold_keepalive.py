@@ -120,3 +120,29 @@ def test_release_orphaned_admissions_tolerates_missing_database(tmp_path: Path):
     from research_factory.signal_desk_gold_keepalive import release_orphaned_admissions
 
     assert release_orphaned_admissions(tmp_path / "missing.sqlite") == 0
+
+
+def test_pause_file_holds_relaunch_and_removing_it_resumes(tmp_path: Path):
+    from research_factory.signal_desk_gold_keepalive import pause_path
+
+    gold_root = tmp_path / "gold"
+    (gold_root / "artifacts").mkdir(parents=True)
+    (gold_root / "artifacts" / "gold-resume-supervisor.json").write_text(json.dumps(STOPPED))
+    (tmp_path / "budget").mkdir()
+    launches: list[str] = []
+    notes: list[str] = []
+    kwargs = dict(
+        project_root=tmp_path, gold_root=gold_root, budget_dir=tmp_path / "budget",
+        alive=lambda: False, relaunch=lambda root, log: launches.append("relaunch"),
+        notifier=lambda kind, *a, **k: notes.append(kind),
+    )
+    pause_path(gold_root).write_text("paused by operator\n")
+    assert run_once(now=100.0, **kwargs).action == "hold"
+    assert run_once(now=200.0, **kwargs).action == "hold"
+    assert launches == [] and notes == ["held"]  # notified once, never relaunched
+    pause_path(gold_root).unlink()
+    assert run_once(now=300.0, **kwargs).action == "relaunch"
+    assert launches == ["relaunch"]
+    # Pause takes precedence over an otherwise-resumable checkpoint, and a
+    # live runner is still left alone regardless.
+    assert decide(runner_alive=True, kill_present=False, checkpoint=STOPPED, state={}, now=1.0, paused=True).action == "noop"

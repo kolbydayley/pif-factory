@@ -61,6 +61,12 @@ OPERATOR_REQUIRED_MARKERS = (
 )
 
 
+def pause_path(gold_root: Path) -> Path:
+    """Touch this file to hold the keepalive (loop and cron) without disabling anything."""
+
+    return gold_root / "artifacts" / "keepalive.PAUSE"
+
+
 @dataclass(frozen=True)
 class Decision:
     action: str  # noop | relaunch | hold | done
@@ -89,11 +95,17 @@ def decide(
     checkpoint: Mapping[str, Any] | None,
     state: Mapping[str, Any],
     now: float,
+    paused: bool = False,
 ) -> Decision:
     consecutive = int(state.get("consecutive_relaunches") or 0)
     last_launch = float(state.get("last_launch_at") or 0.0)
     if runner_alive:
         return Decision("noop", "runner alive")
+    if paused:
+        # An explicit operator pause.  Without it, a lagging keepalive tick
+        # relaunched the runner two minutes after a pause on 2026-09-03,
+        # seconds before a reboot killed it again.
+        return Decision("hold", "PAUSE file present; not relaunching")
     if kill_present:
         return Decision("hold", "operator KILL receipt present; not relaunching")
     kind = classify_checkpoint(checkpoint)
@@ -252,6 +264,7 @@ def run_once(
         checkpoint=read_json(gold_root / "artifacts" / "gold-resume-supervisor.json"),
         state=state,
         now=now,
+        paused=pause_path(gold_root).exists(),
     )
     if decision.action == "relaunch":
         released = release_admissions(budget_database) if budget_database is not None else 0
