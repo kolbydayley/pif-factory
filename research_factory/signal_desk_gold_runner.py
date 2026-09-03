@@ -993,9 +993,22 @@ async def _run_gold_split_phases(
                         reserve_tokens=RESERVE_TOKENS[task_turn_type],
                         live_snapshot=live_snapshot,
                     )
-                except Exception:
+                except Exception as exc:  # noqa: BLE001
+                    # This is pre-inference setup (reading the weekly snapshot,
+                    # making the reservation): no provider turn started and no
+                    # tokens were spent.  A flaky app-server RPC here
+                    # (e.g. account/rateLimits/read -32603) must requeue this
+                    # one attempt, never crash the whole swarm.  The weekly gate
+                    # stays fail-closed: with no snapshot no call proceeds.
                     release_gold_admission(budget, admission_id=admission_id)
-                    raise
+                    release_attempt_for_retry(
+                        dispatch, attempt_id=int(lease["current_attempt_id"]),
+                        lease_owner=str(lease["lease_owner"]), lease_generation=int(lease["lease_generation"]),
+                        failure_code="gold_pre_call_rpc_failure",
+                        failure_detail=f"{type(exc).__name__}: {str(exc)[:200]}",
+                    )
+                    await asyncio.sleep(2)
+                    return
                 if not reservation.get("allowed"):
                     release_gold_admission(budget, admission_id=admission_id)
                     release_attempt_for_retry(
