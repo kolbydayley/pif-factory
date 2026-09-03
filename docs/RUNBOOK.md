@@ -116,8 +116,16 @@ unknown split/phase, phase incomplete, non-complete receipt). Backoff 60s
 doubling to 30 min, reset after 30 min of healthy uptime. State and log:
 `artifacts/keepalive-state.json`, `logs/keepalive.log`. To hold it
 deliberately, drop the KILL receipt or `codex-cron disable pif-gold-keepalive`
-and kill the `keepalive` tmux window. A tmux pane showing `Python` is not proof
-the runner is alive; use the pgrep pattern above.
+and kill the `keepalive` tmux window.
+
+Liveness: a bare `pgrep -f` count lies — it also matches the tmux server that
+was started with the runner command and any shell whose script mentions it.
+Require the executable to be `python`/`Python`/`caffeinate` (that is what the
+keepalive does). To restart the runner on new code, `kill -INT` the **python**
+pid (not caffeinate, not tmux); the client writes `cancelled` sidecars that are
+retried on the same lineage. Then let the keepalive relaunch it: it first frees
+the dead runner's 30-minute capacity admissions, otherwise the relaunched
+runner defers on `gold_model_capacity_slots_full` until they lapse.
 
 ## Outage / quota exhaustion
 
