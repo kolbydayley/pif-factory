@@ -141,6 +141,16 @@ archived. If a runner ever flaps on `AppServerRecoveryRequired: turn sidecar
 already exists`, that invariant is being violated somewhere; inspect before
 moving anything by hand.
 
+Infrastructure failures (provider `turn_failed` with an unknown error, transport
+faults): one window failing alone is retried in place while the swarm keeps
+running, and is quarantined as `gold_infrastructure_exhausted` once its attempt
+lineage has been leased 4 times (`MAX_INFRA_LEASES_PER_ATTEMPT`); that
+quarantine is never auto-resurrected - inspect `recovery-sidecars/` and
+`resurrect_task` by hand once the provider fault is understood. Three distinct
+windows failing within 10 minutes is treated as systemic and stops the swarm
+as before (the keepalive relaunches it). Provider capacity errors are handled
+separately by the capacity circuit.
+
 Limiter outcomes are keyed on the exception class, never on message text:
 recovery errors embed the sidecar path, and `.../validation/sidecars/...` once
 matched the `parse_schema` token "validation". A trip is charged once per
