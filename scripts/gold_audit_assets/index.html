@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gold Claim Audit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#faf8f3;--panel:#fff;--ink:#171614;--ink2:#57544d;--ink3:#777267;
+  --rule:#e4e0d5;--rule2:#cdc7b8;--blue:#256fc5;--red:#bc3f3d;--green:#147753;
+  --gold:#8d5e05;--violet:#5540a6;
+  --serif:"Fraunces",Georgia,serif;--sans:"IBM Plex Sans",-apple-system,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;--shadow:0 14px 38px rgba(23,22,20,.08);
+}
+*{box-sizing:border-box}
+html{color-scheme:light}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+  background-image:radial-gradient(rgba(23,22,20,.025) 1px,transparent 1px);background-size:26px 26px}
+.shell{max-width:900px;margin:0 auto;padding:0 20px 120px}
+header{position:sticky;top:0;z-index:5;background:rgba(250,248,243,.97);backdrop-filter:blur(6px);
+  border-bottom:1px solid var(--rule2);padding:16px 0 12px;margin-bottom:22px}
+.title{font:600 24px var(--serif);letter-spacing:-.01em;display:flex;align-items:baseline;gap:12px}
+.title span{font:11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
+.counts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.count{border:1px solid var(--rule2);border-radius:999px;padding:4px 11px;font:11px var(--mono);color:var(--ink2);background:var(--panel)}
+.count b{color:var(--ink);font-weight:600}
+.count.legit{border-color:#acd3c4;background:#eef9f4;color:#155c43}
+.count.illegit{border-color:#e6b3b2;background:#fbeeed;color:#8f2f2d}
+.count.unsure{border-color:#dfc477;background:#fff9e9;color:#694708}
+.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.controls select,.controls input[type=search]{font:13px var(--sans);border:1px solid var(--rule2);
+  border-radius:9px;padding:8px 10px;background:var(--panel);color:var(--ink);min-height:38px}
+.controls input[type=search]{flex:1;min-width:180px}
+.toggle{display:inline-flex;align-items:center;gap:6px;font:12px var(--mono);color:var(--ink2);cursor:pointer}
+.hint{font:11px var(--mono);color:var(--ink3);margin-top:8px}
+.hint kbd{border:1px solid var(--rule2);border-bottom-width:2px;border-radius:5px;padding:0 5px;background:var(--paper);font:11px var(--mono)}
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:18px 20px;margin-bottom:14px;transition:.12s border-color,.12s box-shadow}
+.card.cur{border-color:var(--blue);box-shadow:var(--shadow)}
+.card.v-legitimate{border-left:4px solid var(--green)}
+.card.v-illegitimate{border-left:4px solid var(--red);opacity:.72}
+.card.v-unsure{border-left:4px solid var(--gold)}
+.pills{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.pill{border:1px solid var(--rule2);border-radius:999px;padding:3px 9px;font:11px var(--mono);color:var(--ink2);background:var(--paper);text-transform:lowercase}
+.pill.act{color:var(--violet);border-color:#d7c7e4;background:#f7f1fb}
+.pill.pub-candidate{color:var(--green);border-color:#acd3c4;background:#eef9f4}
+.pill.pub-uncertain,.pill.pub-hold{color:var(--gold);border-color:#dfc477;background:#fff9e9}
+.pill.split{color:var(--ink3)}
+.claim{font:600 18px/1.4 var(--serif);margin:2px 0 12px}
+.context{font:14px/1.7 var(--sans);color:var(--ink2);background:var(--paper);border:1px solid var(--rule);
+  border-radius:10px;padding:12px 14px;white-space:pre-wrap;word-break:break-word}
+.context mark{background:#fff2c2;color:var(--ink);padding:1px 2px;border-radius:3px;box-shadow:inset 0 -1px 0 #e6c65a}
+.meta{font:11px/1.6 var(--mono);color:var(--ink3);margin-top:10px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.btn{min-height:38px;border:1px solid var(--rule2);background:var(--panel);color:var(--ink2);border-radius:9px;
+  padding:8px 14px;font:600 13px var(--sans);cursor:pointer;transition:.1s}
+.btn:hover{border-color:var(--rule2);background:var(--paper)}
+.btn.legit.on{background:var(--green);border-color:var(--green);color:#fff}
+.btn.illegit.on{background:var(--red);border-color:var(--red);color:#fff}
+.btn.unsure.on{background:var(--gold);border-color:var(--gold);color:#fff}
+.note{flex:1;min-width:160px;font:13px var(--sans);border:1px solid var(--rule2);border-radius:9px;padding:8px 10px;background:var(--paper);color:var(--ink)}
+.empty{padding:40px;text-align:center;border:1px dashed var(--rule2);border-radius:12px;color:var(--ink2)}
+.saved{font:11px var(--mono);color:var(--green);opacity:0;transition:.2s}
+.saved.show{opacity:1}
+footer{position:fixed;bottom:0;left:0;right:0;background:rgba(250,248,243,.97);border-top:1px solid var(--rule2);
+  padding:8px 20px;font:11px var(--mono);color:var(--ink3);text-align:center}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div class="title">Gold Claim Audit <span>signal desk · read-only</span></div>
+    <div class="counts" id="counts"></div>
+    <div class="controls">
+      <input type="search" id="q" placeholder="Search claim / evidence / issue…">
+      <select id="split"><option value="">All splits</option></select>
+      <select id="show"><option value="">All shows</option></select>
+      <select id="pub"><option value="">All publishability</option></select>
+      <select id="status">
+        <option value="">All verdicts</option>
+        <option value="none">Unaudited</option>
+        <option value="legitimate">Legit</option>
+        <option value="illegitimate">Not legit</option>
+        <option value="unsure">Unsure</option>
+      </select>
+    </div>
+    <div class="hint"><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>l</kbd> legit · <kbd>x</kbd> not legit · <kbd>u</kbd> unsure · <kbd>/</kbd> search</div>
+  </header>
+  <div id="list"></div>
+</div>
+<footer id="foot">loading…</footer>
+<script>
+let CLAIMS=[], VIEW=[], cur=0;
+const $=s=>document.querySelector(s);
+const esc=s=>(s??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+async function load(){
+  const r=await fetch("/api/claims"); const d=await r.json();
+  CLAIMS=d.claims; renderCounts(d.summary);
+  fillSelect("#split",d.splits); fillSelect("#show",d.shows);
+  fillSelect("#pub",[...new Set(CLAIMS.map(c=>c.publishability_state).filter(Boolean))].sort());
+  apply();
+}
+function fillSelect(sel,vals){const el=$(sel);for(const v of vals){const o=document.createElement("option");o.value=v;o.textContent=v;el.appendChild(o);}}
+function renderCounts(s){
+  $("#counts").innerHTML=
+    `<span class="count"><b>${s.total}</b> claims</span>`+
+    `<span class="count"><b>${s.legitimate+s.illegitimate+s.unsure}</b> audited</span>`+
+    `<span class="count legit"><b>${s.legitimate}</b> legit</span>`+
+    `<span class="count illegit"><b>${s.illegitimate}</b> not legit</span>`+
+    `<span class="count unsure"><b>${s.unsure}</b> unsure</span>`;
+}
+function apply(){
+  const q=$("#q").value.toLowerCase(), sp=$("#split").value, sh=$("#show").value, pb=$("#pub").value, st=$("#status").value;
+  VIEW=CLAIMS.filter(c=>{
+    if(sp&&c.split!==sp)return false;
+    if(sh&&c.show!==sh)return false;
+    if(pb&&c.publishability_state!==pb)return false;
+    if(st==="none"&&c.verdict)return false;
+    if(st&&st!=="none"&&c.verdict!==st)return false;
+    if(q){const h=(c.claim_text+" "+c.evidence_text+" "+c.issue_label+" "+(c.context_before+c.context_evidence+c.context_after)).toLowerCase();if(!h.includes(q))return false;}
+    return true;
+  });
+  if(cur>=VIEW.length)cur=Math.max(0,VIEW.length-1);
+  render();
+}
+function render(){
+  const list=$("#list");
+  if(!VIEW.length){list.innerHTML='<div class="empty">No claims match these filters.</div>';$("#foot").textContent="0 shown";return;}
+  list.innerHTML=VIEW.map((c,i)=>card(c,i)).join("");
+  $("#foot").textContent=`${VIEW.length} shown · card ${cur+1}/${VIEW.length}`;
+  const el=document.querySelector(".card.cur"); if(el)el.scrollIntoView({block:"nearest"});
+}
+function card(c,i){
+  const v=c.verdict||"";
+  const pub=(c.publishability_state||"").toLowerCase();
+  const spk=c.speaker_id?`speaker ${esc(c.speaker_id)}`:`attribution: ${esc(c.attribution_type||"—")}`;
+  return `<div class="card ${i===cur?"cur":""} ${v?"v-"+v:""}" data-i="${i}" onclick="cur=${i};render()">
+    <div class="pills">
+      ${c.speech_act?`<span class="pill act">${esc(c.speech_act)}</span>`:""}
+      ${c.stance?`<span class="pill">${esc(c.stance)}</span>`:""}
+      ${c.issue_label?`<span class="pill">${esc(c.issue_label)}</span>`:""}
+      ${pub?`<span class="pill pub-${esc(pub)}">${esc(pub)}</span>`:""}
+      <span class="pill split">${esc(c.split)}</span>
+    </div>
+    <div class="claim">${esc(c.claim_text)||"<em>(no claim text)</em>"}</div>
+    <div class="context">${esc(c.context_before)}<mark>${esc(c.context_evidence)||esc(c.evidence_text)}</mark>${esc(c.context_after)}</div>
+    <div class="meta">${spk} · conf ${esc(String(c.attribution_confidence??"—"))} · ${esc(c.window_id)} · ${esc(c.event_id)}</div>
+    <div class="actions">
+      <button class="btn legit ${v==="legitimate"?"on":""}" onclick="event.stopPropagation();flag(${i},'legitimate')">Legit</button>
+      <button class="btn illegit ${v==="illegitimate"?"on":""}" onclick="event.stopPropagation();flag(${i},'illegitimate')">Not a legit claim</button>
+      <button class="btn unsure ${v==="unsure"?"on":""}" onclick="event.stopPropagation();flag(${i},'unsure')">Unsure</button>
+      <input class="note" placeholder="note (optional)…" value="${esc(c.note)}"
+        onclick="event.stopPropagation()"
+        onchange="noteChange(${i},this.value)">
+      <span class="saved" id="saved-${i}">saved ✓</span>
+    </div>
+  </div>`;
+}
+async function flag(i,verdict){
+  const c=VIEW[i]; const note=(document.querySelector(`#saved-${i}`)?.parentElement.querySelector(".note")?.value)||c.note||"";
+  c.verdict=verdict; c.note=note;
+  const r=await fetch("/api/flag",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({event_id:c.event_id,window_id:c.window_id,split:c.split,verdict,note})});
+  const d=await r.json(); if(d.summary)renderCounts({...d.summary,total:CLAIMS.length});
+  const s=document.querySelector(`#saved-${i}`); if(s){s.classList.add("show");setTimeout(()=>s.classList.remove("show"),900);}
+  render();
+}
+function noteChange(i,val){VIEW[i].note=val; if(VIEW[i].verdict)flag(i,VIEW[i].verdict);}
+["#q","#split","#show","#pub","#status"].forEach(s=>$(s).addEventListener("input",()=>{cur=0;apply();}));
+document.addEventListener("keydown",e=>{
+  if(e.target.matches("input,select,textarea")){if(e.key==="Escape")e.target.blur();return;}
+  if(e.key==="/"){e.preventDefault();$("#q").focus();return;}
+  if(e.key==="j"){cur=Math.min(VIEW.length-1,cur+1);render();}
+  else if(e.key==="k"){cur=Math.max(0,cur-1);render();}
+  else if(e.key==="l"&&VIEW[cur])flag(cur,"legitimate");
+  else if(e.key==="x"&&VIEW[cur])flag(cur,"illegitimate");
+  else if(e.key==="u"&&VIEW[cur])flag(cur,"unsure");
+});
+load();
+</script>
+</body>
+</html>
