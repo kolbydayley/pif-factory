@@ -95,8 +95,14 @@ an operator explicitly delegated by Kolby in the current turn may remove it.
 
 `scripts/pif_signal_desk_gold_resume.py` is fail-closed: any resumable stop
 (one provider timeout, a weekly-gate stall, "checkpoint preserved") exits the
-process, and a contract failure on a single window now quarantines that window
-instead of stopping the swarm. Two layers relaunch a dead runner:
+process. A contract failure on a single window (excerpt not exact at its
+declared offsets) gets one fresh attempt as a resurrected lineage
+(`MAX_GOLD_CONTRACT_ATTEMPTS = 2`; the rejected output is never reused, its
+sidecar is archived as `.semantic-rejected`); a second failure quarantines the
+window and the swarm continues. At phase start the runner resurrects any
+quarantined window that still has an attempt to spare. Windows quarantined
+after both attempts need an explicit `resurrect_task` or a gate ruling before
+the downstream all-window stages. Two layers relaunch a dead runner:
 
 - tmux session `signal-desk-gold`, window `keepalive`: `pif_signal_desk_gold_keepalive.py --loop` (60s).
 - codex-cron job `pif-gold-keepalive`: the same script with `--once` every 5 min; survives a reboot.
