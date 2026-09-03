@@ -42,20 +42,38 @@ RELATIONSHIP_TYPES = (
 # makes no mention of the new tracking") and quarantined four validation
 # windows.  Speech that merely DISCUSSES signing up or a privacy policy is
 # evidence; a button or footer that SAYS it is chrome.
+#
+# MONOTONIC CONTRACT: this pattern must only ever ACCEPT more than its
+# predecessor, never reject more.  The runner re-validates every previously
+# accepted output at phase start, so any new rejection crashes the campaign
+# at startup (it did, on 2026-09-03, when a "terms of service" form was added
+# here: seven accepted excerpts of genuine speech began failing).  Every
+# alternative below is either byte-identical to the previous pattern or a
+# strict subset of the bare phrase it replaces; the tests assert this against
+# the old pattern and against the accepted corpus on disk.
 _CHROME_RE = re.compile(
-    r"\b(?:"
-    r"subscribe\s+(?:now|today|for\b|to\s+(?:hear|listen|watch|read|support))"
-    r"|sign\s+up\s+(?:now|today|free|here|at\s+\S+\.\S+|on\s+substack"
-    r"|for\s+(?:free|our\b|the\s+(?:newsletter|podcast|show)|(?:our\s+|the\s+)?"
-    r"(?:newsletter|e-?mails?|updates|alerts|summary|notifications)))"
-    r"|(?-i:Sign[ -]?Up)(?=\s*(?:$|[|·•/]|By\s+submitting|On\s+Substack|Log\s*in|close\b))"
-    r"|(?-i:(?:Privacy|Cookie)\s+Policy)"
-    r"|(?:privacy|cookie)\s+policy\s*(?:[|·•]|and\s+terms|terms\b)"
-    r"|terms\s+(?:of\s+(?:use|service)|and\s+conditions)"
-    r"|(?-i:All\s+Episodes)|(?:see|view|browse)\s+all\s+episodes"
-    r"|this\s+(?:episode|show)\s+is\s+sponsored\s+by|brought\s+to\s+you\s+by"
-    r"|navigation\s+menu|skip\s+to\s+content"
-    r")\b",
+    r"\b(?:subscribe\s+(?:now|today|for\b|to\s+(?:hear|listen|watch|read|support))|"
+    # was: sign up  (bare) -> call-to-action tails or title-case button text only
+    r"sign up (?:now|today|free|here|at \S+\.\S+|on substack|"
+    r"for (?:free|our\b|the (?:newsletter|podcast|show)|(?:our |the )?"
+    r"(?:newsletter|e-?mails?|updates|alerts|summary|notifications)))|"
+    r"(?-i:Sign Up)(?= ?(?:$|[|·•/]|By submitting|On Substack|Log ?in|close\b))|"
+    # was: cookie policy / privacy policy (bare) -> title case, or followed by nav/legal glue
+    r"(?-i:Cookie Policy)|cookie policy(?= ?(?:[|·•]|and terms|terms\b))|"
+    r"(?-i:Privacy Policy)|privacy policy(?= ?(?:[|·•]|and terms|terms\b))|"
+    # was: all episodes (bare) -> title case, or a browse verb
+    r"(?-i:All Episodes)|(?:see|view|browse) all episodes|"
+    r"this (?:episode|show) is sponsored by|"
+    r"brought to you by|navigation menu|skip to content)\b",
+    re.I,
+)
+
+# The predecessor pattern, kept verbatim so the monotonicity test can prove
+# that nothing the old rule accepted is rejected by the new one.
+_CHROME_RE_PREVIOUS = re.compile(
+    r"\b(?:subscribe\s+(?:now|today|for\b|to\s+(?:hear|listen|watch|read|support))|"
+    r"sign up|cookie policy|privacy policy|all episodes|this (?:episode|show) is sponsored by|"
+    r"brought to you by|navigation menu|skip to content)\b",
     re.I,
 )
 

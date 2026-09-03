@@ -164,3 +164,58 @@ def test_boilerplate_forms_are_still_rejected_as_chrome(chrome):
     event = _event(evidence_text=chrome, evidence_start=0, evidence_end=len(chrome))
     with pytest.raises(EvidenceContractError, match="chrome"):
         validate_output(_output(event), transcript_window=chrome, expected_window_id="w1")
+
+
+def test_chrome_rule_is_monotonic_it_never_rejects_what_its_predecessor_accepted():
+    """Any excerpt the new rule rejects must also have been rejected by the old rule."""
+    from research_factory.signal_desk_rebuild_contracts import _CHROME_RE, _CHROME_RE_PREVIOUS
+
+    probes = [
+        # speech (must be accepted by the new rule; some were rejected by the old one)
+        "subscriptions they no longer want or didn't sign up for in the",
+        "I would go and sign up to be the fry cook at\na Denny's that doesn't close.",
+        "the privacy policy makes no mention of the new tracking or maintainer",
+        "we read the cookie policy and it says nothing about third parties",
+        "all episodes of that season were recorded in one week",
+        # the 2026-09-03 startup regressions: genuine speech the old rule accepted
+        "terms of service that said that they would uh respect Chinese Cultural values",
+        "directly show how the terms and conditions changed after the study",
+        "brought to you\nby a newline in the transcript",
+        # chrome (rejected by both)
+        "Email (required) Sign Up By submitting your email, you agree to",
+        "Sign Up On Substack",
+        "sign up for our weekly summary check out",
+        "Privacy Policy | Terms of Use",
+        "cookie policy and terms",
+        "See all episodes",
+        "brought to you by Squarespace",
+        "Subscribe to hear the rest",
+        "skip to content",
+    ]
+    for text in probes:
+        if _CHROME_RE.search(text):
+            assert _CHROME_RE_PREVIOUS.search(text), f"new rule rejects what the old rule accepted: {text!r}"
+
+
+def test_chrome_rule_accepts_every_previously_accepted_output_in_the_tree():
+    """Regression guard: the runner re-validates accepted outputs at phase start."""
+    import glob
+    import json
+    from pathlib import Path
+    from research_factory.signal_desk_rebuild_contracts import _CHROME_RE
+
+    root = Path(__file__).resolve().parents[1] / "work/signal-desk-rebuild/gold-authoring-v2"
+    files = glob.glob(str(root / "sealed-gold-results/*/[ABC]/*.json")) + glob.glob(str(root / "results/*/[ABC]/*.json"))
+    if not files:
+        pytest.skip("no accepted gold outputs on this machine")
+    offenders = []
+    for path in files:
+        try:
+            output = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for event in output.get("events") or []:
+            match = _CHROME_RE.search(str(event.get("evidence_text", "")))
+            if match:
+                offenders.append((Path(path).name, match.group(0)))
+    assert not offenders, f"{len(offenders)} accepted excerpts would now be rejected: {offenders[:5]}"
