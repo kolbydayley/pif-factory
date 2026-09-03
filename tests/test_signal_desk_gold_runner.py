@@ -158,13 +158,19 @@ def test_cancelled_sidecar_is_preserved_before_same_lineage_retry(tmp_path):
     assert not sidecar.exists()
 
 
-def test_completed_sidecar_is_never_archived_for_retry(tmp_path):
+def test_completed_sidecar_with_accepted_output_is_never_archived_for_retry(tmp_path):
+    # The invariant is about accepted work: a completed turn whose output
+    # artifact exists must never be retried over.  (A completed sidecar with
+    # no output - its output was rejected - is archived like any other
+    # terminal sidecar; see the terminal-sidecar test below.)
     sidecar = tmp_path / "window.json"
     sidecar.write_text('{"state":"completed"}\n', encoding="utf-8")
+    output = tmp_path / "output.json"
+    output.write_text("{}\n", encoding="utf-8")
 
     assert archive_retryable_sidecar_for_retry(
         sidecar_path=sidecar,
-        output_path=tmp_path / "output.json",
+        output_path=output,
         recovery_root=tmp_path / "recovery",
         attempt_id=1,
         lease_generation=1,
@@ -193,17 +199,19 @@ def test_allowlisted_provider_failure_is_preserved_for_retry(tmp_path):
     assert not sidecar.exists()
 
 
-def test_unknown_provider_failure_remains_fail_closed(tmp_path):
+def test_unknown_provider_failure_remains_fail_closed_when_output_exists(tmp_path):
     sidecar = tmp_path / "window.json"
     sidecar.write_text(
         '{"state":"failed","error_class":"turn_failed",'
         '"turn_error":{"codex_error_info":"unknown"}}\n',
         encoding="utf-8",
     )
+    output = tmp_path / "output.json"
+    output.write_text("{}\n", encoding="utf-8")
 
     assert archive_retryable_sidecar_for_retry(
         sidecar_path=sidecar,
-        output_path=tmp_path / "output.json",
+        output_path=output,
         recovery_root=tmp_path / "recovery",
         attempt_id=8,
         lease_generation=2,
@@ -681,18 +689,24 @@ def test_timed_out_interrupted_sidecar_is_archived_for_retry(tmp_path):
     assert not sidecar.exists()
 
 
-def test_interrupted_sidecar_without_timeout_status_stays_fail_closed(tmp_path):
-    # An interrupted sidecar that is not a timeout is not proven output-free.
+def test_interrupted_sidecar_without_timeout_is_archived_only_when_no_output_exists(tmp_path):
+    # Output-freeness is proven by the absence of the output artifact, which
+    # the runner writes only after validation - not by the sidecar's status.
     sidecar = tmp_path / "w1.json"
     sidecar.write_text('{"state":"interrupted","status":"aborted"}\n', encoding="utf-8")
+    output = tmp_path / "output.json"
+    output.write_text("{}\n", encoding="utf-8")
     assert archive_retryable_sidecar_for_retry(
-        sidecar_path=sidecar,
-        output_path=tmp_path / "output.json",
-        recovery_root=tmp_path / "recovery",
-        attempt_id=1,
-        lease_generation=1,
+        sidecar_path=sidecar, output_path=output, recovery_root=tmp_path / "recovery",
+        attempt_id=1, lease_generation=1,
     ) is None
     assert sidecar.exists()
+    output.unlink()
+    archived = archive_retryable_sidecar_for_retry(
+        sidecar_path=sidecar, output_path=output, recovery_root=tmp_path / "recovery",
+        attempt_id=1, lease_generation=1,
+    )
+    assert archived is not None and archived.exists() and not sidecar.exists()
 
 
 def test_contract_failure_does_not_trip_adaptive_limiter_as_parse_schema():
@@ -743,3 +757,62 @@ def test_single_contract_failure_would_trip_limiter_under_old_classification():
         record_outcome(conn2, lane="gold", outcome="success", latency_seconds=300.0, now=t + i)
     kept = record_outcome(conn2, lane="gold", outcome="failure", latency_seconds=0.0, now=t + WINDOW_SECONDS - 1)
     assert kept["effective_limit"] == 8
+
+
+def test_recovery_errors_with_split_path_in_message_never_count_as_parse_schema():
+    from research_factory.codex_app_server import (
+        AppServerProcessDied,
+        AppServerRecoveryRequired,
+        AppServerStructuredOutputError,
+    )
+    from research_factory.signal_desk_gold_runner import classify_adaptive_outcome
+
+    recovery = AppServerRecoveryRequired(
+        "turn sidecar already exists in state failed; explicit recovery is required: "
+        "/Users/x/pif-factory/work/signal-desk-rebuild/gold-authoring-v2/sealed-gold-results/validation/sidecars/B/w.json"
+    )
+    assert classify_adaptive_outcome(recovery, provider_capacity=False) == "failure"
+    assert classify_adaptive_outcome(AppServerProcessDied("app-server exited"), provider_capacity=False) == "failure"
+    assert classify_adaptive_outcome(AppServerStructuredOutputError("bad output"), provider_capacity=False) == "parse_schema"
+    # A path-bearing generic error is not parse_schema just because the path names the split.
+    assert classify_adaptive_outcome(RuntimeError("io error at /a/validation/b.json"), provider_capacity=False) == "failure"
+
+
+def test_any_terminal_sidecar_without_output_is_archived_but_live_ones_are_not(tmp_path):
+    def sidecar(state, **extra):
+        p = tmp_path / f"{state}-{len(list(tmp_path.iterdir()))}.json"
+        p.write_text(json.dumps({"state": state, **extra}), encoding="utf-8")
+        return p
+
+    missing_output = tmp_path / "no-output.json"
+    # failed with an unknown provider error, interrupted (non-timeout), completed-but-rejected: all archived.
+    for state, extra in (
+        ("failed", {"error_class": "turn_failed", "turn_error": {"codex_error_info": "other"}}),
+        ("interrupted", {"status": "aborted"}),
+        ("completed", {}),
+    ):
+        p = sidecar(state, **extra)
+        archived = archive_retryable_sidecar_for_retry(
+            sidecar_path=p, output_path=missing_output, recovery_root=tmp_path / "rec", attempt_id=3, lease_generation=1,
+        )
+        assert archived is not None and archived.exists() and not p.exists(), state
+    # A started/in_progress sidecar under our own lease is a killed runner's
+    # leftover (lease exclusivity + 900s turn timeout < 1800s lease reclaim),
+    # so it is archived too - three of these wedged relaunches on 2026-09-03.
+    for state in ("started", "in_progress"):
+        p = sidecar(state)
+        archived = archive_retryable_sidecar_for_retry(
+            sidecar_path=p, output_path=missing_output, recovery_root=tmp_path / "rec", attempt_id=4, lease_generation=1,
+        )
+        assert archived is not None and not p.exists(), state
+    # With an accepted output present, nothing is archived (and cancelled is an invariant violation).
+    output = tmp_path / "out.json"; output.write_text("{}")
+    p = sidecar("failed", error_class="turn_failed", turn_error={"codex_error_info": "other"})
+    assert archive_retryable_sidecar_for_retry(
+        sidecar_path=p, output_path=output, recovery_root=tmp_path / "rec", attempt_id=5, lease_generation=1,
+    ) is None and p.exists()
+    p = sidecar("cancelled")
+    with pytest.raises(RuntimeError):
+        archive_retryable_sidecar_for_retry(
+            sidecar_path=p, output_path=output, recovery_root=tmp_path / "rec", attempt_id=6, lease_generation=1,
+        )

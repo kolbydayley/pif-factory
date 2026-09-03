@@ -214,12 +214,19 @@ def classify_adaptive_outcome(exc: BaseException, *, provider_capacity: bool) ->
     if provider_capacity:
         return "rate_limit"
     name = type(exc).__name__
-    if "EvidenceContract" in name:
+    # Class first.  Messages are not a safe signal: an app-server recovery
+    # error embeds the sidecar path, and ".../validation/sidecars/..." matched
+    # the "validation" token and tripped the limiter twice on 2026-09-03.
+    if "EvidenceContract" in name or "RecoveryRequired" in name or "ProcessDied" in name:
         return "failure"
-    detail_text = f"{name}: {exc}".casefold()
-    if "timeout" in detail_text:
+    if "Timeout" in name:
         return "timeout"
-    if any(token in detail_text for token in PARSE_SCHEMA_TOKENS):
+    if "StructuredOutput" in name or "Validation" in name:
+        return "parse_schema"
+    message = " ".join(part for part in str(exc).split() if "/" not in part).casefold()
+    if "timeout" in message or "timed out" in message:
+        return "timeout"
+    if any(token in message for token in PARSE_SCHEMA_TOKENS):
         return "parse_schema"
     return "failure"
 
@@ -337,6 +344,8 @@ RETRYABLE_TURN_ERROR_INFO = {
     "rateLimitExceeded",
     "serviceUnavailable",
 }
+# Sidecar states that may belong to a turn still executing somewhere.
+LIVE_SIDECAR_STATES = frozenset({"started", "in_progress"})
 
 
 def archive_retryable_sidecar_for_retry(
@@ -362,6 +371,17 @@ def archive_retryable_sidecar_for_retry(
         return None
     payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
     state = payload.get("state")
+    # A started/in_progress sidecar under our own valid lease is stale: the
+    # dispatch lease is exclusive, an expired lease is only reclaimed after
+    # 1800s, and a turn is interrupted at 900s, so no other holder can still
+    # be mid-turn on this attempt.  A killed runner leaves exactly these
+    # behind; they are preserved and retried like every other terminal state.
+    if output_path.exists():
+        # The only way to lose accepted work is to retry a window that has
+        # an output artifact.  Everything below is guarded by its absence.
+        if state == "cancelled":
+            raise RuntimeError("cancelled sidecar unexpectedly has a completed output artifact")
+        return None
     retryable_failure = (
         state == "failed"
         and payload.get("error_class") == "turn_failed"
@@ -369,10 +389,15 @@ def archive_retryable_sidecar_for_retry(
         in RETRYABLE_TURN_ERROR_INFO
     )
     retryable_timeout = state == "interrupted" and payload.get("status") == "timeout"
-    if state != "cancelled" and not retryable_failure and not retryable_timeout:
+    # Any other terminal sidecar with no output artifact (a failed turn with an
+    # unknown provider error, an interrupted turn, a completed turn whose
+    # output was rejected) is preserved and retried: nothing accepted exists
+    # to lose, and leaving it in place trips _assert_new_sidecar on every
+    # relaunch, which stops the whole swarm for one window.
+    if state not in {"cancelled", "failed", "interrupted", "completed"} | LIVE_SIDECAR_STATES and not (
+        retryable_failure or retryable_timeout
+    ):
         return None
-    if output_path.exists():
-        raise RuntimeError("cancelled sidecar unexpectedly has a completed output artifact")
     recovery_root.mkdir(parents=True, exist_ok=True)
     target = recovery_root / (
         f"{sidecar_path.stem}.attempt-{attempt_id}.generation-{lease_generation}.json"

@@ -182,6 +182,12 @@ def _trip_reason(
         and now - float(state["last_success_at"]) > NO_SUCCESS_SECONDS
     ):
         return "no_success_15m"
+    # Trip idempotency: a trip already charged the events that caused it.
+    # Without this watermark every later evaluation (each 120s off-peak)
+    # re-tripped on the same events until they aged out of the 600s window,
+    # draining a lane from 8 to its minimum on one bad event (2026-09-03).
+    last_trip_at = float(state["cooldown_until"]) - COOLDOWN_SECONDS
+    events = [event for event in events if float(event["occurred_at"]) > last_trip_at]
     count = len(events)
     if not count:
         return None

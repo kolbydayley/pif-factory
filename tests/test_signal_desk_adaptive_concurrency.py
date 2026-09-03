@@ -107,3 +107,43 @@ def test_recovery_waits_for_cooldown_and_three_healthy_windows():
         state = _calls(conn, lane="glm-recover", start=start, count=100)
     assert state["effective_limit"] == 5
     assert state["healthy_windows"] == 0
+
+
+def test_trip_is_charged_once_per_event_window_not_on_every_evaluation():
+    # One parse_schema event trips the lane once; later evaluations within the
+    # 600s window must not re-trip on that same event (it drained 8 -> 2 on
+    # 2026-09-03). Only events newer than the last trip count.
+    import sqlite3
+    from research_factory.signal_desk_adaptive_concurrency import (
+        COOLDOWN_SECONDS,
+        GOLD_BOUNDS,
+        WINDOW_SECONDS,
+        ensure_adaptive_concurrency_schema,
+        initialize_lane,
+        record_outcome,
+    )
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    ensure_adaptive_concurrency_schema(conn)
+    initialize_lane(conn, lane="gold", bounds=GOLD_BOUNDS, initial_limit=8)
+    t = 1_800_000_000.0  # off-peak UTC hour, evaluations every 120s
+    for i in range(12):
+        record_outcome(conn, lane="gold", outcome="success", latency_seconds=300.0, now=t + i)
+    tripped = record_outcome(conn, lane="gold", outcome="parse_schema", latency_seconds=0.0, now=t + 200)
+    assert tripped["effective_limit"] == 6
+    # Successes keep arriving; each later evaluation sees the same stale event.
+    limit = 6
+    for k in range(1, 4):
+        now = t + 200 + 130 * k  # past the 120s evaluation interval each time, inside the 600s window
+        for j in range(3):
+            state = record_outcome(conn, lane="gold", outcome="success", latency_seconds=300.0, now=now + j)
+        limit = state["effective_limit"]
+    assert limit == 6, "re-evaluation must not re-trip on the already-charged event"
+    # A genuinely new bad event after the trip may trip again (once cooldown
+    # elapsed and the next 120s evaluation is due).
+    later = t + 200 + COOLDOWN_SECONDS + 5
+    for j in range(12):
+        record_outcome(conn, lane="gold", outcome="success", latency_seconds=300.0, now=later + j)
+    again = record_outcome(conn, lane="gold", outcome="parse_schema", latency_seconds=0.0, now=later + 130)
+    assert again["effective_limit"] == 4

@@ -130,14 +130,25 @@ crawling, check `signal_desk_adaptive_concurrency_state.effective_limit` and
 overlap of `started_at..completed_at` in the dispatch DB, not the count of
 capacity leases (those live 30 minutes).
 
-Timeouts: a Gold turn that exceeds 900s is written as a sidecar in state
-`interrupted`/`timeout` and stops the runner as an infrastructure failure. The
-runner archives that sidecar on the next attempt (a timeout proves no output
-was accepted), so the relaunch retries the window cleanly. If a runner ever
-flaps on `AppServerRecoveryRequired: ... state interrupted`, an interrupted
-sidecar is not being archived — find it under
-`sealed-gold-results/<split>/sidecars/<turn>/`, confirm no matching output
-under `<split>/<turn>/`, and move it into `recovery-sidecars/<turn>/`.
+Leftover sidecars: any sidecar left under `sealed-gold-results/<split>/sidecars/`
+by a stopped turn (timeout `interrupted`, `failed` with an unknown provider
+error, a killed runner's `in_progress`, a `completed` turn whose output was
+rejected) is archived into `recovery-sidecars/<turn>/` and the window retried
+on its next lease, **provided no output artifact exists** under
+`<split>/<turn>/` — the runner writes the output only after validation, so its
+absence proves nothing accepted can be lost. With an output present nothing is
+archived. If a runner ever flaps on `AppServerRecoveryRequired: turn sidecar
+already exists`, that invariant is being violated somewhere; inspect before
+moving anything by hand.
+
+Limiter outcomes are keyed on the exception class, never on message text:
+recovery errors embed the sidecar path, and `.../validation/sidecars/...` once
+matched the `parse_schema` token "validation". A trip is charged once per
+event: later evaluations only count events newer than the last trip, otherwise
+one bad event re-trips every 120s until it ages out of the 600s window and
+drains the lane to its minimum. To restore a falsely tripped lane use
+`set_effective_limit(conn, lane="gold", effective_limit=8, reason=...)`, not
+a direct UPDATE, and only after the offending events are older than 600s.
 
 Liveness: a bare `pgrep -f` count lies — it also matches the tmux server that
 was started with the runner command and any shell whose script mentions it.
