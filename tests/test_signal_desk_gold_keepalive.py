@@ -86,3 +86,12 @@ def test_run_once_relaunches_persists_state_and_notifies_holds_once(tmp_path: Pa
     assert run_once(now=5100.0, **kwargs).action == "hold"
     assert notes == ["relaunched", "held"]
     assert len(launches) == 1
+
+
+def test_runner_liveness_ignores_shells_that_mention_the_pattern():
+    from research_factory.signal_desk_gold_keepalive import runner_pids
+
+    comm = {"100": "zsh", "101": "/bin/bash", "102": "Python", "103": "caffeinate", "104": "-zsh"}
+    assert runner_pids(["100", "101", "104"], comm) == []
+    assert runner_pids(["100", "102", "103"], comm) == ["102", "103"]
+    assert runner_pids(["999"], comm) == ["999"]  # unknown comm is not assumed to be a shell

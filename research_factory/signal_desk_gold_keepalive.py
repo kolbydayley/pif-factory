@@ -20,7 +20,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from .signal_desk_gold_budget import gold_kill_path
 
@@ -126,9 +126,38 @@ def next_state(state: Mapping[str, Any], decision: Decision, *, now: float) -> d
 
 # --- runtime -----------------------------------------------------------------
 
+SHELL_COMMANDS = frozenset({"sh", "bash", "zsh", "dash", "fish", "-sh", "-bash", "-zsh"})
+
+
+def runner_pids(pgrep_pids: Sequence[str], comm_by_pid: Mapping[str, str]) -> list[str]:
+    """Runner processes among pgrep matches, ignoring shells.
+
+    ``pgrep -f`` matches any argv containing the pattern, including a shell
+    whose script text merely mentions it (a monitor loop, an `until` waiter).
+    On 2026-09-02 that made a dead runner look alive.  Keep only processes
+    whose executable is not a shell.
+    """
+
+    return [
+        pid for pid in pgrep_pids
+        if comm_by_pid.get(pid, "").rsplit("/", 1)[-1] not in SHELL_COMMANDS
+    ]
+
+
 def runner_alive() -> bool:
     proc = subprocess.run(["pgrep", "-f", RUNNER_PATTERN], capture_output=True, text=True, check=False)
-    return proc.returncode == 0 and bool(proc.stdout.strip())
+    pids = [pid for pid in proc.stdout.split() if pid.isdigit()]
+    if not pids:
+        return False
+    ps = subprocess.run(
+        ["ps", "-o", "pid=,comm=", "-p", ",".join(pids)], capture_output=True, text=True, check=False
+    )
+    comm_by_pid: dict[str, str] = {}
+    for line in ps.stdout.splitlines():
+        parts = line.split(None, 1)
+        if len(parts) == 2:
+            comm_by_pid[parts[0]] = parts[1].strip()
+    return bool(runner_pids(pids, comm_by_pid))
 
 
 def read_json(path: Path) -> dict[str, Any] | None:
