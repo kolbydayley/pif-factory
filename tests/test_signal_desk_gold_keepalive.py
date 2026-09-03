@@ -91,7 +91,32 @@ def test_run_once_relaunches_persists_state_and_notifies_holds_once(tmp_path: Pa
 def test_runner_liveness_ignores_shells_that_mention_the_pattern():
     from research_factory.signal_desk_gold_keepalive import runner_pids
 
-    comm = {"100": "zsh", "101": "/bin/bash", "102": "Python", "103": "caffeinate", "104": "-zsh"}
-    assert runner_pids(["100", "101", "104"], comm) == []
-    assert runner_pids(["100", "102", "103"], comm) == ["102", "103"]
-    assert runner_pids(["999"], comm) == ["999"]  # unknown comm is not assumed to be a shell
+    comm = {"100": "zsh", "101": "/bin/bash", "102": "Python", "103": "caffeinate", "104": "-zsh", "105": "tmux"}
+    assert runner_pids(["100", "101", "104", "105"], comm) == []
+    assert runner_pids(["100", "102", "103", "105"], comm) == ["102", "103"]
+    assert runner_pids(["999"], comm) == []  # unknown executable never counts as the runner
+
+
+def test_relaunch_releases_orphaned_capacity_admissions_first(tmp_path: Path):
+    gold_root = tmp_path / "gold"
+    (gold_root / "artifacts").mkdir(parents=True)
+    (gold_root / "artifacts" / "gold-resume-supervisor.json").write_text(json.dumps(STOPPED))
+    (tmp_path / "budget").mkdir()
+    order: list[str] = []
+    decision = run_once(
+        project_root=tmp_path, gold_root=gold_root, budget_dir=tmp_path / "budget",
+        budget_database=tmp_path / "factory.sqlite", now=100.0,
+        alive=lambda: False,
+        relaunch=lambda root, log: order.append("relaunch"),
+        notifier=lambda *a, **k: None,
+        release_admissions=lambda db: (order.append(f"release:{db.name}"), 6)[1],
+    )
+    assert decision.action == "relaunch"
+    assert order == ["release:factory.sqlite", "relaunch"]
+    assert "released 6 orphaned capacity admission(s)" in decision.reason
+
+
+def test_release_orphaned_admissions_tolerates_missing_database(tmp_path: Path):
+    from research_factory.signal_desk_gold_keepalive import release_orphaned_admissions
+
+    assert release_orphaned_admissions(tmp_path / "missing.sqlite") == 0

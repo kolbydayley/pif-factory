@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import shlex
+import sqlite3
 import subprocess
 import time
 from dataclasses import dataclass
@@ -25,7 +26,9 @@ from typing import Any, Callable, Mapping, Sequence
 from .signal_desk_gold_budget import gold_kill_path
 
 TMUX_SESSION = "signal-desk-gold"
-RUNNER_PATTERN = "python3 -B scripts/pif_signal_desk_gold_resume.py"
+# Loose on purpose: the interpreter may present as "python3" or the
+# framework "Python" in argv; the executable allowlist below is the filter.
+RUNNER_PATTERN = r"scripts/pif_signal_desk_gold_resume\.py"
 RELAUNCH_ARGV = (
     "/usr/bin/caffeinate", "-i", "/usr/bin/python3", "-B",
     "scripts/pif_signal_desk_gold_resume.py", "--allow-sealed-holdout",
@@ -126,21 +129,21 @@ def next_state(state: Mapping[str, Any], decision: Decision, *, now: float) -> d
 
 # --- runtime -----------------------------------------------------------------
 
-SHELL_COMMANDS = frozenset({"sh", "bash", "zsh", "dash", "fish", "-sh", "-bash", "-zsh"})
+RUNNER_COMMANDS = frozenset({"python", "python3", "Python", "caffeinate"})
 
 
 def runner_pids(pgrep_pids: Sequence[str], comm_by_pid: Mapping[str, str]) -> list[str]:
-    """Runner processes among pgrep matches, ignoring shells.
+    """Runner processes among pgrep matches: the interpreter or its caffeinate wrapper.
 
-    ``pgrep -f`` matches any argv containing the pattern, including a shell
-    whose script text merely mentions it (a monitor loop, an `until` waiter).
-    On 2026-09-02 that made a dead runner look alive.  Keep only processes
-    whose executable is not a shell.
+    ``pgrep -f`` matches any argv containing the pattern: a shell whose script
+    text mentions it (a monitor loop, an `until` waiter) and the tmux server
+    that was started with the runner command.  On 2026-09-02 both made a dead
+    runner look alive.  Only an allowlisted executable counts.
     """
 
     return [
         pid for pid in pgrep_pids
-        if comm_by_pid.get(pid, "").rsplit("/", 1)[-1] not in SHELL_COMMANDS
+        if comm_by_pid.get(pid, "").rsplit("/", 1)[-1] in RUNNER_COMMANDS
     ]
 
 
@@ -185,6 +188,38 @@ def tmux_relaunch(project_root: Path, log_path: Path) -> None:
     subprocess.run(argv, check=True, capture_output=True, text=True)
 
 
+GOLD_LANE = "gpt_5_6_sol_gold_authoring"
+
+
+def release_orphaned_admissions(budget_database: Path) -> int:
+    """Free capacity slots left behind by a runner that died mid-call.
+
+    Admission leases last 30 minutes; a relaunched runner otherwise defers on
+    ``gold_model_capacity_slots_full`` until they lapse.  The keepalive only
+    relaunches when no runner is alive, so every lease on the Gold lane is
+    orphaned at that moment.  Returns the number released.
+    """
+
+    if not budget_database.exists():
+        return 0
+    from .signal_desk_gold_capacity import release_gold_admission
+
+    conn = sqlite3.connect(budget_database)
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT admission_id FROM signal_desk_gold_capacity_leases WHERE lane = ?",
+            (GOLD_LANE,),
+        ).fetchall()
+        for row in rows:
+            release_gold_admission(conn, admission_id=str(row["admission_id"]))
+        return len(rows)
+    except sqlite3.OperationalError:
+        return 0
+    finally:
+        conn.close()
+
+
 def notify(kind: str, detail: str, next_step: str, *, severity: str = "high") -> None:
     subprocess.run(
         ["codex-ops", "notify", "--source", "signal-desk-gold-keepalive",
@@ -200,10 +235,12 @@ def run_once(
     project_root: Path,
     gold_root: Path,
     budget_dir: Path,
+    budget_database: Path | None = None,
     now: float | None = None,
     alive: Callable[[], bool] = runner_alive,
     relaunch: Callable[[Path, Path], None] = tmux_relaunch,
     notifier: Callable[..., None] = notify,
+    release_admissions: Callable[[Path], int] = release_orphaned_admissions,
 ) -> Decision:
     now = time.time() if now is None else now
     state_path = gold_root / "artifacts" / "keepalive-state.json"
@@ -217,7 +254,13 @@ def run_once(
         now=now,
     )
     if decision.action == "relaunch":
+        released = release_admissions(budget_database) if budget_database is not None else 0
         relaunch(project_root, gold_root / "logs" / "resume.log")
+        decision = Decision(
+            decision.action,
+            f"{decision.reason}; released {released} orphaned capacity admission(s)",
+            decision.wait_seconds,
+        )
         notifier(
             "relaunched", decision.reason,
             "No action needed unless relaunches keep repeating; see logs/keepalive.log.",

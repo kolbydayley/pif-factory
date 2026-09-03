@@ -29,7 +29,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--interval-seconds", type=int, default=60)
     args = parser.parse_args(argv)
     while True:
-        decision = run_once(project_root=PIF_ROOT, gold_root=GOLD_ROOT, budget_dir=BUDGET_DIR)
+        decision = run_once(
+            project_root=PIF_ROOT, gold_root=GOLD_ROOT, budget_dir=BUDGET_DIR,
+            budget_database=PIF_ROOT / "data/factory.sqlite",
+        )
         print(f"{decision.action}: {decision.reason}", flush=True)
         if args.once or decision.action == "done":
             return 0
