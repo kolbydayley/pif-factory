@@ -118,6 +118,15 @@ doubling to 30 min, reset after 30 min of healthy uptime. State and log:
 deliberately, drop the KILL receipt or `codex-cron disable pif-gold-keepalive`
 and kill the `keepalive` tmux window.
 
+Timeouts: a Gold turn that exceeds 900s is written as a sidecar in state
+`interrupted`/`timeout` and stops the runner as an infrastructure failure. The
+runner archives that sidecar on the next attempt (a timeout proves no output
+was accepted), so the relaunch retries the window cleanly. If a runner ever
+flaps on `AppServerRecoveryRequired: ... state interrupted`, an interrupted
+sidecar is not being archived — find it under
+`sealed-gold-results/<split>/sidecars/<turn>/`, confirm no matching output
+under `<split>/<turn>/`, and move it into `recovery-sidecars/<turn>/`.
+
 Liveness: a bare `pgrep -f` count lies — it also matches the tmux server that
 was started with the runner command and any shell whose script mentions it.
 Require the executable to be `python`/`Python`/`caffeinate` (that is what the
