@@ -159,6 +159,16 @@ windows failing within 10 minutes is treated as systemic and stops the swarm
 as before (the keepalive relaunches it). Provider capacity errors are handled
 separately by the capacity circuit.
 
+Contract quarantines: a window quarantined after two `gold_contract_failure`
+attempts with the SAME detail is usually deterministic. Before resurrecting,
+open `rejected/<turn>/<window>.json` and test each `evidence_text` against
+`signal_desk_rebuild_contracts._CHROME_RE`; if the match is ordinary speech in
+a clean transcript window, that is a contract false positive (bug-shaped), not
+a quality rejection. The chrome rule is anchored to boilerplate FORMS (CTA
+tails, title-case buttons, nav/legal phrases); speech that discusses signing
+up or a policy is evidence. Bare noun phrases must never be added to it - on
+2026-09-03 `sign up` and `privacy policy` quarantined four clean windows.
+
 Limiter outcomes are keyed on the exception class, never on message text:
 recovery errors embed the sidecar path, and `.../validation/sidecars/...` once
 matched the `parse_schema` token "validation". A trip is charged once per
