@@ -194,6 +194,36 @@ def _notify_stall(kind: str, detail: str, next_step: str) -> None:
 MAX_GOLD_CONTRACT_ATTEMPTS = 2
 
 
+PARSE_SCHEMA_TOKENS = ("schema", "parse", "json", "validation")
+
+
+def classify_adaptive_outcome(exc: BaseException, *, provider_capacity: bool) -> str:
+    """Map a failed Gold call to the adaptive limiter's outcome vocabulary.
+
+    The limiter trips (-2 slots, 10-minute cooldown, slow climb-back) when
+    ``parse_schema`` exceeds 2% of a 600s window - about one event in ~13
+    calls at full concurrency.  An ``EvidenceContractError`` is a content
+    fault in one window (an excerpt that is not exact, chrome text), not the
+    provider degrading under load, and it is retried on its own; recording
+    it as ``parse_schema`` cost 25-50% of throughput for 20-70 minutes after
+    every such failure on 2026-09-03.  It is ``failure``: counted, neutral.
+    Genuine malformed-output failures (schema, parse, JSON, validation)
+    still count as ``parse_schema``.
+    """
+
+    if provider_capacity:
+        return "rate_limit"
+    name = type(exc).__name__
+    if "EvidenceContract" in name:
+        return "failure"
+    detail_text = f"{name}: {exc}".casefold()
+    if "timeout" in detail_text:
+        return "timeout"
+    if any(token in detail_text for token in PARSE_SCHEMA_TOKENS):
+        return "parse_schema"
+    return "failure"
+
+
 def contract_failure_action(attempt_number: int) -> str:
     """retry | quarantine for a contract failure on the given attempt."""
 
@@ -989,12 +1019,8 @@ async def _run_gold_split_phases(
                         detail=str(exc),
                     )
                     detail_text = f"{type(exc).__name__}: {str(exc)}".casefold()
-                    adaptive_outcome = (
-                        "rate_limit" if provider_capacity else
-                        "timeout" if "timeout" in detail_text else
-                        "parse_schema" if any(token in detail_text for token in (
-                            "schema", "parse", "json", "evidencecontract", "validation"
-                        )) else "failure"
+                    adaptive_outcome = classify_adaptive_outcome(
+                        exc, provider_capacity=provider_capacity
                     )
                     if not foreground_yield:
                         record_outcome(

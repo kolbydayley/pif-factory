@@ -693,3 +693,53 @@ def test_interrupted_sidecar_without_timeout_status_stays_fail_closed(tmp_path):
         lease_generation=1,
     ) is None
     assert sidecar.exists()
+
+
+def test_contract_failure_does_not_trip_adaptive_limiter_as_parse_schema():
+    from research_factory.signal_desk_gold_runner import classify_adaptive_outcome
+    from research_factory.signal_desk_rebuild_contracts import EvidenceContractError
+
+    contract = EvidenceContractError("evidence text is not exact at the declared offsets")
+    assert classify_adaptive_outcome(contract, provider_capacity=False) == "failure"
+    chrome = EvidenceContractError("evidence contains chrome, advertising, or navigation text")
+    assert classify_adaptive_outcome(chrome, provider_capacity=False) == "failure"
+    # Provider capacity always wins, whatever the exception text says.
+    assert classify_adaptive_outcome(contract, provider_capacity=True) == "rate_limit"
+    # Genuine provider/model signals keep their classes.
+    from research_factory.codex_app_server import AppServerTurnTimeout
+
+    assert classify_adaptive_outcome(AppServerTurnTimeout("turn timed out; recovery required"), provider_capacity=False) == "timeout"
+    assert classify_adaptive_outcome(ValueError("output schema mismatch"), provider_capacity=False) == "parse_schema"
+    assert classify_adaptive_outcome(ValueError("could not parse JSON"), provider_capacity=False) == "parse_schema"
+    assert classify_adaptive_outcome(RuntimeError("AppServerProcessDied"), provider_capacity=False) == "failure"
+
+
+def test_single_contract_failure_would_trip_limiter_under_old_classification():
+    # Documents the magnitude: one parse_schema among 13 calls in a 600s window
+    # exceeds the 2% trip threshold, so the old mapping cost slots per failure.
+    from research_factory.signal_desk_adaptive_concurrency import (
+        GOLD_BOUNDS,
+        WINDOW_SECONDS,
+        ensure_adaptive_concurrency_schema,
+        initialize_lane,
+        record_outcome,
+    )
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    ensure_adaptive_concurrency_schema(conn)
+    initialize_lane(conn, lane="gold", bounds=GOLD_BOUNDS, initial_limit=8)
+    t = 1_800_000_000.0
+    for i in range(12):
+        record_outcome(conn, lane="gold", outcome="success", latency_seconds=300.0, now=t + i)
+    tripped = record_outcome(conn, lane="gold", outcome="parse_schema", latency_seconds=0.0, now=t + WINDOW_SECONDS - 1)
+    assert tripped["effective_limit"] == 6
+    # The same event recorded as a neutral failure leaves the limit alone.
+    conn2 = sqlite3.connect(":memory:")
+    conn2.row_factory = sqlite3.Row
+    ensure_adaptive_concurrency_schema(conn2)
+    initialize_lane(conn2, lane="gold", bounds=GOLD_BOUNDS, initial_limit=8)
+    for i in range(12):
+        record_outcome(conn2, lane="gold", outcome="success", latency_seconds=300.0, now=t + i)
+    kept = record_outcome(conn2, lane="gold", outcome="failure", latency_seconds=0.0, now=t + WINDOW_SECONDS - 1)
+    assert kept["effective_limit"] == 8
