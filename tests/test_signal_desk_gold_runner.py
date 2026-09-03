@@ -816,3 +816,47 @@ def test_any_terminal_sidecar_without_output_is_archived_but_live_ones_are_not(t
         archive_retryable_sidecar_for_retry(
             sidecar_path=p, output_path=output, recovery_root=tmp_path / "rec", attempt_id=6, lease_generation=1,
         )
+
+
+def test_single_window_infra_failure_retries_then_quarantines_and_systemic_stops():
+    from research_factory.signal_desk_gold_runner import (
+        MAX_INFRA_LEASES_PER_ATTEMPT,
+        SYSTEMIC_INFRA_SECONDS,
+        SYSTEMIC_INFRA_WINDOWS,
+        infra_failure_action,
+    )
+
+    assert (MAX_INFRA_LEASES_PER_ATTEMPT, SYSTEMIC_INFRA_WINDOWS) == (4, 3)
+    now = 10_000.0
+    # One window failing alone is retried until its lineage hits the lease cap.
+    assert infra_failure_action(lease_generation=1, window_id="w1", recent_failures=[], now=now) == "retry"
+    assert infra_failure_action(lease_generation=3, window_id="w1", recent_failures=[(now - 5, "w1")], now=now) == "retry"
+    assert infra_failure_action(lease_generation=4, window_id="w1", recent_failures=[(now - 5, "w1")], now=now) == "quarantine"
+    assert infra_failure_action(lease_generation=9, window_id="w1", recent_failures=[], now=now) == "quarantine"
+    # Distinct windows failing together is systemic: fail closed regardless of lease count.
+    recent = [(now - 30, "w1"), (now - 20, "w2")]
+    assert infra_failure_action(lease_generation=1, window_id="w3", recent_failures=recent, now=now) == "stop"
+    # The same window repeating is not systemic.
+    assert infra_failure_action(lease_generation=1, window_id="w1", recent_failures=[(now - 30, "w1"), (now - 20, "w1")], now=now) == "retry"
+    # Old failures age out of the systemic window.
+    stale = [(now - SYSTEMIC_INFRA_SECONDS - 1, "w1"), (now - SYSTEMIC_INFRA_SECONDS - 1, "w2")]
+    assert infra_failure_action(lease_generation=1, window_id="w3", recent_failures=stale, now=now) == "retry"
+
+
+def test_infra_exhausted_quarantine_is_not_auto_resurrected_at_startup():
+    from research_factory.signal_desk_gold_runner import (
+        quarantined_window_ids,
+        resurrect_retryable_quarantine,
+    )
+    from research_factory.signal_desk_rebuild_dispatch import acquire_lease, fail_attempt_semantically
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    initialize_dispatch_schema(conn)
+    enqueue_task(conn, task_key="validation:B:w1", task_type="gold_window", payload={"turn_type": "B", "window_id": "w1"})
+    lease = acquire_lease(conn, lease_owner="w", lease_seconds=60, task_key_prefix="validation:B:")
+    fail_attempt_semantically(conn, attempt_id=lease["current_attempt_id"], lease_owner=lease["lease_owner"],
+                              lease_generation=lease["lease_generation"], failure_code="gold_infrastructure_exhausted",
+                              failure_detail="turn_failed; leased 4 times")
+    assert set(resurrect_retryable_quarantine(conn, task_namespace="validation")) == {"w1"}
+    assert quarantined_window_ids(conn, task_namespace="validation")["w1"]["failure_code"] == "gold_infrastructure_exhausted"
