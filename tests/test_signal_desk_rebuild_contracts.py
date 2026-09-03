@@ -126,3 +126,41 @@ def test_substantive_discussion_of_subscriptions_is_not_chrome():
     assert validate_output(
         _output(event), transcript_window=text, expected_window_id="w1"
     )["events"][0]["evidence_text"] == text
+
+
+@pytest.mark.parametrize("speech", [
+    # Four real validation excerpts the bare-phrase regex quarantined on 2026-09-03.
+    "Some businesses too often trick consumers into paying for subscriptions they no longer want or didn't sign up for in the",
+    "I would go and sign up to be the fry cook at\na Denny's that doesn't close.",
+    "Right now there is a spring fling race by the\nlarge AI labs to get students to sign up.",
+    "the privacy policy makes no mention of the new tracking or maintainer",
+    # Same class: talking ABOUT the thing is evidence.
+    "we read the cookie policy and it says nothing about third parties",
+    "all episodes of that season were recorded in one week",
+])
+def test_speech_that_discusses_signup_or_policies_is_evidence_not_chrome(speech):
+    event = _event(evidence_text=speech, evidence_start=0, evidence_end=len(speech))
+    assert validate_output(_output(event), transcript_window=speech, expected_window_id="w1")
+
+
+@pytest.mark.parametrize("chrome", [
+    # Real page chrome / CTA forms seen in the benchmark windows.
+    "Email (required) Sign Up By submitting your email, you agree to",
+    "Login / Sign Up close Close Search",
+    "Sign Up On Substack",
+    "sign up for our weekly summary check out",
+    "sign up for the newsletter",
+    "Sign up now to get every episode",
+    "sign up at pythonbytes.fm/foundershub",
+    "Privacy Policy | Terms of Use",
+    "cookie policy and terms",
+    "See all episodes",
+    "this episode is sponsored by our friends",
+    "brought to you by Squarespace",
+    "Subscribe to hear the rest",
+    "skip to content",
+])
+def test_boilerplate_forms_are_still_rejected_as_chrome(chrome):
+    event = _event(evidence_text=chrome, evidence_start=0, evidence_end=len(chrome))
+    with pytest.raises(EvidenceContractError, match="chrome"):
+        validate_output(_output(event), transcript_window=chrome, expected_window_id="w1")

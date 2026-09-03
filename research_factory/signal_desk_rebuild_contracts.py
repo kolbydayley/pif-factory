@@ -33,10 +33,29 @@ RELATIONSHIP_TYPES = (
     "evidence_for",
     "evidence_against",
 )
+# Page chrome, ad reads and navigation boilerplate that must never be cited as
+# evidence.  Every alternative is anchored to a boilerplate FORM: a call-to-
+# action tail, title-case button text, or a nav/legal phrase.  Bare noun
+# phrases are deliberately absent - on 2026-09-03 the bare alternatives
+# ``sign up`` and ``privacy policy`` rejected genuine speech ("subscriptions
+# they didn't sign up for", "get students to sign up", "the privacy policy
+# makes no mention of the new tracking") and quarantined four validation
+# windows.  Speech that merely DISCUSSES signing up or a privacy policy is
+# evidence; a button or footer that SAYS it is chrome.
 _CHROME_RE = re.compile(
-    r"\b(?:subscribe\s+(?:now|today|for\b|to\s+(?:hear|listen|watch|read|support))|"
-    r"sign up|cookie policy|privacy policy|all episodes|this (?:episode|show) is sponsored by|"
-    r"brought to you by|navigation menu|skip to content)\b",
+    r"\b(?:"
+    r"subscribe\s+(?:now|today|for\b|to\s+(?:hear|listen|watch|read|support))"
+    r"|sign\s+up\s+(?:now|today|free|here|at\s+\S+\.\S+|on\s+substack"
+    r"|for\s+(?:free|our\b|the\s+(?:newsletter|podcast|show)|(?:our\s+|the\s+)?"
+    r"(?:newsletter|e-?mails?|updates|alerts|summary|notifications)))"
+    r"|(?-i:Sign[ -]?Up)(?=\s*(?:$|[|·•/]|By\s+submitting|On\s+Substack|Log\s*in|close\b))"
+    r"|(?-i:(?:Privacy|Cookie)\s+Policy)"
+    r"|(?:privacy|cookie)\s+policy\s*(?:[|·•]|and\s+terms|terms\b)"
+    r"|terms\s+(?:of\s+(?:use|service)|and\s+conditions)"
+    r"|(?-i:All\s+Episodes)|(?:see|view|browse)\s+all\s+episodes"
+    r"|this\s+(?:episode|show)\s+is\s+sponsored\s+by|brought\s+to\s+you\s+by"
+    r"|navigation\s+menu|skip\s+to\s+content"
+    r")\b",
     re.I,
 )
 
