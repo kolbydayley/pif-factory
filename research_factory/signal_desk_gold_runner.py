@@ -43,7 +43,7 @@ from .signal_desk_gold_measurement import (
 from .signal_desk_rebuild_contracts import validate_output
 from .signal_desk_rebuild_dispatch import (
     acquire_lease, complete_attempt, enqueue_task, fail_attempt_semantically,
-    initialize_dispatch_schema, release_attempt_for_retry,
+    initialize_dispatch_schema, release_attempt_for_retry, resurrect_task,
 )
 from .signal_desk_rebuild_gold import (
     build_gold_packets, select_blind_gold_audit_windows, verify_frozen_manifest,
@@ -187,6 +187,39 @@ def _notify_stall(kind: str, detail: str, next_step: str) -> None:
     )
 
 
+# A contract failure is the model returning an excerpt that is not exact at
+# its declared offsets.  It is rare (~1% of windows) and usually a one-off,
+# so one fresh attempt is worth one call; the rejected output is never
+# reused.  A second failure on the same window is quarantined.
+MAX_GOLD_CONTRACT_ATTEMPTS = 2
+
+
+def contract_failure_action(attempt_number: int) -> str:
+    """retry | quarantine for a contract failure on the given attempt."""
+
+    return "retry" if int(attempt_number) < MAX_GOLD_CONTRACT_ATTEMPTS else "quarantine"
+
+
+def archive_semantic_rejected_sidecar(
+    *, sidecar_path: Path, recovery_root: Path, attempt_id: int,
+) -> Path | None:
+    """Preserve the completed transport record of a contract-failed call.
+
+    ``archive_retryable_sidecar_for_retry`` deliberately leaves completed
+    sidecars alone; a resurrected attempt would otherwise overwrite the only
+    telemetry of the call that failed the contract.
+    """
+
+    if not sidecar_path.exists():
+        return None
+    recovery_root.mkdir(parents=True, exist_ok=True)
+    target = recovery_root / f"{sidecar_path.stem}.attempt-{attempt_id}.semantic-rejected.json"
+    if target.exists():
+        return None
+    sidecar_path.replace(target)
+    return target
+
+
 def quarantined_window_ids(
     dispatch: sqlite3.Connection, *, task_namespace: str
 ) -> dict[str, dict[str, str]]:
@@ -200,7 +233,7 @@ def quarantined_window_ids(
 
     rows = dispatch.execute(
         """
-        SELECT t.task_key, t.payload_json, a.semantic_failure_code
+        SELECT t.task_key, t.payload_json, a.semantic_failure_code, a.attempt_number
         FROM signal_desk_rebuild_tasks t
         JOIN signal_desk_rebuild_attempts a ON a.id = t.current_attempt_id
         WHERE t.status = 'terminal_failed'
@@ -209,7 +242,7 @@ def quarantined_window_ids(
         """,
         (f"{task_namespace}:", f"{task_namespace}:"),
     ).fetchall()
-    result: dict[str, dict[str, str]] = {}
+    result: dict[str, dict[str, Any]] = {}
     for row in rows:
         payload = json.loads(row["payload_json"])
         window_id = str(payload["window_id"])
@@ -218,8 +251,37 @@ def quarantined_window_ids(
         result.setdefault(window_id, {
             "turn_type": str(payload["turn_type"]),
             "failure_code": str(row["semantic_failure_code"] or ""),
+            "attempt_number": int(row["attempt_number"] or 1),
+            "task_key": str(row["task_key"]),
         })
     return result
+
+
+def resurrect_retryable_quarantine(
+    dispatch: sqlite3.Connection, *, task_namespace: str
+) -> dict[str, dict[str, Any]]:
+    """Give contract-failed windows their remaining bounded attempts at startup.
+
+    A runner that quarantined before this policy existed, or that stopped
+    between the failure and the retry, leaves windows terminal with attempts
+    to spare.  Resurrect those; return only the windows that stay quarantined.
+    """
+
+    remaining: dict[str, dict[str, Any]] = {}
+    for window_id, info in quarantined_window_ids(dispatch, task_namespace=task_namespace).items():
+        if (
+            info["failure_code"] == "gold_contract_failure"
+            and contract_failure_action(info["attempt_number"]) == "retry"
+        ):
+            resurrect_task(
+                dispatch,
+                task_key=info["task_key"],
+                resurrected_by="gold-runner",
+                reason=f"bounded contract retry {info['attempt_number'] + 1}/{MAX_GOLD_CONTRACT_ATTEMPTS} at phase start",
+            )
+            continue
+        remaining[window_id] = info
+    return remaining
 
 
 def _phase_required_ids(
@@ -771,7 +833,8 @@ async def _run_gold_split_phases(
             # Durable across resumes: a terminal_failed task is never revived
             # by re-enqueue, so quarantine is read back from dispatch rather
             # than remembered only in this process.
-            quarantined = quarantined_window_ids(dispatch, task_namespace=task_namespace)
+            quarantined = resurrect_retryable_quarantine(dispatch, task_namespace=task_namespace)
+            contract_retries: list[str] = []
             phase_start = time.monotonic()
             completed_rows: list[dict[str, Any]] = []
 
@@ -976,6 +1039,22 @@ async def _run_gold_split_phases(
                             lease_owner=str(lease["lease_owner"]), lease_generation=int(lease["lease_generation"]),
                             failure_code="gold_contract_failure", failure_detail=detail,
                         )
+                        archive_semantic_rejected_sidecar(
+                            sidecar_path=sidecar_path,
+                            recovery_root=result_root / "recovery-sidecars" / task_turn_type,
+                            attempt_id=int(lease["current_attempt_id"]),
+                        )
+                        if contract_failure_action(int(lease["attempt_number"])) == "retry":
+                            # Fresh attempt lineage, audited in dispatch; the
+                            # rejected output stays under rejected/ untouched.
+                            resurrect_task(
+                                dispatch,
+                                task_key=f"{task_namespace}:{task_turn_type}:{window_id}",
+                                resurrected_by="gold-runner",
+                                reason=f"bounded contract retry {int(lease['attempt_number']) + 1}/{MAX_GOLD_CONTRACT_ATTEMPTS}: {detail[:160]}",
+                            )
+                            contract_retries.append(window_id)
+                            return
                         quarantined[window_id] = {
                             "turn_type": task_turn_type,
                             "failure_code": "gold_contract_failure",
@@ -1143,6 +1222,7 @@ async def _run_gold_split_phases(
                     "turn_type": completed_type,
                     "target_windows": len(target_ids),
                     "quarantined_windows": len(quarantined),
+                    "contract_retries": len(contract_retries),
                     "worker_concurrency": worker_concurrency,
                     "reused_outputs": len(existing_by_turn[completed_type]),
                     "new_outputs": len(rows),

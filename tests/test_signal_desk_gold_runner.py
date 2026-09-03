@@ -542,9 +542,11 @@ def test_contract_quarantine_is_durable_and_never_revived_by_reenqueue():
     )
 
     quarantined = quarantined_window_ids(conn, task_namespace="validation")
-    assert quarantined == {
-        "w1": {"turn_type": "A", "failure_code": "gold_contract_failure"}
-    }
+    assert set(quarantined) == {"w1"}
+    assert quarantined["w1"]["turn_type"] == "A"
+    assert quarantined["w1"]["failure_code"] == "gold_contract_failure"
+    assert quarantined["w1"]["attempt_number"] == 1
+    assert quarantined["w1"]["task_key"] == "validation:A:w1"
     # Resume re-enqueues every missing window; the quarantined one stays terminal.
     outcome = enqueue_task(
         conn, task_key="validation:A:w1", task_type="gold_window",
@@ -560,3 +562,98 @@ def test_contract_quarantine_is_durable_and_never_revived_by_reenqueue():
         remaining.append(lease["payload"]["window_id"])
     assert remaining == ["w2", "w3"]
     assert _phase_required_ids(["w1", "w2", "w3"], quarantined) == ["w2", "w3"]
+
+
+def test_contract_failure_retries_once_then_quarantines(tmp_path: Path):
+    from research_factory.signal_desk_gold_runner import (
+        MAX_GOLD_CONTRACT_ATTEMPTS,
+        archive_semantic_rejected_sidecar,
+        contract_failure_action,
+        quarantined_window_ids,
+    )
+    from research_factory.signal_desk_rebuild_dispatch import (
+        acquire_lease,
+        fail_attempt_semantically,
+        resurrect_task,
+    )
+
+    assert MAX_GOLD_CONTRACT_ATTEMPTS == 2
+    assert contract_failure_action(1) == "retry"
+    assert contract_failure_action(2) == "quarantine"
+    assert contract_failure_action(7) == "quarantine"
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    initialize_dispatch_schema(conn)
+    enqueue_task(conn, task_key="validation:A:w1", task_type="gold_window",
+                 payload={"turn_type": "A", "window_id": "w1"})
+    # Attempt 1 fails the contract: retried as a fresh audited lineage.
+    lease = acquire_lease(conn, lease_owner="worker-0", lease_seconds=60, task_key_prefix="validation:A:")
+    assert lease["attempt_number"] == 1
+    fail_attempt_semantically(conn, attempt_id=lease["current_attempt_id"], lease_owner=lease["lease_owner"],
+                              lease_generation=lease["lease_generation"], failure_code="gold_contract_failure",
+                              failure_detail="EvidenceContractError: not exact")
+    assert contract_failure_action(lease["attempt_number"]) == "retry"
+    snap = resurrect_task(conn, task_key="validation:A:w1", resurrected_by="gold-runner", reason="bounded contract retry 2/2")
+    assert (snap["status"], snap["attempt_number"]) == ("pending", 2)
+    assert quarantined_window_ids(conn, task_namespace="validation") == {}
+    # Attempt 2 fails again: quarantined, and nothing leasable remains.
+    lease = acquire_lease(conn, lease_owner="worker-1", lease_seconds=60, task_key_prefix="validation:A:")
+    assert lease["attempt_number"] == 2
+    assert contract_failure_action(lease["attempt_number"]) == "quarantine"
+    fail_attempt_semantically(conn, attempt_id=lease["current_attempt_id"], lease_owner=lease["lease_owner"],
+                              lease_generation=lease["lease_generation"], failure_code="gold_contract_failure",
+                              failure_detail="EvidenceContractError: not exact again")
+    assert set(quarantined_window_ids(conn, task_namespace="validation")) == {"w1"}
+    assert acquire_lease(conn, lease_owner="worker-2", lease_seconds=60, task_key_prefix="validation:A:") is None
+
+    # The completed sidecar of the failed call is preserved, never overwritten.
+    sidecar = tmp_path / "sidecars" / "A" / "w1.json"
+    sidecar.parent.mkdir(parents=True)
+    sidecar.write_text('{"state": "completed"}')
+    recovery = tmp_path / "recovery-sidecars" / "A"
+    target = archive_semantic_rejected_sidecar(sidecar_path=sidecar, recovery_root=recovery, attempt_id=9)
+    assert target == recovery / "w1.attempt-9.semantic-rejected.json" and target.exists()
+    assert not sidecar.exists()
+    assert archive_semantic_rejected_sidecar(sidecar_path=sidecar, recovery_root=recovery, attempt_id=9) is None
+
+
+def test_startup_resurrects_quarantine_with_attempts_to_spare_only():
+    from research_factory.signal_desk_gold_runner import (
+        quarantined_window_ids,
+        resurrect_retryable_quarantine,
+    )
+    from research_factory.signal_desk_rebuild_dispatch import (
+        acquire_lease,
+        fail_attempt_semantically,
+        resurrect_task,
+    )
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    initialize_dispatch_schema(conn)
+
+    def fail(task_key: str, prefix: str, code: str = "gold_contract_failure") -> None:
+        lease = acquire_lease(conn, lease_owner="w", lease_seconds=60, task_key_prefix=prefix)
+        assert lease["task_key"] == task_key
+        fail_attempt_semantically(conn, attempt_id=lease["current_attempt_id"], lease_owner=lease["lease_owner"],
+                                  lease_generation=lease["lease_generation"], failure_code=code, failure_detail="x")
+
+    for window_id in ("once", "twice", "other"):
+        enqueue_task(conn, task_key=f"validation:A:{window_id}", task_type="gold_window",
+                     payload={"turn_type": "A", "window_id": window_id})
+    fail("validation:A:once", "validation:A:once")          # attempt 1: retryable
+    fail("validation:A:twice", "validation:A:twice")
+    resurrect_task(conn, task_key="validation:A:twice", resurrected_by="t", reason="r")
+    fail("validation:A:twice", "validation:A:twice")        # attempt 2: exhausted
+    fail("validation:A:other", "validation:A:other", code="gold_other_semantic")  # not a contract failure
+
+    before = quarantined_window_ids(conn, task_namespace="validation")
+    assert {k: v["attempt_number"] for k, v in before.items()} == {"once": 1, "twice": 2, "other": 1}
+    remaining = resurrect_retryable_quarantine(conn, task_namespace="validation")
+    assert set(remaining) == {"twice", "other"}
+    assert set(quarantined_window_ids(conn, task_namespace="validation")) == {"twice", "other"}
+    lease = acquire_lease(conn, lease_owner="w2", lease_seconds=60, task_key_prefix="validation:A:")
+    assert lease is not None and lease["task_key"] == "validation:A:once" and lease["attempt_number"] == 2
+    # Idempotent: a second startup pass resurrects nothing further.
+    assert set(resurrect_retryable_quarantine(conn, task_namespace="validation")) == {"twice", "other"}
