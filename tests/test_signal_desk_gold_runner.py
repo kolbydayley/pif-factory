@@ -825,27 +825,28 @@ def test_any_terminal_sidecar_without_output_is_archived_but_live_ones_are_not(t
 
 def test_single_window_infra_failure_retries_then_quarantines_and_systemic_stops():
     from research_factory.signal_desk_gold_runner import (
-        MAX_INFRA_LEASES_PER_ATTEMPT,
+        MAX_INFRA_FAILURES_PER_WINDOW,
         SYSTEMIC_INFRA_SECONDS,
         SYSTEMIC_INFRA_WINDOWS,
         infra_failure_action,
     )
 
-    assert (MAX_INFRA_LEASES_PER_ATTEMPT, SYSTEMIC_INFRA_WINDOWS) == (4, 3)
+    assert (MAX_INFRA_FAILURES_PER_WINDOW, SYSTEMIC_INFRA_WINDOWS) == (4, 3)
     now = 10_000.0
-    # One window failing alone is retried until its lineage hits the lease cap.
-    assert infra_failure_action(lease_generation=1, window_id="w1", recent_failures=[], now=now) == "retry"
-    assert infra_failure_action(lease_generation=3, window_id="w1", recent_failures=[(now - 5, "w1")], now=now) == "retry"
-    assert infra_failure_action(lease_generation=4, window_id="w1", recent_failures=[(now - 5, "w1")], now=now) == "quarantine"
-    assert infra_failure_action(lease_generation=9, window_id="w1", recent_failures=[], now=now) == "quarantine"
-    # Distinct windows failing together is systemic: fail closed regardless of lease count.
-    recent = [(now - 30, "w1"), (now - 20, "w2")]
-    assert infra_failure_action(lease_generation=1, window_id="w3", recent_failures=recent, now=now) == "stop"
+    act = lambda w, rf: infra_failure_action(window_id=w, recent_failures=rf, now=now)
+    # A window is quarantined only after MAX real failures (this call counts as one).
+    assert act("w1", []) == "retry"                                          # 1st real failure
+    assert act("w1", [(now - 5, "w1"), (now - 4, "w1")]) == "retry"          # 3rd
+    assert act("w1", [(now - 5, "w1"), (now - 4, "w1"), (now - 3, "w1")]) == "quarantine"  # 4th
+    # Benign capacity requeues never appear in recent_failures, so a high lease
+    # count alone can never quarantine: only genuine failures are counted here.
+    # Distinct windows failing together is systemic: fail closed.
+    assert act("w3", [(now - 30, "w1"), (now - 20, "w2")]) == "stop"
     # The same window repeating is not systemic.
-    assert infra_failure_action(lease_generation=1, window_id="w1", recent_failures=[(now - 30, "w1"), (now - 20, "w1")], now=now) == "retry"
+    assert act("w1", [(now - 30, "w1"), (now - 20, "w1")]) == "retry"
     # Old failures age out of the systemic window.
     stale = [(now - SYSTEMIC_INFRA_SECONDS - 1, "w1"), (now - SYSTEMIC_INFRA_SECONDS - 1, "w2")]
-    assert infra_failure_action(lease_generation=1, window_id="w3", recent_failures=stale, now=now) == "retry"
+    assert act("w3", stale) == "retry"
 
 
 def test_infra_exhausted_quarantine_is_not_auto_resurrected_at_startup():

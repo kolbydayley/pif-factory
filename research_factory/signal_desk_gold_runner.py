@@ -237,31 +237,34 @@ def classify_adaptive_outcome(exc: BaseException, *, provider_capacity: bool) ->
 # A window whose turn keeps failing at the provider (codex_error_info
 # "other", message withheld) is re-leased forever by release_attempt_for_retry
 # and stopped the whole swarm on every attempt on 2026-09-03 (window
-# c0c02ee0, six leases, six relaunches).  Cap infrastructure retries per
-# attempt lineage and reserve the swarm-wide stop for a systemic outage.
-MAX_INFRA_LEASES_PER_ATTEMPT = 4
+# c0c02ee0, six leases, six relaunches).  Cap real infrastructure FAILURES per
+# window and reserve the swarm-wide stop for a systemic outage.
+MAX_INFRA_FAILURES_PER_WINDOW = 4
 SYSTEMIC_INFRA_WINDOWS = 3
 SYSTEMIC_INFRA_SECONDS = 600.0
 
 
 def infra_failure_action(
-    *, lease_generation: int, window_id: str,
-    recent_failures: Sequence[tuple[float, str]], now: float,
+    *, window_id: str, recent_failures: Sequence[tuple[float, str]], now: float,
 ) -> str:
     """quarantine | stop | retry for an infrastructure failure on one window.
 
     ``recent_failures`` holds (time, window_id) for this process's earlier
-    infrastructure failures.  Distinct windows failing together mean the
-    provider or transport is down: fail closed as before.  One window failing
-    alone is retried, and quarantined once its lineage has been leased
-    ``MAX_INFRA_LEASES_PER_ATTEMPT`` times.
+    genuine infrastructure failures - never the benign capacity requeues that
+    inflate ``lease_generation``.  Counting leases instead quarantined a window
+    on its first real failure during a throttled patch on 2026-09-03 (a window
+    had lease_generation 16 from slots-full requeues alone).  Distinct windows
+    failing together mean the provider is down: fail closed.  One window failing
+    alone is retried until it has genuinely failed ``MAX_INFRA_FAILURES_PER_WINDOW``
+    times in this run.
     """
 
-    recent = {w for t, w in recent_failures if now - t <= SYSTEMIC_INFRA_SECONDS}
-    recent.add(window_id)
-    if len(recent) >= SYSTEMIC_INFRA_WINDOWS:
+    recent = [(t, w) for t, w in recent_failures if now - t <= SYSTEMIC_INFRA_SECONDS]
+    distinct = {w for _, w in recent} | {window_id}
+    if len(distinct) >= SYSTEMIC_INFRA_WINDOWS:
         return "stop"
-    if int(lease_generation) >= MAX_INFRA_LEASES_PER_ATTEMPT:
+    this_window = sum(1 for _, w in recent if w == window_id) + 1  # incl. this failure
+    if this_window >= MAX_INFRA_FAILURES_PER_WINDOW:
         return "quarantine"
     return "retry"
 
@@ -1186,19 +1189,19 @@ async def _run_gold_split_phases(
                             release_gold_admission(budget, admission_id=admission_id)
                             failure_code = "gold_infrastructure_failure"
                             action = infra_failure_action(
-                                lease_generation=int(lease["lease_generation"]),
                                 window_id=window_id,
                                 recent_failures=infra_failures,
                                 now=time.monotonic(),
                             )
                             infra_failures.append((time.monotonic(), window_id))
+                            window_fail_count = sum(1 for _, w in infra_failures if w == window_id)
                             if action == "quarantine":
                                 fail_attempt_semantically(
                                     dispatch, attempt_id=int(lease["current_attempt_id"]),
                                     lease_owner=str(lease["lease_owner"]),
                                     lease_generation=int(lease["lease_generation"]),
                                     failure_code="gold_infrastructure_exhausted",
-                                    failure_detail=f"{detail}; leased {lease['lease_generation']} times",
+                                    failure_detail=f"{detail}; {window_fail_count} real failures",
                                 )
                                 quarantined[window_id] = {
                                     "turn_type": task_turn_type,
@@ -1208,7 +1211,7 @@ async def _run_gold_split_phases(
                                     "gold_infrastructure_quarantine",
                                     f"{split} Gold {task_turn_type} window "
                                     f"{hashlib.sha256(window_id.encode()).hexdigest()[:16]} quarantined after "
-                                    f"{lease['lease_generation']} leases: {detail}; other windows continue",
+                                    f"{window_fail_count} real failures: {detail}; other windows continue",
                                     "Inspect recovery-sidecars/ for this window; resurrect_task to retry once "
                                     "the provider fault is understood, otherwise the split completes without it.",
                                 )
