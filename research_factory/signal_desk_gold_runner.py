@@ -223,9 +223,12 @@ def classify_adaptive_outcome(exc: BaseException, *, provider_capacity: bool) ->
         return "timeout"
     if "StructuredOutput" in name or "Validation" in name:
         return "parse_schema"
+    # A genuine slow-model turn timeout always arrives as AppServerTurnTimeout
+    # (caught above).  A message that merely mentions "timed out" is a
+    # transport hiccup - e.g. AppServerProtocolError "request timed out:
+    # thread/start" - and must NOT throttle concurrency as a capacity signal;
+    # it is a neutral failure.  Only genuine malformed output stays parse_schema.
     message = " ".join(part for part in str(exc).split() if "/" not in part).casefold()
-    if "timeout" in message or "timed out" in message:
-        return "timeout"
     if any(token in message for token in PARSE_SCHEMA_TOKENS):
         return "parse_schema"
     return "failure"

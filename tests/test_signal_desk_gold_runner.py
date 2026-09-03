@@ -776,6 +776,11 @@ def test_recovery_errors_with_split_path_in_message_never_count_as_parse_schema(
     assert classify_adaptive_outcome(AppServerStructuredOutputError("bad output"), provider_capacity=False) == "parse_schema"
     # A path-bearing generic error is not parse_schema just because the path names the split.
     assert classify_adaptive_outcome(RuntimeError("io error at /a/validation/b.json"), provider_capacity=False) == "failure"
+    # A transport 'timed out' (not a slow-model turn timeout) must not throttle: it is neutral.
+    from research_factory.codex_app_server import AppServerProtocolError
+    assert classify_adaptive_outcome(
+        AppServerProtocolError("app-server request timed out: thread/start"), provider_capacity=False,
+    ) == "failure"
 
 
 def test_any_terminal_sidecar_without_output_is_archived_but_live_ones_are_not(tmp_path):
