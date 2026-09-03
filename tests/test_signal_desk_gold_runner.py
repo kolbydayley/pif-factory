@@ -657,3 +657,39 @@ def test_startup_resurrects_quarantine_with_attempts_to_spare_only():
     assert lease is not None and lease["task_key"] == "validation:A:once" and lease["attempt_number"] == 2
     # Idempotent: a second startup pass resurrects nothing further.
     assert set(resurrect_retryable_quarantine(conn, task_namespace="validation")) == {"twice", "other"}
+
+
+def test_timed_out_interrupted_sidecar_is_archived_for_retry(tmp_path):
+    # A 900s turn timeout writes state=interrupted/status=timeout and no output;
+    # it must be archivable so a relaunch does not trip _assert_new_sidecar.
+    sidecar = tmp_path / "sidecars" / "A" / "w1.json"
+    sidecar.parent.mkdir(parents=True)
+    sidecar.write_text(
+        '{"state":"interrupted","status":"timeout","error_class":"turn_timeout",'
+        '"wall_elapsed_seconds":900.05}\n',
+        encoding="utf-8",
+    )
+    archived = archive_retryable_sidecar_for_retry(
+        sidecar_path=sidecar,
+        output_path=tmp_path / "A" / "w1.json",
+        recovery_root=tmp_path / "recovery",
+        attempt_id=14,
+        lease_generation=2,
+    )
+    assert archived == tmp_path / "recovery" / "w1.attempt-14.generation-2.json"
+    assert archived.exists()
+    assert not sidecar.exists()
+
+
+def test_interrupted_sidecar_without_timeout_status_stays_fail_closed(tmp_path):
+    # An interrupted sidecar that is not a timeout is not proven output-free.
+    sidecar = tmp_path / "w1.json"
+    sidecar.write_text('{"state":"interrupted","status":"aborted"}\n', encoding="utf-8")
+    assert archive_retryable_sidecar_for_retry(
+        sidecar_path=sidecar,
+        output_path=tmp_path / "output.json",
+        recovery_root=tmp_path / "recovery",
+        attempt_id=1,
+        lease_generation=1,
+    ) is None
+    assert sidecar.exists()

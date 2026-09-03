@@ -315,11 +315,17 @@ def archive_retryable_sidecar_for_retry(
 ) -> Path | None:
     """Archive an explicitly cancelled transport record before a safe retry.
 
-    A cancelled sidecar, or a failed sidecar carrying an allowlisted provider
-    transport error, proves that no completed structured output was accepted.
-    It is therefore safe to preserve that transport receipt and retry the same
-    semantic attempt lineage.  Completed, semantic, or unknown failures remain
-    fail-closed and require operator adjudication.
+    A cancelled sidecar, a failed sidecar carrying an allowlisted provider
+    transport error, or a turn that timed out (state ``interrupted``, status
+    ``timeout``) all prove that no completed structured output was accepted:
+    the runner only writes the output artifact after the turn completes and
+    validates.  It is therefore safe to preserve the transport receipt and
+    retry the same semantic attempt lineage.  Without this, a timed-out turn's
+    ``interrupted`` sidecar trips ``_assert_new_sidecar`` on every relaunch
+    (``AppServerRecoveryRequired``), which the runner reports as an
+    infrastructure failure and which stops the whole swarm on each pass -
+    a single slow window wedges the campaign.  Completed, semantic, or unknown
+    failures remain fail-closed and require operator adjudication.
     """
 
     if not sidecar_path.exists():
@@ -332,7 +338,8 @@ def archive_retryable_sidecar_for_retry(
         and (payload.get("turn_error") or {}).get("codex_error_info")
         in RETRYABLE_TURN_ERROR_INFO
     )
-    if state != "cancelled" and not retryable_failure:
+    retryable_timeout = state == "interrupted" and payload.get("status") == "timeout"
+    if state != "cancelled" and not retryable_failure and not retryable_timeout:
         return None
     if output_path.exists():
         raise RuntimeError("cancelled sidecar unexpectedly has a completed output artifact")
