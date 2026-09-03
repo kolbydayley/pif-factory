@@ -168,6 +168,11 @@ a quality rejection. The chrome rule is anchored to boilerplate FORMS (CTA
 tails, title-case buttons, nav/legal phrases); speech that discusses signing
 up or a policy is evidence. Bare noun phrases must never be added to it - on
 2026-09-03 `sign up` and `privacy policy` quarantined four clean windows.
+Any change to `_CHROME_RE` must be monotonic (accept a superset of what the
+previous pattern accepted): the runner re-validates every accepted output at
+phase start, so a stricter rule is an immediate startup crash on every
+relaunch, not a gradual quality shift. Before deploying, run
+`pytest tests/test_signal_desk_rebuild_contracts.py -k "monotonic or previously_accepted"`.
 
 Limiter outcomes are keyed on the exception class, never on message text:
 recovery errors embed the sidecar path, and `.../validation/sidecars/...` once
