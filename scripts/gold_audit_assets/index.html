@@ -92,6 +92,7 @@ footer{position:fixed;bottom:0;left:0;right:0;background:rgba(250,248,243,.97);b
 <footer id="foot">loading…</footer>
 <script>
 let CLAIMS=[], VIEW=[], cur=0;
+const PAGE=60; let shown=PAGE;
 const $=s=>document.querySelector(s);
 const esc=s=>(s??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 
@@ -123,13 +124,18 @@ function apply(){
     return true;
   });
   if(cur>=VIEW.length)cur=Math.max(0,VIEW.length-1);
+  shown=Math.max(PAGE,Math.min(VIEW.length,cur+10));
   render();
 }
 function render(){
   const list=$("#list");
-  if(!VIEW.length){list.innerHTML='<div class="empty">No claims match these filters.</div>';$("#foot").textContent="0 shown";return;}
-  list.innerHTML=VIEW.map((c,i)=>card(c,i)).join("");
-  $("#foot").textContent=`${VIEW.length} shown · card ${cur+1}/${VIEW.length}`;
+  if(!VIEW.length){list.innerHTML='<div class="empty">No claims match these filters.</div>';$("#foot").textContent="0 of 0";return;}
+  if(cur>=shown)shown=Math.min(VIEW.length,cur+10);
+  // Render only a window of cards; 17k at once floods the DOM and blanks the tab.
+  let html=VIEW.slice(0,shown).map((c,i)=>card(c,i)).join("");
+  if(shown<VIEW.length)html+=`<button class="btn" style="width:100%;margin-top:6px" onclick="shown=Math.min(VIEW.length,shown+${PAGE});render()">Show more · ${VIEW.length-shown} remaining</button>`;
+  list.innerHTML=html;
+  $("#foot").textContent=`${VIEW.length} match · showing ${Math.min(shown,VIEW.length)} · card ${cur+1}/${VIEW.length}`;
   const el=document.querySelector(".card.cur"); if(el)el.scrollIntoView({block:"nearest"});
 }
 function card(c,i){
