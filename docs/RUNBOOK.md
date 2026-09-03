@@ -118,6 +118,18 @@ doubling to 30 min, reset after 30 min of healthy uptime. State and log:
 deliberately, drop the KILL receipt or `codex-cron disable pif-gold-keepalive`
 and kill the `keepalive` tmux window.
 
+Throughput: the adaptive limiter (`signal_desk_adaptive_concurrency`, lane
+`gold`, bounds 2-8) drops 2 slots on `rate_limit>2%`, `timeout>5%`,
+`parse_schema>2%`, or p95>900s over a 600s window, then climbs back 1 slot
+per three healthy evaluations (every 2 min 02-13 UTC, every 10 min on the
+shoulder, never during the 22-02 UTC peak). At full speed a window holds ~13
+calls, so a single mis-classified event trips it. Contract failures are
+recorded as the neutral `failure` outcome for that reason. If the campaign is
+crawling, check `signal_desk_adaptive_concurrency_state.effective_limit` and
+`last_trip_reason` before suspecting the provider; true concurrency is the
+overlap of `started_at..completed_at` in the dispatch DB, not the count of
+capacity leases (those live 30 minutes).
+
 Timeouts: a Gold turn that exceeds 900s is written as a sidecar in state
 `interrupted`/`timeout` and stops the runner as an infrastructure failure. The
 runner archives that sidecar on the next attempt (a timeout proves no output
