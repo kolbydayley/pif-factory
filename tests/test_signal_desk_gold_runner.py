@@ -866,3 +866,63 @@ def test_infra_exhausted_quarantine_is_not_auto_resurrected_at_startup():
                               failure_detail="turn_failed; leased 4 times")
     assert set(resurrect_retryable_quarantine(conn, task_namespace="validation")) == {"w1"}
     assert quarantined_window_ids(conn, task_namespace="validation")["w1"]["failure_code"] == "gold_infrastructure_exhausted"
+
+
+def _empty_output(window_id: str) -> dict:
+    return {
+        "schema_version": "pif_signal_desk_clean_event_v2",
+        "window_id": window_id,
+        "window_disposition": "no_consequential_claims",
+        "events": [],
+    }
+
+
+def test_phase_completeness_excludes_disclosed_quarantined_windows(tmp_path: Path):
+    from research_factory.signal_desk_gold_runner import _validate_phase_outputs
+
+    by_window = {w: {"input": {"window_id": w, "window_text": "some transcript text"}} for w in ("w1", "w2", "w3")}
+    root = tmp_path / "res"
+    (root / "C").mkdir(parents=True)
+    for w in ("w1", "w2"):
+        (root / "C" / f"{w}.json").write_text(json.dumps(_empty_output(w)), encoding="utf-8")
+    # Without a ruling, a missing window is incomplete.
+    with pytest.raises(RuntimeError, match=r"incomplete.*2/3"):
+        _validate_phase_outputs(result_root=root, turn_type="C", by_window=by_window, required_ids=["w1", "w2", "w3"])
+    # A dispatch-quarantined window is excluded from the requirement and disclosed in the message.
+    outputs = _validate_phase_outputs(
+        result_root=root, turn_type="C", by_window=by_window, required_ids=["w1", "w2", "w3"], excluded_ids=("w3",)
+    )
+    assert set(outputs) >= {"w1", "w2"}
+    # Excluding one window never excuses a different missing one.
+    (root / "C" / "w2.json").unlink()
+    with pytest.raises(RuntimeError, match=r"incomplete.*1/2 windows \(1 quarantined excluded\)"):
+        _validate_phase_outputs(
+            result_root=root, turn_type="C", by_window=by_window, required_ids=["w1", "w2", "w3"], excluded_ids=("w3",)
+        )
+
+
+def test_audit_preflight_accepts_a_disclosed_quarantined_window_but_never_one_in_the_frozen_slice(tmp_path: Path):
+    from research_factory.signal_desk_gold_runner import _audit_target_ids
+    from research_factory.signal_desk_rebuild_gold import build_gold_packets, select_blind_gold_audit_windows
+
+    manifest = json.loads(_manifest_path().read_text(encoding="utf-8"))
+    packets = build_gold_packets(manifest, project_root=Path.cwd(), gold_pass="A", splits=("validation",), allow_sealed=False)
+    by_window = {str(p["input"]["window_id"]): p for p in packets}
+    frozen = [w for w in select_blind_gold_audit_windows(manifest) if w in by_window]
+    victim = next(w for w in sorted(by_window) if w not in frozen)      # a non-audit window
+    root = tmp_path / "res"
+    (root / "C").mkdir(parents=True)
+    for w in by_window:
+        if w != victim:
+            (root / "C" / f"{w}.json").write_text(json.dumps(_empty_output(w)), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="Gold C is incomplete"):
+        _audit_target_ids(manifest=manifest, split="validation", by_window=by_window, result_root=root)
+    target, plan, slice_, atom = _audit_target_ids(
+        manifest=manifest, split="validation", by_window=by_window, result_root=root, excluded_ids=(victim,)
+    )
+    assert list(slice_) == frozen and target == frozen and plan is None and atom == ()
+    # A quarantined window INSIDE the frozen slice would change the audit set: refuse without a ruling.
+    (root / "C" / f"{victim}.json").write_text(json.dumps(_empty_output(victim)), encoding="utf-8")
+    (root / "C" / f"{frozen[0]}.json").unlink()
+    with pytest.raises(RuntimeError, match="blind-audit slice contains quarantined"):
+        _audit_target_ids(manifest=manifest, split="validation", by_window=by_window, result_root=root, excluded_ids=(frozen[0],))

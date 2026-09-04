@@ -12,7 +12,7 @@ import subprocess
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Sequence, Collection
 
 from .codex_app_server import CodexAppServerClient
 from .signal_desk_gold_capacity import (
@@ -618,16 +618,26 @@ def _validate_phase_outputs(
     turn_type: str,
     by_window: Mapping[str, Mapping[str, Any]],
     required_ids: Sequence[str],
+    excluded_ids: Collection[str] = (),
 ) -> dict[str, Mapping[str, Any]]:
-    """Read and contract-check a complete prerequisite phase before reuse."""
+    """Read and contract-check a complete prerequisite phase before reuse.
+
+    ``excluded_ids`` are windows the dispatch database records as quarantined
+    (retries exhausted).  A prerequisite phase is complete when every window
+    that is not quarantined has a contract-valid output; the exclusion is
+    disclosed in the split receipt.  Ruling: Kolby, 2026-09-04, accepting the
+    sealed holdout at 218/219 after one window failed 7/7 identical provider
+    turns.  Nothing is fabricated for an excluded window - it has no gold.
+    """
 
     outputs = _load_outputs(result_root, turn_type)
-    expected = set(required_ids)
-    observed = set(outputs)
+    expected = set(required_ids) - set(excluded_ids)
+    observed = set(outputs) & expected
     if observed != expected:
         raise GoldRunnerError(
             f"Gold {turn_type} is incomplete for the current split: "
-            f"{len(observed & expected)}/{len(expected)} windows"
+            f"{len(observed)}/{len(expected)} windows"
+            + (f" ({len(set(excluded_ids))} quarantined excluded)" if excluded_ids else "")
         )
     for window_id in sorted(expected):
         transcript_window = str(by_window[window_id]["input"]["window_text"])
@@ -657,9 +667,11 @@ def _audit_target_ids(
     split: str,
     by_window: Mapping[str, Mapping[str, Any]],
     result_root: Path,
+    excluded_ids: Collection[str] = (),
 ) -> tuple[list[str], dict[str, Any] | None, tuple[str, ...], tuple[str, ...]]:
     """Resolve audit members without opening a non-current split's outputs."""
 
+    excluded = set(excluded_ids)
     frozen_slice = tuple(
         window_id
         for window_id in select_blind_gold_audit_windows(manifest)
@@ -667,14 +679,22 @@ def _audit_target_ids(
     )
     if not frozen_slice:
         raise GoldResumePlanError(f"{split} has no frozen blind-audit slice")
+    if excluded & set(frozen_slice):
+        # A quarantined window inside the frozen blind-audit slice would
+        # change the audit set itself, which is a separate ruling.
+        raise GoldRunnerError(
+            f"{split} blind-audit slice contains quarantined window(s); cannot audit without a ruling"
+        )
     all_ids = sorted(by_window)
     # The independent audit always follows a complete Gold C for the exact
-    # current split.  It is not merely a supervisor ordering convention.
+    # current split (minus disclosed quarantined windows).  It is not merely
+    # a supervisor ordering convention.
     c_outputs = _validate_phase_outputs(
         result_root=result_root,
         turn_type="C",
         by_window=by_window,
         required_ids=all_ids,
+        excluded_ids=excluded,
     )
     if split != "development":
         return list(frozen_slice), None, frozen_slice, ()
@@ -826,6 +846,12 @@ async def _run_gold_split_phases(
     try:
         for turn_type in (("A",) if pipeline_mode else phase_order):
             all_ids = sorted(by_window)
+            # Windows this split's dispatch database records as quarantined
+            # (retries exhausted) are excluded from every completeness
+            # precondition and disclosed in the receipt (ruling 2026-09-04).
+            excluded_at_start = tuple(sorted(
+                quarantined_window_ids(dispatch, task_namespace=task_namespace)
+            ))
             if turn_type == "B" and not pipeline_mode:
                 # The stage contract is public-entrypoint enforced as well as
                 # supervisor enforced: B cannot bypass a complete Gold A.
@@ -834,6 +860,7 @@ async def _run_gold_split_phases(
                     turn_type="A",
                     by_window=by_window,
                     required_ids=all_ids,
+                    excluded_ids=excluded_at_start,
                 )
             if turn_type == "C" and not pipeline_mode:
                 # No C task may be enqueued before both independent authoring
@@ -843,12 +870,14 @@ async def _run_gold_split_phases(
                     turn_type="A",
                     by_window=by_window,
                     required_ids=all_ids,
+                    excluded_ids=excluded_at_start,
                 )
                 _validate_phase_outputs(
                     result_root=result_root,
                     turn_type="B",
                     by_window=by_window,
                     required_ids=all_ids,
+                    excluded_ids=excluded_at_start,
                 )
             if turn_type == "AUDIT":
                 # ``_audit_target_ids`` validates C before selecting either
@@ -859,6 +888,7 @@ async def _run_gold_split_phases(
                     split=split,
                     by_window=by_window,
                     result_root=result_root,
+                    excluded_ids=excluded_at_start,
                 )
                 audit_ids = set(target_ids)
             elif pipeline_mode:
@@ -1404,6 +1434,15 @@ async def _run_gold_split_phases(
             "quarantined_windows": len(quarantined),
             "quarantined_window_id_sha256": sorted(
                 hashlib.sha256(window_id.encode()).hexdigest() for window_id in quarantined
+            ),
+            # Windows excluded from this stage's completeness preconditions
+            # because the dispatch database records their retries as exhausted.
+            "excluded_quarantined_window_id_sha256": sorted(
+                hashlib.sha256(window_id.encode()).hexdigest() for window_id in quarantined
+            ),
+            "accepted_incomplete_by_ruling": (
+                "kolby 2026-09-04: accept sealed holdout at 218/219; disclosed provider-unprocessable window"
+                if quarantined else None
             ),
             "phases": phase_receipts,
             "wall_seconds": time.monotonic() - run_started,

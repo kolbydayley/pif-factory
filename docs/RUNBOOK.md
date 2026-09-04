@@ -149,6 +149,15 @@ archived. If a runner ever flaps on `AppServerRecoveryRequired: turn sidecar
 already exists`, that invariant is being violated somewhere; inspect before
 moving anything by hand.
 
+Ruling 2026-09-04 (Kolby): the sealed holdout is accepted at 218/219.
+`sealed_holdout:A:sdw_29fbb40c7b5e7e07a801` (Developer Tea, episode opening)
+failed 7/7 identical `turn_failed/other` attempts across two lineages and is
+disclosed as provider-unprocessable; it is not in the frozen blind-audit
+slice. The AUDIT precondition "Gold C complete for the split" therefore
+excludes windows the dispatch DB records as quarantined, and the receipts
+carry `excluded_quarantined_window_id_sha256` plus
+`accepted_incomplete_by_ruling`. No synthetic gold was written for it.
+
 Infrastructure failures (provider `turn_failed` with an unknown error, transport
 faults): one window failing alone is retried in place while the swarm keeps
 running, and is quarantined as `gold_infrastructure_exhausted` once its attempt
