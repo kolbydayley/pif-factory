@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import sys
@@ -130,11 +131,19 @@ def _read_previous() -> dict | None:
         return None
 
 
+def versioned_template() -> str:
+    html = TEMPLATE
+    for name in ("signal-desk.css", "signal-desk.js"):
+        version = hashlib.sha256((ASSET_ROOT / name).read_bytes()).hexdigest()[:12]
+        html = html.replace(f'./{name}"', f'./{name}?v={version}"')
+    return html
+
+
 def main() -> None:
     data = json.loads(DATA.read_text())
     payloads = build_payloads(data, compute_diff(data, _read_previous()))
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(TEMPLATE)
+    OUT.write_text(versioned_template())
     for name in ("signal-desk.css", "signal-desk.js"):
         shutil.copyfile(ASSET_ROOT / name, OUT_DIR / name)
     sizes = {}
