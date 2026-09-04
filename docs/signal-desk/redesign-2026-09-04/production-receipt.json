@@ -1,0 +1,56 @@
+{
+  "deployment_id": "1751f45f-79cb-4819-b5f3-ba1e1f8daf99",
+  "status": "SUCCESS",
+  "code_commit": "a59b19c",
+  "verified_at": "2026-09-04T23:52:26.612330+00:00",
+  "files": [
+    {
+      "file": "pif-signal-desk.html",
+      "status": 200,
+      "sha256": "51d13142769fb22f04fbf1cd51c33f2d0a06343e02278684add2e328c2ac09b0",
+      "matches_release": true
+    },
+    {
+      "file": "signal-desk.js",
+      "status": 200,
+      "sha256": "d6e2d3ea4e4a748e4e9e26a96af18802aefc244cb8916e66263475f932cca77a",
+      "matches_release": true
+    },
+    {
+      "file": "signal-desk.css",
+      "status": 200,
+      "sha256": "89ac386cd3b2d44ce2efa7a94903585c683bb156e9f91c3832c6d36779253e61",
+      "matches_release": true
+    },
+    {
+      "file": "signal-desk-index.json",
+      "status": 200,
+      "sha256": "417737e14bb8e4e2df8c10fa36e42e57182c8ee7a376ecc29ba292a18f3ac861",
+      "matches_release": true
+    },
+    {
+      "file": "signal-desk-issues.json",
+      "status": 200,
+      "sha256": "b88bc1e572307eb10ef0eb6893c0c2d8e7eceb0f09c5cbb226e84e0557ca0c2c",
+      "matches_release": true
+    },
+    {
+      "file": "signal-desk-voices.json",
+      "status": 200,
+      "sha256": "7933e6f25e3511d9983c8ef35f883c22499835fddba571682ee7cc1fb195d343",
+      "matches_release": true
+    },
+    {
+      "file": "signal-desk-network.json",
+      "status": 200,
+      "sha256": "c3e30551d1279dd844aa4868a3fabb7b0ecef5e33d241591b9c416790738ab91",
+      "matches_release": true
+    },
+    {
+      "file": "pif-signal-desk-funnel.json",
+      "status": 200,
+      "sha256": "c774d51547194a85339c28d574b6e4fb506af9711fd294c2437ecd5d1a384e16",
+      "matches_release": true
+    }
+  ]
+}

@@ -36,4 +36,12 @@ The present corpus still contains questionable fragments and uncertain attributi
 
 ## Deployment receipt
 
-Pending production upload and public verification. The target is the existing Railway `signal-desk` service, production environment, canonical URL. Only the site artifact is to be deployed.
+Verified live on 2026-09-04: Railway deployment `1751f45f-79cb-4819-b5f3-ba1e1f8daf99` reports `SUCCESS` on the existing `signal-desk` production service. Code commits: `c6ff4a0` (research and presentation) and `a59b19c` (content-versioned assets).
+
+[Open Signal Desk](https://signal-desk-production-edf4.up.railway.app/pif-signal-desk.html). HTML, JavaScript, CSS and all five companion JSON payloads returned HTTP 200 and matched the isolated release bytes. All five JSON files also matched the pre-release production data. See [machine-readable receipt](production-receipt.json).
+
+Production browser verification confirmed the redesigned briefing, issue detail, August filter, excerpt provenance/missing-context state, and return with the selected month retained. Asset content hashes in HTML resolve the stale JavaScript observed in a returning browser. The source builder now emits those versions on future builds.
+
+![Verified production briefing](screenshots/09-production-briefing.png)
+
+Deployment note: the initial upload failed before replacing the live service because its archive omitted the configured `site/` root. The successful releases used an isolated archive containing that directory; no service configuration or data lane was changed.
