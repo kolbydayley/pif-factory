@@ -47,6 +47,12 @@ GOLD_BOUNDS = LaneBounds(2, 8, 900.0)
 def _transaction(conn: sqlite3.Connection) -> Iterator[None]:
     if conn.in_transaction:
         raise RuntimeError("adaptive controller mutation requires no open transaction")
+    # The state database is shared with the runner's other writers and with
+    # read-only observers (keepalive ticks, monitors).  Without a busy
+    # timeout, BEGIN IMMEDIATE raises 'database is locked' on any momentary
+    # contention; at runner startup that crashed relaunch attempts on
+    # 2026-09-03/04.  Wait briefly instead of failing.
+    conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("BEGIN IMMEDIATE")
     try:
         yield

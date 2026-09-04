@@ -181,3 +181,41 @@ def test_reinitializing_a_lane_baselines_last_success_so_a_pause_is_not_an_outag
     conn.commit()
     silent = record_outcome(conn, lane="gold", outcome="failure", latency_seconds=1.0, now=resume + 130 + NO_SUCCESS_SECONDS + 200)
     assert silent["effective_limit"] < 8
+
+
+def test_state_mutation_waits_out_a_momentary_lock_instead_of_raising(tmp_path):
+    # A second connection holding a write lock briefly must not make the
+    # controller raise 'database is locked' (it crashed runner startup on
+    # 2026-09-04); the busy timeout lets it wait the lock out.
+    import sqlite3
+    import threading
+    import time as _time
+    from research_factory.signal_desk_adaptive_concurrency import (
+        GOLD_BOUNDS,
+        ensure_adaptive_concurrency_schema,
+        initialize_lane,
+    )
+
+    db = tmp_path / "state.sqlite"
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    ensure_adaptive_concurrency_schema(conn)
+    conn.close()
+
+    # check_same_thread=False: the release happens on another thread; a
+    # thread-bound connection would raise there silently and never unlock.
+    locker = sqlite3.connect(db, isolation_level=None, check_same_thread=False)
+    locker.execute("BEGIN IMMEDIATE")  # hold the write lock
+
+    def release_after(delay):
+        _time.sleep(delay)
+        locker.execute("COMMIT")
+
+    threading.Thread(target=release_after, args=(0.5,), daemon=True).start()
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    started = _time.monotonic()
+    state = initialize_lane(conn, lane="gold", bounds=GOLD_BOUNDS, initial_limit=8, now=1.0)
+    assert state["effective_limit"] == 8
+    assert _time.monotonic() - started >= 0.4  # it waited rather than failing fast
+    conn.close()
