@@ -27,7 +27,14 @@ class GoldAuditError(RuntimeError):
     pass
 
 
-_NEGATION_RE = re.compile(
+SEMANTIC_REVERSAL_VERDICTS = frozenset(
+    {"equivalent", "reversed_meaning", "different_claim", "uncertain"}
+)
+ATOMICITY_REVIEW_VERDICTS = frozenset(
+    {"valid_atomic_split", "independent_audit_over_split", "gold_c_needs_correction",
+     "both_need_correction", "uncertain"}
+)
+_NEGATION_CANDIDATE_RE = re.compile(
     r"\b(?:not|never|no|cannot|can't|won't|isn't|aren't|doesn't|don't|didn't)\b",
     re.I,
 )
@@ -42,6 +49,20 @@ def _event_count(output: Mapping[str, Any], *, window_id: str) -> int:
     if not isinstance(events, list):
         raise GoldAuditError(f"Gold C output has no event array for {window_id}")
     return len(events)
+
+
+def _semantic_reversal_candidate_id(
+    *, window_id: str, gold_index: int, independent_index: int,
+    gold_claim: str, independent_claim: str,
+) -> str:
+    """Bind a semantic-review decision to the exact compared claim pair."""
+
+    body = json.dumps(
+        [window_id, gold_index, independent_index, gold_claim, independent_claim],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
 def _load_frozen_window_text(
@@ -153,6 +174,8 @@ def evaluate_dev_audit(
     agreement_minimum: float = AGREEMENT_MINIMUM,
     critical_error_maximum: float = CRITICAL_ERROR_MAXIMUM,
     project_root: Path | None = None,
+    semantic_reversal_adjudications: Mapping[str, str] | None = None,
+    atomicity_adjudications: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Audit Gold C against an independent pass using frozen source bytes.
 
@@ -217,7 +240,10 @@ def evaluate_dev_audit(
     critical_denominator = 0
     catastrophic_window_ids: set[str] = set()
     catastrophic_reasons: Counter[str] = Counter()
+    semantic_reversal_candidates: list[dict[str, Any]] = []
+    unresolved_semantic_candidates: list[str] = []
     oversplitting_windows: list[dict[str, Any]] = []
+    resolved_oversplitting_windows: list[dict[str, Any]] = []
     source_validated_windows = 0
     for window_id in selected:
         meta = metadata[window_id]
@@ -276,13 +302,47 @@ def evaluate_dev_audit(
             )
             if attribution_disagrees or not agreement["stance"]:
                 window_critical += 1
-            gold_claim = str(gold["events"][int(pair["gold_index"])]["claim_text"])
+            gold_index = int(pair["gold_index"])
+            independent_index = int(pair["predicted_index"])
+            gold_claim = str(gold["events"][gold_index]["claim_text"])
             independent_claim = str(
-                independent["events"][int(pair["predicted_index"])]["claim_text"]
+                independent["events"][independent_index]["claim_text"]
             )
-            if bool(_NEGATION_RE.search(gold_claim)) != bool(_NEGATION_RE.search(independent_claim)):
-                catastrophic_window_ids.add(window_id)
-                catastrophic_reasons["reversed_meaning_negation"] += 1
+            # Lexical negation asymmetry is a review-candidate heuristic only.
+            # Equivalent propositions routinely express negation differently
+            # ("lacks control" vs "does not control").  It must never become
+            # a zero-tolerance catastrophe without semantic adjudication.
+            if bool(_NEGATION_CANDIDATE_RE.search(gold_claim)) != bool(
+                _NEGATION_CANDIDATE_RE.search(independent_claim)
+            ):
+                candidate_id = _semantic_reversal_candidate_id(
+                    window_id=window_id,
+                    gold_index=gold_index,
+                    independent_index=independent_index,
+                    gold_claim=gold_claim,
+                    independent_claim=independent_claim,
+                )
+                verdict = (semantic_reversal_adjudications or {}).get(candidate_id)
+                if verdict is not None and verdict not in SEMANTIC_REVERSAL_VERDICTS:
+                    raise GoldAuditError(
+                        f"semantic reversal adjudication has invalid verdict for {candidate_id}"
+                    )
+                semantic_reversal_candidates.append(
+                    {
+                        "candidate_id": candidate_id,
+                        "window_id": window_id,
+                        "gold_index": gold_index,
+                        "independent_index": independent_index,
+                        "claim_text_f1": pair["claim_text_f1"],
+                        "evidence_overlap": pair["evidence_overlap"],
+                        "verdict": verdict,
+                    }
+                )
+                if verdict == "reversed_meaning":
+                    catastrophic_window_ids.add(window_id)
+                    catastrophic_reasons["adjudicated_reversed_meaning"] += 1
+                elif verdict in {None, "uncertain"}:
+                    unresolved_semantic_candidates.append(candidate_id)
         critical_errors += window_critical
         gold_max_same_span = _max_same_span(gold["events"])
         independent_max_same_span = _max_same_span(independent["events"])
@@ -290,13 +350,19 @@ def evaluate_dev_audit(
             # This is a mandatory re-adjudication gate, not a passive audit
             # annotation. It prevents one-span claim splitting from laundering
             # itself into the tournament's reference truth.
-            oversplitting_windows.append(
-                {
-                    "window_id": window_id,
-                    "gold_c_max_same_span": gold_max_same_span,
-                    "independent_max_same_span": independent_max_same_span,
-                }
-            )
+            verdict = (atomicity_adjudications or {}).get(window_id)
+            if verdict is not None and verdict not in ATOMICITY_REVIEW_VERDICTS:
+                raise GoldAuditError(f"atomicity adjudication has invalid verdict for {window_id}")
+            row = {
+                "window_id": window_id,
+                "gold_c_max_same_span": gold_max_same_span,
+                "independent_max_same_span": independent_max_same_span,
+                "verdict": verdict,
+            }
+            if verdict in {"valid_atomic_split", "independent_audit_over_split"}:
+                resolved_oversplitting_windows.append(row)
+            else:
+                oversplitting_windows.append(row)
         rows.append(
             {
                 "window_id": window_id,
@@ -333,19 +399,27 @@ def evaluate_dev_audit(
     # thin sample by disappearing from the critical denominator.
     powered = audit_plan["decision_ready"] and critical_denominator >= minimum_events
     requires_readjudication = bool(oversplitting_windows)
+    semantic_review_complete = not unresolved_semantic_candidates
     passed = (
         agreement_gate["passed"]
         and critical_gate["passed"]
         and not catastrophic_window_ids
         and not requires_readjudication
+        and semantic_review_complete
         and powered
     )
+    if requires_readjudication and not semantic_review_complete:
+        status = "requires_readjudication_and_semantic_review"
+    elif requires_readjudication:
+        status = "requires_readjudication"
+    elif not semantic_review_complete:
+        status = "requires_semantic_review"
+    else:
+        status = "passed" if passed else "failed"
     receipt: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "created_at": now_iso(),
-        "status": "passed" if passed else (
-            "requires_readjudication" if requires_readjudication else "failed"
-        ),
+        "status": status,
         "passed": passed,
         "split": "development",
         "audited_windows": len(selected),
@@ -380,13 +454,22 @@ def evaluate_dev_audit(
         "catastrophic": {
             "definition": (
                 "fabricated or wrong-source evidence, frozen source/window mismatch, unusable "
-                "context disagreement, or matched claims with reversed negation meaning"
+                "context disagreement, or GPT-5.5-adjudicated reversed meaning"
             ),
             "windows": len(catastrophic_window_ids),
             "reason_counts": dict(sorted(catastrophic_reasons.items())),
             "passed": not catastrophic_window_ids,
         },
         "catastrophic_windows": len(catastrophic_window_ids),
+        "semantic_reversal_review": {
+            "candidate_rule": "lexical negation asymmetry proposes review only",
+            "final_authority": "gpt-5.5 with bounded then wider transcript context",
+            "candidate_count": len(semantic_reversal_candidates),
+            "resolved_count": len(semantic_reversal_candidates) - len(unresolved_semantic_candidates),
+            "unresolved_count": len(unresolved_semantic_candidates),
+            "complete": semantic_review_complete,
+            "candidates": semantic_reversal_candidates,
+        },
         "source_validation": {
             "validated_windows": source_validated_windows,
             "failed_windows": len(selected) - source_validated_windows,
@@ -395,6 +478,7 @@ def evaluate_dev_audit(
         "over_splitting": {
             "rule": "max_same_span >= 4 requires Gold C re-adjudication",
             "flagged_windows": oversplitting_windows,
+            "resolved_windows": resolved_oversplitting_windows,
             "requires_readjudication": requires_readjudication,
         },
         "aggregate_metrics": aggregate_metrics,

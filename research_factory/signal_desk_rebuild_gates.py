@@ -16,7 +16,7 @@ from statistics import NormalDist
 from typing import Any, Mapping, Sequence
 
 
-GATE_MANIFEST_VERSION = "signal-desk-rebuild-gates-v2"
+GATE_MANIFEST_VERSION = "signal-desk-rebuild-gates-v3"
 ALPHA = 0.05
 BOOTSTRAP_ITERATIONS = 10_000
 PER_SHOW_EVENT_FLOOR = 50
@@ -305,7 +305,7 @@ def freeze_frontier_ceiling(
         "event_precision",
         "attribution",
         "speaker_role",
-        "issue",
+        "issue_proposal_agreement",
         "stance",
         "atomicity",
         "contamination",
@@ -351,7 +351,11 @@ def freeze_frontier_ceiling(
         "event_precision": {"kind": "wilson_lcb", "minimum": max(0.0, gate_source["event_precision"] - 0.03)},
         "attribution": {"kind": "wilson_lcb", "minimum": max(0.0, gate_source["attribution"] - 0.02)},
         "speaker_role": {"kind": "wilson_lcb", "minimum": max(0.0, gate_source["speaker_role"] - 0.02)},
-        "issue": {"kind": "wilson_lcb", "minimum": max(0.0, gate_source["issue"] - 0.02)},
+        "issue_canonicalization": {
+            "kind": "separate_frozen_stage",
+            "status": "required_before_publication",
+            "raw_issue_proposal_agreement": gate_source["issue_proposal_agreement"],
+        },
         "stance": {"kind": "wilson_lcb", "minimum": max(0.0, gate_source["stance"] - 0.02)},
         "atomicity": {"kind": "wilson_lcb", "minimum": max(0.0, gate_source["atomicity"] - 0.02)},
         "contamination": {

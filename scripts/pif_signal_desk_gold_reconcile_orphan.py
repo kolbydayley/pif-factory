@@ -40,8 +40,14 @@ def _write_receipt(path: Path, body: dict[str, object]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--reservation-id", required=True)
-    parser.add_argument("--task-key", required=True)
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument("--reservation-id")
+    target.add_argument(
+        "--all-stale",
+        action="store_true",
+        help="reconcile every stale started Gold reservation in one durable receipt",
+    )
+    parser.add_argument("--task-key")
     parser.add_argument("--authorization-source", required=True)
     parser.add_argument("--database", type=Path, default=PIF_ROOT / "data/factory.sqlite")
     parser.add_argument(
@@ -50,31 +56,39 @@ def main(argv: list[str] | None = None) -> int:
         default=PIF_ROOT / "work/pif-ops/budget/receipts",
     )
     args = parser.parse_args(argv)
+    if bool(args.reservation_id) != bool(args.task_key):
+        parser.error("--reservation-id and --task-key must be supplied together")
     if not _LABEL.fullmatch(args.authorization_source):
         parser.error("authorization source must be a compact non-secret audit label")
     conn = sqlite3.connect(args.database)
     conn.row_factory = sqlite3.Row
     try:
-        row = conn.execute(
-            """SELECT id,task_key FROM signal_desk_gold_budget_reservations
-               WHERE id=? AND status='active' AND provider_started=1""",
-            (args.reservation_id,),
-        ).fetchone()
-        if row is None or str(row["task_key"]) != args.task_key:
-            raise RuntimeError("exact active started reservation binding was not found")
+        task_keys = None
+        if args.reservation_id:
+            row = conn.execute(
+                """SELECT id,task_key FROM signal_desk_gold_budget_reservations
+                   WHERE id=? AND status='active' AND provider_started=1""",
+                (args.reservation_id,),
+            ).fetchone()
+            if row is None or str(row["task_key"]) != args.task_key:
+                raise RuntimeError("exact active started reservation binding was not found")
+            task_keys = {str(args.task_key)}
         reconciliation = reconcile_orphaned_started_gold_reservations(
             conn,
             minimum_age_seconds=GOLD_LEASE_SECONDS,
-            task_keys={args.task_key},
+            task_keys=task_keys,
         )
     finally:
         conn.close()
-    if reconciliation["settled_count"] != 1:
+    if args.reservation_id and reconciliation["settled_count"] != 1:
         raise RuntimeError("orphan reconciliation did not settle exactly one reservation")
+    if args.all_stale and reconciliation["settled_count"] < 1:
+        raise RuntimeError("all-stale reconciliation found no stale started reservations")
     body = {
         "schema_version": "pif_signal_desk_gold_orphan_operator_reconciliation_v1",
         "authorization_source": args.authorization_source,
         "reservation_id": args.reservation_id,
+        "scope": "all_stale_started_gold_reservations" if args.all_stale else "one_exact_reservation",
         "reconciliation": reconciliation,
     }
     stamp = str(reconciliation["reconciled_at"]).replace("-", "").replace(":", "")

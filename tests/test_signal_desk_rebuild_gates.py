@@ -24,7 +24,7 @@ def _ceiling() -> dict[str, float]:
         "event_precision": 0.92,
         "attribution": 0.96,
         "speaker_role": 0.95,
-        "issue": 0.93,
+        "issue_proposal_agreement": 0.93,
         "stance": 0.91,
         "atomicity": 0.89,
         "contamination": 0.002,
@@ -102,13 +102,18 @@ def test_frontier_freeze_converts_relative_tolerances_to_absolute_gates() -> Non
         run_sha256="d" * 64,
     )
     assert manifest["frozen"] is True
-    assert manifest["version"] == "signal-desk-rebuild-gates-v2"
+    assert manifest["version"] == "signal-desk-rebuild-gates-v3"
     assert manifest["calibration"]["passes"] == 1
     assert manifest["calibration"]["window_characters"] == 6000
     assert manifest["gates"]["event_recall"]["minimum"] == pytest.approx(0.85)
     assert manifest["gates"]["attribution"]["minimum"] == pytest.approx(0.94)
     assert manifest["gates"]["contamination"]["maximum"] == pytest.approx(0.007)
     assert manifest["gates"]["schema_validity"]["minimum"] == 1.0
+    assert manifest["gates"]["issue_canonicalization"] == {
+        "kind": "separate_frozen_stage",
+        "status": "required_before_publication",
+        "raw_issue_proposal_agreement": 0.93,
+    }
     assert len(manifest["manifest_sha256"]) == 64
 
 

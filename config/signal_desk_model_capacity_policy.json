@@ -36,7 +36,7 @@
       "lane": "gpt_5_6_sol_scorer_qualification",
       "priority": 30,
       "mode": "gated",
-      "reason": "A2 starts only after A1 predictions exist and scorer v5 is frozen."
+      "reason": "A2 starts only after A1 predictions exist and scorer v6 is frozen."
     },
     {
       "lane": "other_pif_codex_subscription",

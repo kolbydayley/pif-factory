@@ -188,3 +188,76 @@ def test_dev_audit_flags_same_span_claim_splitting_for_readjudication(tmp_path):
     assert receipt["status"] == "requires_readjudication"
     assert receipt["over_splitting"]["requires_readjudication"] is True
     assert receipt["over_splitting"]["flagged_windows"][0]["gold_c_max_same_span"] == 4
+
+    resolved = evaluate_dev_audit(
+        manifest_path=manifest_path, result_root=root, expected_windows=1,
+        initial_windows=1, minimum_events=1, agreement_minimum=0.0,
+        critical_error_maximum=1.0, project_root=tmp_path,
+        atomicity_adjudications={"w1": "valid_atomic_split"},
+    )
+    assert resolved["over_splitting"]["requires_readjudication"] is False
+    assert resolved["over_splitting"]["resolved_windows"][0]["verdict"] == "valid_atomic_split"
+
+
+def test_negation_asymmetry_requires_semantic_review_instead_of_becoming_catastrophic(tmp_path):
+    manifest = _manifest(tmp_path)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest))
+    root = tmp_path / "results"
+    for turn in ("C", "AUDIT"):
+        (root / turn).mkdir(parents=True)
+    gold = _output("w1")
+    gold["events"][0]["claim_text"] = "Brands lack control over pricing"
+    independent = _output("w1")
+    independent["events"][0]["claim_text"] = "Brands do not control pricing"
+    (root / "C" / "w1.json").write_text(json.dumps(gold))
+    (root / "AUDIT" / "w1.json").write_text(json.dumps(independent))
+
+    receipt = evaluate_dev_audit(
+        manifest_path=manifest_path, result_root=root, expected_windows=1,
+        initial_windows=1, minimum_events=1, agreement_minimum=0.0,
+        critical_error_maximum=1.0, project_root=tmp_path,
+    )
+    assert receipt["catastrophic_windows"] == 0
+    assert receipt["status"] == "requires_semantic_review"
+    review = receipt["semantic_reversal_review"]
+    assert review["candidate_count"] == 1 and review["unresolved_count"] == 1
+
+    candidate_id = review["candidates"][0]["candidate_id"]
+    resolved = evaluate_dev_audit(
+        manifest_path=manifest_path, result_root=root, expected_windows=1,
+        initial_windows=1, minimum_events=1, agreement_minimum=0.0,
+        critical_error_maximum=1.0, project_root=tmp_path,
+        semantic_reversal_adjudications={candidate_id: "equivalent"},
+    )
+    assert resolved["semantic_reversal_review"]["complete"] is True
+    assert resolved["catastrophic_windows"] == 0
+
+
+def test_only_adjudicated_reversal_is_catastrophic(tmp_path):
+    manifest = _manifest(tmp_path)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest))
+    root = tmp_path / "results"
+    for turn in ("C", "AUDIT"):
+        (root / turn).mkdir(parents=True)
+    gold = _output("w1")
+    gold["events"][0]["claim_text"] = "The system will not fail"
+    independent = _output("w1")
+    independent["events"][0]["claim_text"] = "The system will fail"
+    (root / "C" / "w1.json").write_text(json.dumps(gold))
+    (root / "AUDIT" / "w1.json").write_text(json.dumps(independent))
+    first = evaluate_dev_audit(
+        manifest_path=manifest_path, result_root=root, expected_windows=1,
+        initial_windows=1, minimum_events=1, agreement_minimum=0.0,
+        critical_error_maximum=1.0, project_root=tmp_path,
+    )
+    candidate_id = first["semantic_reversal_review"]["candidates"][0]["candidate_id"]
+    resolved = evaluate_dev_audit(
+        manifest_path=manifest_path, result_root=root, expected_windows=1,
+        initial_windows=1, minimum_events=1, agreement_minimum=0.0,
+        critical_error_maximum=1.0, project_root=tmp_path,
+        semantic_reversal_adjudications={candidate_id: "reversed_meaning"},
+    )
+    assert resolved["catastrophic_windows"] == 1
+    assert resolved["catastrophic"]["reason_counts"] == {"adjudicated_reversed_meaning": 1}

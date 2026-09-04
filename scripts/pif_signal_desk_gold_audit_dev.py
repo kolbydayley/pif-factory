@@ -27,12 +27,36 @@ def main() -> int:
         if row["split"] == "development"
     }
     blind_ids = set(select_blind_gold_audit_windows(manifest)) & development_ids
+    semantic_review_path = root / "artifacts/gold-semantic-review-dev.json"
+    semantic_adjudications = None
+    if semantic_review_path.exists():
+        semantic_review = json.loads(semantic_review_path.read_text(encoding="utf-8"))
+        if not semantic_review.get("complete"):
+            raise RuntimeError("semantic-review receipt exists but is incomplete")
+        decisions = semantic_review.get("decisions")
+        if not isinstance(decisions, dict):
+            raise RuntimeError("semantic-review receipt decisions are invalid")
+        semantic_adjudications = {str(key): str(value) for key, value in decisions.items()}
+    atomicity_review_path = root / "artifacts/gold-atomicity-adjudication-dev.json"
+    atomicity_adjudications = None
+    if atomicity_review_path.exists():
+        atomicity_review = json.loads(atomicity_review_path.read_text(encoding="utf-8"))
+        if not atomicity_review.get("complete"):
+            raise RuntimeError("atomicity-review receipt exists but is incomplete")
+        decisions = atomicity_review.get("decisions")
+        if not isinstance(decisions, dict):
+            raise RuntimeError("atomicity-review receipt decisions are invalid")
+        atomicity_adjudications = {
+            str(key): str(value["verdict"]) for key, value in decisions.items()
+        }
     receipt = evaluate_dev_audit(
         manifest_path=manifest_path,
         result_root=root / "results/development",
         initial_window_ids=sorted(blind_ids),
         initial_windows=len(blind_ids),
         project_root=PIF_ROOT,
+        semantic_reversal_adjudications=semantic_adjudications,
+        atomicity_adjudications=atomicity_adjudications,
     )
     output = root / "artifacts/gold-audit-dev.json"
     output.parent.mkdir(parents=True, exist_ok=True)

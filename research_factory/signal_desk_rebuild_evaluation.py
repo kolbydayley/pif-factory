@@ -18,7 +18,7 @@ from .signal_desk_rebuild_scorer import (
 )
 
 
-EVALUATION_VERSION = "pif_signal_desk_rebuild_evaluation_v3"
+EVALUATION_VERSION = "pif_signal_desk_rebuild_evaluation_v4"
 
 
 def _ratio(numerator: int, denominator: int) -> float:
@@ -158,7 +158,9 @@ def evaluate_windows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         empty_field_credit = 1.0 if correct_empty else 0.0
         attribution = _ratio(field_correct["speaker"], len(pairs)) if pairs else empty_field_credit
         speaker_role = _ratio(field_correct["speaker_role"], len(pairs)) if pairs else empty_field_credit
-        issue = _ratio(field_correct["issue"], len(pairs)) if pairs else empty_field_credit
+        issue_proposal_agreement = (
+            _ratio(field_correct["issue"], len(pairs)) if pairs else empty_field_credit
+        )
         stance = _ratio(field_correct["stance"], len(pairs)) if pairs else empty_field_credit
         atomicity = (
             _ratio(atomic_one_to_one, len(pairs))
@@ -174,9 +176,13 @@ def evaluate_windows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         contamination = _ratio(len(predicted_events), len(predicted_events)) if not gold_events and predicted_events else 0.0
         schema_validity = 1.0
         evidence_grounding = 1.0
+        # Issue labels are deliberately free-form proposals at extraction time.
+        # Scoring their exact text as model quality rewards vocabulary mimicry
+        # and contradicts the production contract, which canonicalizes issues
+        # in a later stage. Keep the agreement visible as a diagnostic only.
         macro_composite = sum(
-            (event_f1, attribution, speaker_role, issue, stance, atomicity)
-        ) / 6.0
+            (event_f1, attribution, speaker_role, stance, atomicity)
+        ) / 5.0
         per_window_scores.append(
             {
                 "window_id_sha256": hashlib.sha256(str(row["window_id"]).encode()).hexdigest(),
@@ -189,7 +195,7 @@ def evaluate_windows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
                 "macro_composite": macro_composite,
                 "attribution": attribution,
                 "speaker_role": speaker_role,
-                "issue": issue,
+                "issue_proposal_agreement": issue_proposal_agreement,
                 "stance": stance,
                 "atomicity": atomicity,
                 "density_ratio": density_ratio,
@@ -211,7 +217,9 @@ def evaluate_windows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         field_empty_credit = 1.0 if aggregate_correct_empty else 0.0
         attribution = _ratio(counts["speaker_correct"], field_total) if field_total else field_empty_credit
         speaker_role = _ratio(counts["speaker_role_correct"], field_total) if field_total else field_empty_credit
-        issue = _ratio(counts["issue_correct"], field_total) if field_total else field_empty_credit
+        issue_proposal_agreement = (
+            _ratio(counts["issue_correct"], field_total) if field_total else field_empty_credit
+        )
         stance = _ratio(counts["stance_correct"], field_total) if field_total else field_empty_credit
         atomicity = (
             _ratio(counts["atomic_one_to_one_matched"], counts["diagnostic_pairs"])
@@ -225,14 +233,14 @@ def evaluate_windows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             else 1.0
         )
         contamination = _ratio(counts["contaminants"], counts["predicted_events"]) if counts["predicted_events"] else 0.0
-        components = (event_f1, attribution, speaker_role, issue, stance, atomicity)
+        components = (event_f1, attribution, speaker_role, stance, atomicity)
         return {
             "macro_composite": sum(components) / len(components),
             "event_recall": recall,
             "event_precision": precision,
             "attribution": attribution,
             "speaker_role": speaker_role,
-            "issue": issue,
+            "issue_proposal_agreement": issue_proposal_agreement,
             "stance": stance,
             "atomicity": atomicity,
             "density_ratio": density_ratio,

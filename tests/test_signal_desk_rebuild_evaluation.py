@@ -24,6 +24,23 @@ def test_diagnostics_expose_field_errors_instead_of_hiding_them_as_missing_pairs
     assert pairs[0]["field_agreement"]["issue"] is False
 
 
+def test_free_form_issue_proposals_are_diagnostic_not_extraction_quality():
+    output = evaluate_windows(
+        [
+            {
+                "window_id": "issue-alias",
+                "show_id": "show-a",
+                "episode_id": "episode-a",
+                "transcript_structure": "speaker_turn",
+                "gold": {"events": [_event(issue="AI impact on employment")]},
+                "predicted": {"events": [_event(issue="automation and work")]},
+            }
+        ]
+    )
+    assert output["metrics"]["issue_proposal_agreement"] == 0.0
+    assert output["metrics"]["macro_composite"] == 1.0
+
+
 def test_aggregate_metrics_keep_strata_and_hashed_window_diagnostics():
     output = evaluate_windows(
         [

@@ -18,8 +18,8 @@ from statistics import NormalDist
 from typing import Any, Mapping, Optional, Sequence
 
 
-SCORER_VERSION = "signal-desk-rebuild-scorer-v5"
-SPEC_VERSION = "signal-desk-rebuild-scorer-spec-v5"
+SCORER_VERSION = "signal-desk-rebuild-scorer-v6"
+SPEC_VERSION = "signal-desk-rebuild-scorer-spec-v6"
 EVIDENCE_OVERLAP_FLOOR = 0.50
 CLAIM_TEXT_F1_FLOOR = 0.30
 QUALIFICATION_ALPHA = 0.05
@@ -441,7 +441,9 @@ def scorer_specification() -> dict[str, Any]:
         ],
         "issue_policy": (
             "issue labels are extraction-time proposals and do not control event matching; "
-            "issue agreement is scored on eligible matched pairs after canonicalization"
+            "raw-label agreement is diagnostic only and is excluded from the extraction "
+            "composite. Stable issue identity is evaluated by the separately frozen "
+            "canonicalization stage"
         ),
         "clean_event_mapping": {
             "speaker": "speaker_id",
