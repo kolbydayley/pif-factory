@@ -258,3 +258,67 @@ button.claim-card:hover,button.stage-card:hover{
 @media(prefers-reduced-motion:reduce){
   *{scroll-behavior:auto!important;transition:none!important;animation:none!important}
 }
+
+/* September 2026 editorial refinement: retain identity, prioritize research. */
+:root{--ink3:#686258}
+h1{font-size:clamp(36px,4.5vw,54px);line-height:1.04}
+.detail-head h1{font-size:clamp(34px,4.7vw,54px);max-width:22ch}
+.view{padding-top:22px}.home-head{margin-bottom:18px}
+.snapshot-note{border-bottom:1px solid var(--rule);margin-bottom:24px;padding:0 0 10px;color:var(--ink2);font:11px/1.6 var(--mono)}
+.snapshot-note summary{cursor:pointer;min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.snapshot-note summary span{color:var(--gold);border:1px solid #dfc477;background:#fff9e9;border-radius:999px;padding:4px 9px}
+.snapshot-note p{max-width:85ch;margin:8px 0;font:13px/1.6 var(--sans)}
+.research-entry{display:flex;align-items:center;justify-content:space-between;gap:24px;border-left:3px solid var(--green);padding:12px 16px;margin:18px 0 24px;background:#f0f5ef}
+.research-entry p{font-size:14px;color:var(--ink2);max-width:72ch;margin-top:4px}
+.research-entry .secondary{flex:none}.compact-search{grid-template-columns:minmax(0,1fr) auto}
+.signal-card{min-height:240px}.signal-card h3{font-size:25px;line-height:1.17;max-width:25ch}
+.signal-card p{font-size:14px;max-width:55ch}
+.chart-preview{display:flex;flex-direction:column;gap:6px;flex:none;max-width:180px}
+.chart-preview .spark{width:100%;min-width:120px}.chart-preview small{font:9px/1.5 var(--mono);color:var(--ink3)}
+.more-research{margin-top:20px}.more-research>summary,.data-table>summary,.provenance>summary{min-height:44px;padding:10px 0;cursor:pointer;font-weight:600;color:var(--blue)}
+.more-research[open]>summary{margin-bottom:12px}
+.scope-strip{display:flex;gap:10px 24px;flex-wrap:wrap;padding:14px 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);align-items:center;font-size:13px;color:var(--ink2)}
+.scope-strip strong{font:700 20px var(--serif);color:var(--ink);margin-right:3px}
+.reading-links{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}
+.reading-links .chip{background:transparent;font-size:12px}
+.section-head-tight{margin:0 0 12px}.section-head-tight h2{font-size:27px}
+.evidence-list{margin-top:14px}.evidence-more{margin-top:14px}
+.claim-summary{font-weight:600;margin-top:14px}
+.quote{font-size:19px;line-height:1.55}
+.evidence .person-link{min-height:44px}.source-actions a{min-height:44px}
+.position-columns{display:grid;gap:20px}.position-columns h3{font-size:19px;margin:16px 0 10px}
+.reading-links+ .research-grid{margin-top:12px}.subhead{font-size:17px;margin:22px 0 8px}
+.topic-label{padding:12px 0;border-bottom:1px solid var(--rule);font-size:14px}
+.topic-label small{display:block;color:var(--ink3);font-size:12px;margin-top:5px}
+.source-title{margin:8px 0 24px;color:var(--ink2)}
+.provenance{margin-top:18px}.provenance dl{display:grid;grid-template-columns:150px 1fr;gap:8px;font-size:13px}
+.provenance dd{margin:0;overflow-wrap:anywhere}.provenance dt{color:var(--ink2)}
+.provenance p{font-size:13px;color:var(--ink2);margin-top:16px}
+.panel .button-row{margin-top:18px}.button-row a{text-decoration:none;display:inline-flex;align-items:center}
+.table-scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:12px;text-align:left}caption{text-align:left;padding:12px 0;color:var(--ink2)}th,td{border-bottom:1px solid var(--rule);padding:8px 10px}th{font-weight:600}
+.month-bar{min-height:44px}.trend{gap:2px}.trend-panel,.panel[id]{scroll-margin-top:90px}
+.scope-notice{margin-bottom:16px}.breadcrumbs button{min-height:44px}
+@media(min-width:1000px){.coverage-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.conversion-grid{grid-template-columns:1fr}.research-grid{grid-template-columns:minmax(0,1fr) 285px}}
+@media(max-width:760px){
+ .view{padding-top:12px}.home-head h1,.detail-head h1{font-size:36px;line-height:1.05}
+ .snapshot-note{margin-bottom:16px;padding-bottom:6px}.snapshot-note summary{font-size:10px;gap:6px}
+ .snapshot-note summary span{padding:3px 6px}.research-entry{display:block;padding:12px;margin-bottom:18px}.research-entry .secondary{margin-top:10px}
+ .scope-strip{gap:8px 14px;font-size:12px}.scope-strip strong{font-size:18px}
+ .detail-head{margin-bottom:16px}.reading-links{gap:6px}.reading-links .chip{padding:7px 10px}
+ .signal-card{min-height:0}.signal-card h3{font-size:24px}.chart-preview{max-width:140px}
+ .issue-row .chart-preview{max-width:none}.issue-row .spark{height:34px;min-width:0}
+ .issue-card{padding:14px}.issue-card .pill-row{margin-top:7px}.issue-row{gap:10px}
+ .panel[id]{scroll-margin-top:10px}.quote{font-size:18px}.evidence-top{flex-wrap:wrap}
+ .provenance dl{grid-template-columns:1fr}.provenance dd{margin-bottom:10px}
+ .source-actions{gap:16px}.coverage-footer{margin-top:28px}
+}
+.month-picker{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:16px 0;font-size:13px;color:var(--ink2)}
+.month-picker .select{max-width:250px}
+@media(max-width:760px){.month-picker{display:block}.month-picker .select{max-width:none;margin-top:6px}}
+.mobile-bucket{display:none}
+@media(max-width:760px){
+ .briefing-sections{display:none}.mobile-bucket{display:block;font-size:12px;color:var(--ink2);margin:16px 0 0}
+ .mobile-bucket .select{margin-top:5px}.toolbar.compact-search{grid-template-columns:minmax(0,1fr) auto!important}
+ .compact-search .primary{font-size:12px;padding:8px 11px}.compact-search .search{min-width:0;font-size:14px}
+ .snapshot-note{margin-bottom:12px}.snapshot-note summary{min-height:38px}
+}

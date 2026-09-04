@@ -16,7 +16,7 @@
     issueSort: "strategic",
     issueConfidence: "all",
     voiceQuery: "",
-    voiceView: "influential",
+    voiceView: "evidence",
     evidenceMode: "accepted",
     selectedMonth: "",
     coverageGap: "needs_attention",
@@ -49,11 +49,16 @@
 
   function route(kind, id = "", tail = []) {
     const parts = [kind, id, ...tail].filter(Boolean).map(enc);
-    location.hash = parts.join("/");
+    history.replaceState({...history.state, filters: {...state}, scroll: app.scrollTop || window.scrollY}, "");
+    const origin=location.hash;
+    location.hash=parts.join("/");
+    history.replaceState({...history.state,origin,filters:{...state},scroll:0},"");
   }
 
   function parseRoute() {
-    const parts = (location.hash.slice(1) || "briefing").split("/").map(decodeURIComponent);
+    const parts = (location.hash.slice(1) || "briefing").split("/").map(part => {
+      try { return decodeURIComponent(part); } catch (_) { return part; }
+    });
     let [kind, id = "", filterType = "", filterValue = ""] = parts;
     const legacyHome = {shifts: "briefing", topics: "issues", people: "voices"};
     if (kind === "home") kind = legacyHome[id] || "briefing", id = "";
@@ -81,7 +86,35 @@
   }
 
   function coverageFooter() {
-    return `<footer class="coverage-footer">Signal Desk publishes bounded excerpts, not transcripts. Confidence describes evidence coverage inside this corpus—not truth, probability, or investment advice. <button class="text-button" data-route="coverage">Inspect corpus coverage</button></footer>`;
+    return `<footer class="coverage-footer">Research snapshot · Discourse through ${esc(INDEX?.data_through || "unknown")}. Bounded excerpts and source links; this legacy corpus is still under quality review. <button class="text-button" data-route="coverage">Inspect coverage and limitations</button></footer>`;
+  }
+
+  function snapshotNote() {
+    return `<details class="snapshot-note"><summary>Research snapshot · ${esc(INDEX?.data_through || "date unavailable")} <span>Evidence under review</span></summary><p>The site currently uses legacy evidence. The clean-corpus rebuild is not yet approved for publication. Counts describe this sample, not the whole industry; attribution and surrounding context can be incomplete. Snapshot generated ${esc(INDEX?.generated_at || "unknown")}.</p></details>`;
+  }
+
+  function recentWindow(item) {
+    const months=(INDEX?.months || []).slice(-3);
+    return months.length ? `${months[0]}–${months.at(-1)}` : "latest recorded window";
+  }
+
+  function researchBucket(item) {
+    if (!item.brief?.decision_grade) return "watchlist";
+    if (!(Number(item.pulse_vol) > 0)) return "archive";
+    return item.bucket === "changing_consensus" ? "distribution" : "active";
+  }
+
+  function excerptIdentity(evidence) {
+    const name = evidence.person;
+    return name && name !== "Unattributed voice" ? name : "Speaker not established";
+  }
+
+  function previewSeries(item) {
+    return `<span class="chart-preview">${spark(item.series_preview,"var(--green)")}<small>Attention share · ${esc(item.series_preview?.[0]?.month || "")}–${esc(item.series_preview?.at(-1)?.month || "")}</small></span>`;
+  }
+
+  function readingLinks(items) {
+    return `<nav class="reading-links" aria-label="On this page">${items.map(([id,label]) => `<button class="chip" data-jump="${esc(id)}">${esc(label)}</button>`).join("")}</nav>`;
   }
 
   function spark(series, color = "var(--blue)") {
@@ -96,8 +129,7 @@
 
   function coveragePill(brief, issueId) {
     const c = brief.coverage || {};
-    const tone = brief.decision_grade ? "good" : "warn";
-    return `<button class="coverage-badge ${tone}" data-route="coverage" data-tail="issue/${esc(issueId)}" aria-label="Inspect coverage: ${c.accepted_excerpts || 0} accepted excerpts across ${c.shows || 0} shows">${brief.decision_grade ? "Decision-grade coverage" : "Watchlist coverage"} · ${c.shows || 0} shows</button>`;
+    return `<button class="coverage-badge" data-route="coverage" data-tail="issue/${esc(issueId)}">${fmt(c.accepted_excerpts)} displayed excerpts · ${fmt(c.shows)} shows</button>`;
   }
 
   function citationLinks(sentence) {
@@ -113,60 +145,37 @@
   }
 
   const BUCKETS = [
-    ["all", "All signals"], ["new", "New"], ["accelerating", "Accelerating"],
-    ["changing_consensus", "Changing consensus"], ["fading", "Fading"],
+    ["all", "Research overview"], ["active", "Recent discussion"],
+    ["distribution", "Stance distributions"], ["archive", "Historical evidence"],
     ["watchlist", "Watchlist"],
   ];
 
   function signalCard(item) {
-    const brief = item.brief;
-    const c = brief.coverage || {};
-    return `<button class="signal-card ${brief.decision_grade ? "" : "watchlist"}" data-route="issue" data-id="${esc(item.id)}">
-      <span class="signal-kind">${esc(cap(item.bucket))} · ${esc(brief.confidence)} confidence</span>
-      <h3>${esc(item.name)}</h3>
-      <span>
-        <p>${esc(brief.what_changed.text)}</p>
-        <p class="why"><strong>Why it matters:</strong> ${esc(brief.why_it_matters.text)}</p>
-      </span>
-      <span class="card-foot">
-        <span><span class="pill-row"><span class="pill ${brief.decision_grade ? "good" : "warn"}">${c.accepted_excerpts || 0} accepted excerpts</span><span class="pill">${c.shows || 0} shows</span></span><span class="explore">Open decision brief →</span></span>
-        ${spark(item.series_preview, brief.decision_grade ? "var(--green)" : "var(--gold)")}
-      </span>
+    const c = item.brief?.coverage || {};
+    const bucket = researchBucket(item);
+    return `<button class="signal-card ${bucket === "watchlist" ? "watchlist" : ""}" data-route="issue" data-id="${esc(item.id)}">
+      <span class="signal-kind">${esc(BUCKETS.find(([id]) => id === bucket)?.[1] || "Research issue")}</span>
+      <h3>${esc(cap(item.name))}</h3>
+      <p>${fmt(item.pulse_vol)} mentions · ${esc(recentWindow(item))}. Follow the statements and sources behind this discussion.</p>
+      <span class="card-foot"><span><span class="pill-row"><span class="pill">${fmt(c.accepted_excerpts)} excerpts</span><span class="pill">${fmt(c.shows)} shows</span></span><span class="explore">Explore the evidence →</span></span>${previewSeries(item)}</span>
     </button>`;
   }
 
   function renderBriefing() {
     navState("briefing");
-    const shown = INDEX.briefing.filter(item =>
-      state.briefingBucket === "all" || item.bucket === state.briefingBucket);
-    const decisionGrade = INDEX.briefing.filter(item => item.brief.decision_grade).length;
-    app.innerHTML = `<section class="view">
-      <div class="home-head">
-        <div><div class="eyebrow">Evidence-grounded briefing</div><h1>What changed?</h1>
-          <p class="lede">Start with movements that have real source breadth, then open the arguments, credible voices, implications, and evidence behind them.</p>
-        </div>
-        <div class="status">${decisionGrade} decision-grade · ${INDEX.briefing.length - decisionGrade} watchlist</div>
-      </div>
-      <form class="toolbar" id="brief-ask" role="search" style="grid-template-columns:minmax(0,1fr) auto">
-        <input class="search" id="brief-question" aria-label="Ask Signal Desk" placeholder="Ask: what changed on AI jobs? Where do credible voices disagree?">
-        <button class="primary" type="submit">Ask Signal Desk</button>
-      </form>
-      <div class="briefing-tabs" aria-label="Briefing sections">${BUCKETS.map(([value, label]) =>
-        `<button class="chip" data-bucket="${value}" aria-pressed="${state.briefingBucket === value}">${label}</button>`
-      ).join("")}</div>
-      <div class="section-head"><h2>${esc(BUCKETS.find(x => x[0] === state.briefingBucket)?.[1] || "Signals")}</h2><p>Ranked by evidence quality, source breadth, and movement</p></div>
-      <div class="signal-grid">${shown.length ? shown.slice(0, 16).map(signalCard).join("") : `<div class="empty">No signals meet this view’s evidence threshold.</div>`}</div>
-      ${coverageFooter()}
-    </section>`;
-    document.querySelectorAll("[data-bucket]").forEach(button => button.onclick = () => {
-      state.briefingBucket = button.dataset.bucket;
-      renderBriefing();
-    });
-    byId("brief-ask").onsubmit = event => {
-      event.preventDefault();
-      const q = byId("brief-question").value.trim();
-      if (q) route("ask", q);
-    };
+    const shown = INDEX.briefing.filter(item => state.briefingBucket === "all" || researchBucket(item) === state.briefingBucket)
+      .sort((a,b) => Number(researchBucket(a) === "watchlist") - Number(researchBucket(b) === "watchlist") || (b.pulse_vol || 0) - (a.pulse_vol || 0));
+    app.innerHTML = `<section class="view">${snapshotNote()}
+      <div class="home-head"><div><div class="eyebrow">Your research desk</div><h1>The research briefing.</h1><p class="lede">Explore the issues, compare what people say, and follow every excerpt to its source.</p></div></div>
+
+      <form class="toolbar compact-search" id="brief-ask" role="search"><input class="search" id="brief-question" aria-label="Ask Signal Desk" placeholder="Find an issue: AI jobs, agents, open models…"><button class="primary" type="submit">Find evidence</button></form>
+      <label class="mobile-bucket">Research view<select class="select" id="briefing-view">${BUCKETS.map(([value,label])=>`<option value="${value}" ${state.briefingBucket===value?"selected":""}>${label}</option>`).join("")}</select></label><div class="briefing-tabs briefing-sections" aria-label="Briefing sections">${BUCKETS.map(([value,label]) => `<button class="chip" data-bucket="${value}" aria-pressed="${state.briefingBucket===value}">${label}</button>`).join("")}</div>
+      <div class="section-head"><h2>${esc(BUCKETS.find(x=>x[0]===state.briefingBucket)?.[1] || "Research overview")}</h2><p>${shown.length} issues · ordered by recent mentions, not importance</p></div>
+      <div class="signal-grid">${shown.slice(0,6).map(signalCard).join("") || `<div class="empty">No issues match this view.</div>`}</div>
+      ${shown.length>6 ? `<details class="more-research"><summary>Explore ${shown.length-6} more issues</summary><div class="signal-grid">${shown.slice(6).map(signalCard).join("")}</div></details>` : ""}${coverageFooter()}</section>`;
+    byId("briefing-view").onchange=event=>{state.briefingBucket=event.target.value;renderBriefing();};
+    document.querySelectorAll("[data-bucket]").forEach(button => button.onclick=()=>{state.briefingBucket=button.dataset.bucket;renderBriefing();});
+    byId("brief-ask").onsubmit=event=>{event.preventDefault();const q=byId("brief-question").value.trim();if(q)route("ask",q);};
   }
 
   function issueCard(issue) {
@@ -174,10 +183,10 @@
     const c = brief.coverage || {};
     return `<button class="issue-card" data-route="issue" data-id="${esc(issue.id)}">
       <span class="issue-row"><span>
-        <span class="row-top"><span class="row-title">${esc(issue.name)}</span><span class="meta">${fmt(issue.pulse_vol)} recent</span></span>
-        <span class="pill-row"><span class="pill ${brief.decision_grade ? "good" : "warn"}">${esc(brief.confidence)} confidence</span><span class="pill">${c.shows || 0} shows</span><span class="pill">${c.accepted_excerpts || 0} evidence</span></span>
-        <span class="meta">${esc(brief.what_changed.text)}</span>
-      </span>${spark(issue.series_preview, brief.decision_grade ? "var(--green)" : "var(--gold)")}</span>
+        <span class="row-top"><span class="row-title">${esc(cap(issue.name))}</span><span class="meta">${fmt(issue.pulse_vol)} recent</span></span>
+        <span class="pill-row"><span class="pill ${brief.decision_grade ? "good" : "warn"}">Legacy evidence</span><span class="pill">${c.shows || 0} shows</span><span class="pill">${c.accepted_excerpts || 0} evidence</span></span>
+        <span class="meta">Open statements, sources, and attention history.</span>
+      </span>${previewSeries(issue)}</span>
     </button>`;
   }
 
@@ -201,28 +210,28 @@
       return matches && confidence;
     });
     rows = issueSort(rows);
-    app.innerHTML = `<section class="view">
+    app.innerHTML = `<section class="view">${snapshotNote()}
       <div class="home-head"><div><div class="eyebrow">Strategic issues</div><h1>What is at stake?</h1>
-        <p class="lede">Find the live questions, strongest arguments, credible voices, and evidence limitations behind industry change.</p></div>
+        <p class="lede">Find a question, inspect the recorded statements, and trace the evidence. Compact charts show attention within this corpus.</p></div>
       </div>
       <div class="toolbar">
         <input class="search" id="issue-search" aria-label="Search issues and aliases" placeholder="Search issues and aliases" value="${esc(state.issueQuery)}">
         <select class="select" id="issue-sort" aria-label="Sort issues">
-          <option value="strategic">Strategic priority</option><option value="rising">Fastest-rising share</option>
+          <option value="strategic">Evidence breadth</option><option value="rising">Largest recent attention share</option>
           <option value="breadth">Broadest discussion</option><option value="volume">Most discussed</option>
         </select>
         <select class="select" id="issue-confidence" aria-label="Filter by confidence">
-          <option value="all">All confidence</option><option value="high">High confidence</option>
-          <option value="medium">Medium confidence</option><option value="watchlist">Watchlist</option>
+          <option value="all">All legacy coverage tiers</option><option value="high">High legacy coverage</option>
+          <option value="medium">Medium legacy coverage</option><option value="watchlist">Watchlist</option>
         </select>
       </div>
       <div class="results-status" id="issue-status" role="status">${rows.length} issues</div>
-      <div class="list" id="issue-results">${rows.length ? rows.slice(0, 80).map(issueCard).join("") : `<div class="empty">No issue matches. Try an alias, remove a confidence filter, or browse all issues.</div>`}</div>
+      <div class="list" id="issue-results">${rows.length ? rows.map(issueCard).join("") : `<div class="empty">No issue matches. Try an alias, remove a confidence filter, or browse all issues.</div>`}</div>
       ${coverageFooter()}
     </section>`;
     byId("issue-sort").value = state.issueSort;
     byId("issue-confidence").value = state.issueConfidence;
-    byId("issue-search").oninput = event => { state.issueQuery = event.target.value; renderIssues(); byId("issue-search")?.focus(); };
+    byId("issue-search").oninput = event => { const pos=event.target.selectionStart; state.issueQuery = event.target.value; renderIssues(); byId("issue-search")?.focus(); byId("issue-search")?.setSelectionRange(pos,pos); };
     byId("issue-sort").onchange = event => { state.issueSort = event.target.value; renderIssues(); };
     byId("issue-confidence").onchange = event => { state.issueConfidence = event.target.value; renderIssues(); };
   }
@@ -251,20 +260,17 @@
   }
 
   function evidenceCard(evidence, issueId, options = {}) {
-    const url = safeUrl(evidence.source_url);
-    const personId = resolveVoice(evidence.person);
-    const hasPerson = INDEX.voices.some(person => person.id === personId);
-    return `<article class="evidence" id="ev-${esc(evidence.id)}">
-      <div class="evidence-top"><div>
-        ${hasPerson ? `<button class="person-link" data-route="voice" data-id="${esc(personId)}">${esc(evidence.person)}</button>` : `<strong>${esc(evidence.person || "Unattributed voice")}</strong>`}
-        <div class="meta">${esc(cap(evidence.attribution_type || "uncertain attribution"))} · quality ${Math.round((evidence.quality_score || 0) * 100)} · ${esc(evidence.show)} · ${esc(evidence.date)}</div>
-      </div><span class="stance ${esc(evidence.group || "neutral")}">${esc(evidence.stance || evidence.group || "neutral")}</span></div>
+    const url=safeUrl(evidence.source_url), name=excerptIdentity(evidence);
+    const personId=resolveVoice(evidence.person),hasPerson=name!=="Speaker not established"&&INDEX.voices.some(person=>person.id===personId);
+    const origin=options.origin || "issue", originId=options.originId || issueId;
+    return `<article class="evidence" id="ev-${esc(evidence.id)}"><div class="evidence-top"><div>
+      ${hasPerson?`<button class="person-link" data-route="voice" data-id="${esc(personId)}">${esc(name)}</button>`:`<strong>${esc(name)}</strong>`}
+      <div class="meta">${esc(evidence.show)} · ${esc(evidence.date)} · ${esc(cap(evidence.attribution_type || "attribution unavailable"))}</div>
+      </div><span class="stance ${esc(evidence.group || "neutral")}">${esc(evidence.stance || "unknown")}</span></div>
+      ${evidence.claim_text?`<p class="claim-summary">${esc(evidence.claim_text)}</p>`:""}
       <p class="quote">“${esc(evidence.evidence)}”</p>
       <div class="source-line"><span>${esc(evidence.episode)}</span><span class="source-actions">
-        ${options.compact ? "" : `<button class="text-button" data-route="evidence" data-id="${esc(evidence.id)}" data-tail="issue/${esc(issueId)}">Read context</button>`}
-        ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener">Original source</a>` : ""}
-      </span></div>
-    </article>`;
+      <button class="text-button" data-route="evidence" data-id="${esc(evidence.id)}" data-tail="${esc(origin)}/${esc(originId)}">Inspect excerpt</button>${url?`<a href="${esc(url)}" target="_blank" rel="noopener">Original source ↗</a>`:""}</span></div></article>`;
   }
 
   function relatedCards(issue) {
@@ -279,91 +285,47 @@
     }).join("");
   }
 
-  async function renderIssue(value, filterType = "", filterValue = "") {
+  async function renderIssue(value, filterType="", filterValue="") {
     navState("issues");
-    const id = resolveIssue(value);
-    const payload = await load("issues");
-    const issue = payload.issues[id];
-    if (!issue) return renderNotFound("issues");
-    state.selectedMonth = filterType === "month" ? filterValue : "";
-    const brief = issue.brief;
-    const isPublished = INDEX.issues.some(candidate => candidate.id === id)
-      || INDEX.briefing.some(candidate => candidate.id === id);
-    if (!isPublished) {
-      app.innerHTML = `<section class="view evidence-page">
-        ${breadcrumb([{label: "Issues", route: "issues"}, {label: cap(issue.name)}])}
-        <div class="eyebrow detail-label">Candidate issue · not published</div>
-        <h1>${esc(cap(issue.name))}</h1>
-        <p class="lede">Signal Desk has observed this label, but does not yet have enough clean, source-grounded evidence to make it a useful decision brief.</p>
-        <section class="panel" style="margin-top:24px"><h2 class="panel-title">Why this page is withheld</h2>
-          <p>${fmt(issue.pulse_vol || 0)} recent mentions were detected, but the record does not pass the decision-grade publication gate. Empty charts, generic watchpoints, and unsubstantiated relationships are intentionally suppressed.</p>
-          <div class="callout danger" style="margin-top:14px">This candidate is excluded from Briefing, Issues, and Ask until it has at least three publishable excerpts from three episodes, two shows, and two distinct voices.</div>
-          <div class="button-row" style="margin-top:16px"><button class="primary" data-route="issues">Browse researchable issues</button><button class="secondary" data-route="coverage">Inspect corpus coverage</button></div>
-        </section>${coverageFooter()}
-      </section>`;
-      return;
-    }
-    let evidence = state.evidenceMode === "accepted" ? issue.accepted_evidence : issue.uncertain_evidence;
-    if (state.selectedMonth) evidence = evidence.filter(item => item.month === state.selectedMonth);
-    const firstEvidence = evidence.slice(0, 6);
-    const remainingEvidence = evidence.slice(6);
-    const positive = issue.accepted_evidence.filter(item => item.group === "positive").slice(0, 2);
-    const negative = issue.accepted_evidence.filter(item => item.group === "negative").slice(0, 2);
-    app.innerHTML = `<section class="view">
-      ${breadcrumb([{label: "Issues", route: "issues"}, {label: cap(issue.name)}])}
-      <div class="detail-head"><div><div class="eyebrow detail-label">${esc(cap(brief.classification))} · ${esc(brief.confidence)} confidence</div>
-        <h1>${esc(cap(issue.name))}</h1><p class="lede">${esc(brief.what_changed.text)}</p></div>${coveragePill(brief, id)}</div>
-      <div class="metric-grid">
-        <div class="metric"><b>${fmt(brief.coverage.accepted_excerpts)}</b><span>accepted excerpts</span></div>
-        <div class="metric"><b>${fmt(brief.coverage.episodes)}</b><span>supporting episodes</span></div>
-        <div class="metric"><b>${fmt(brief.coverage.shows)}</b><span>independent shows</span></div>
-        <div class="metric"><b>${fmt(brief.coverage.voices)}</b><span>distinct voices</span></div>
-      </div>
-      <div class="research-grid mobile-priority">
-        <div>
-          <section class="panel brief-panel"><div class="eyebrow">Two-minute evidence brief</div><h2 class="panel-title">What changed</h2>
-            <div class="brief-stack">${sentence(brief.what_changed)}<h3>Why this qualifies</h3>${sentence(brief.why_it_matters)}<h3>Current evidence mix</h3>${brief.implications.map(item => sentence(item)).join("")}</div>
-          </section>
-          <section class="panel evidence-panel"><div class="section-head" style="margin-top:0"><h2>Best evidence</h2><p>Direct, source-grounded excerpts</p></div>
-            <div class="filter-row"><button class="chip" id="accepted-toggle" aria-pressed="${state.evidenceMode === "accepted"}">Accepted ${issue.accepted_evidence.length}</button>
-              <button class="chip" id="uncertain-toggle" aria-pressed="${state.evidenceMode === "uncertain"}">Uncertain ${issue.uncertain_evidence.length}</button>
-            </div>
-            <div class="evidence-list" style="margin-top:14px">${evidence.length ? firstEvidence.map(item => evidenceCard(item, id)).join("") : `<div class="empty">No ${state.evidenceMode} evidence matches this slice.</div>`}
-              ${remainingEvidence.length ? `<details class="evidence-more"><summary>Show ${remainingEvidence.length} more excerpts</summary><div class="evidence-list">${remainingEvidence.map(item => evidenceCard(item, id)).join("")}</div></details>` : ""}
-            </div>
-          </section>
-          <section class="panel trend-panel"><h2 class="panel-title">How attention moved</h2>${trend(issue, state.selectedMonth)}</section>
-          ${(positive.length || negative.length) ? `<section class="panel argument-panel"><h2 class="panel-title">Where the evidence differs</h2><p class="panel-sub">Claim-level stance from accepted excerpts; this is not a vote or prediction.</p>
-            <div class="argument-row"><span class="argument-label">Supportive</span><div>${positive.length ? positive.map(item => evidenceCard(item, id, {compact: true})).join("") : `<div class="empty">No accepted supportive evidence.</div>`}</div></div>
-            <div class="argument-row"><span class="argument-label">Skeptical</span><div>${negative.length ? negative.map(item => evidenceCard(item, id, {compact: true})).join("") : `<div class="empty">No accepted skeptical evidence.</div>`}</div></div>
-          </section>` : ""}
-        </div>
-        <aside>
-          <section class="panel related-panel"><h2 class="panel-title">Research leads</h2><p class="panel-sub">Co-mentioned issues are leads, not causal relationships. Typed relationships remain hidden until adjudicated.</p><div class="claim-list">${relatedCards(issue)}</div></section>
-          <section class="panel"><h2 class="panel-title">Evidence limitations</h2>
-            ${brief.decision_grade ? `<div class="callout">This issue passes the publication threshold. Coverage still reflects this podcast corpus, not the whole industry.</div>` : `<div class="callout danger">Watchlist only: the signal does not yet meet the independent episode, show, voice, and excerpt threshold.</div>`}
-          </section>
-        </aside>
-      </div>${coverageFooter()}
-    </section>`;
-    byId("accepted-toggle").onclick = () => { state.evidenceMode = "accepted"; renderIssue(id, filterType, filterValue); };
-    byId("uncertain-toggle").onclick = () => { state.evidenceMode = "uncertain"; renderIssue(id, filterType, filterValue); };
-    document.querySelectorAll("[data-month]").forEach(button => button.onclick = () => route("issue", id, ["month", button.dataset.month]));
+    const expected=location.hash,id=resolveIssue(value),payload=await load("issues");
+    if(location.hash!==expected)return;
+    const issue=payload.issues[id];if(!issue)return renderNotFound("issues");
+    state.selectedMonth=filterType==="month"?filterValue:"";
+    const newest=(a,b)=>String(b.date || "").localeCompare(String(a.date || ""));
+    const accepted=[...(issue.accepted_evidence || [])].sort(newest), uncertain=[...(issue.uncertain_evidence || [])].sort(newest);
+    const slice=rows=>state.selectedMonth?rows.filter(e=>e.month===state.selectedMonth):rows;
+    const selectedAccepted=slice(accepted),selectedUncertain=slice(uncertain);
+    const evidence=state.evidenceMode==="accepted"?selectedAccepted:selectedUncertain;
+    const named=evidence.filter(e=>excerptIdentity(e)!=="Speaker not established");
+    const showCount=new Set(evidence.map(e=>e.show)).size;
+    const positive=selectedAccepted.filter(e=>e.group==="positive"),negative=selectedAccepted.filter(e=>e.group==="negative");
+    const published=INDEX.issues.some(i=>i.id===id)||INDEX.briefing.some(i=>i.id===id);
+    if(!published)return renderNotFound("issues");
+    app.innerHTML=`<section class="view">${snapshotNote()}${breadcrumb([{label:"Issues",route:"issues"},{label:cap(issue.name)}])}
+      <div class="detail-head"><div><div class="eyebrow detail-label">Issue research · ${state.selectedMonth?esc(state.selectedMonth):"All available evidence"}</div><h1>${esc(cap(issue.name))}</h1><p class="lede">Explore the statements behind this issue, the sources they come from, and how attention changed over time.</p></div></div>
+      <div class="scope-strip"><span><strong>${evidence.length}</strong> excerpts in this view</span><span><strong>${showCount}</strong> source shows</span><span><strong>${named.length}</strong> named excerpts</span>${state.selectedMonth?`<button class="text-button" data-route="issue" data-id="${esc(id)}">Clear month filter</button>`:""}</div>
+      ${readingLinks([["issue-evidence","Statements"],["issue-history","Attention history"],["issue-positions","Stance comparison"],["issue-limits","Limitations"]])}
+      ${!published?`<div class="callout">This candidate is outside the published research index. Its limited legacy evidence is shown for inspection, not as a supported conclusion.</div>`:""}
+      <div class="research-grid"><div>
+        <section class="panel" id="issue-evidence"><div class="section-head section-head-tight"><h2>What is being said</h2><p>${state.selectedMonth?esc(state.selectedMonth):"All available dates"}</p></div>
+          <p class="panel-sub">Newest excerpts first. Attribution and source context are still under review; inspect the original material before relying on a claim.</p>
+          <div class="filter-row"><button class="chip" id="accepted-toggle" aria-pressed="${state.evidenceMode==="accepted"}">Legacy accepted · ${selectedAccepted.length}</button><button class="chip" id="uncertain-toggle" aria-pressed="${state.evidenceMode==="uncertain"}">Uncertain · ${selectedUncertain.length}</button></div>
+          <div class="evidence-list">${evidence.slice(0,3).map(e=>evidenceCard(e,id)).join("") || `<div class="empty">No excerpts match this slice. Select another month or clear the month filter.</div>`}</div>
+          ${evidence.length>3?`<details class="evidence-more"><summary>Read ${evidence.length-3} more excerpts</summary><div class="evidence-list">${evidence.slice(3).map(e=>evidenceCard(e,id)).join("")}</div></details>`:""}</section>
+        <section class="panel" id="issue-history"><h2 class="panel-title">How attention moved</h2><p class="panel-sub">Share of recorded discourse, not adoption or importance. Select a month to filter the evidence and stance comparison.</p><label class="month-picker">Evidence month<select class="select" id="issue-month"><option value="">All available months</option>${(issue.series || []).map(point=>`<option value="${esc(point.month)}" ${state.selectedMonth===point.month?"selected":""}>${esc(point.month)} · ${fmt(point.vol)} mentions</option>`).join("")}</select></label>${trend(issue,state.selectedMonth)}
+          <details class="data-table"><summary>Read monthly data</summary><div class="table-scroll"><table><caption>Issue attention within the legacy corpus</caption><thead><tr><th>Month</th><th>Mentions</th><th>Share</th><th>Smoothed</th><th>Coverage</th></tr></thead><tbody>${(issue.series || []).map(p=>`<tr><th scope="row"><button class="text-button" data-month="${esc(p.month)}">${esc(p.month)}</button></th><td>${fmt(p.vol)}</td><td>${pct(p.share)}</td><td>${pct(p.share_smooth)}</td><td>${p.low_sample?"Low sample":"Recorded"}</td></tr>`).join("")}</tbody></table></div></details></section>
+        <section class="panel" id="issue-positions"><h2 class="panel-title">How the excerpts are labeled</h2><p class="panel-sub">${state.selectedMonth?esc(state.selectedMonth):"Whole-issue sample"}. These stance labels are not adjudicated disagreements on the same proposition.</p>
+          <div class="position-columns"><div><h3>Supportive · ${positive.length}</h3>${positive.slice(0,1).map(e=>evidenceCard(e,id)).join("")||`<p class="empty">No supportive excerpt in this slice.</p>`}</div><div><h3>Skeptical / warning · ${negative.length}</h3>${negative.slice(0,1).map(e=>evidenceCard(e,id)).join("")||`<p class="empty">No skeptical excerpt in this slice.</p>`}</div></div></section>
+      </div><aside><section class="panel" id="issue-limits"><h2 class="panel-title">What this can establish</h2><p>The sample lets you inspect recorded discussion. It does not yet establish a reliable strategic conclusion or industry consensus.</p><ul class="watch-list"><li>${evidence.length-named.length} legacy excerpts in this slice lack a named speaker.</li><li>Source breadth is separate from expertise and correctness.</li><li>Implications and matched disagreements await approved claim-level synthesis.</li></ul><button class="text-button" data-route="coverage" data-tail="issue/${esc(id)}">Inspect source coverage</button></section>
+        <section class="panel"><h2 class="panel-title">Keep exploring</h2><p class="panel-sub">Co-mentioned issues are research leads, not established relationships.</p><div class="claim-list">${relatedCards(issue)}</div></section></aside></div>${coverageFooter()}</section>`;
+    byId("issue-month").onchange=event=>route("issue",id,event.target.value?["month",event.target.value]:[]);
+    byId("accepted-toggle").onclick=()=>{state.evidenceMode="accepted";renderIssue(id,filterType,filterValue);};
+    byId("uncertain-toggle").onclick=()=>{state.evidenceMode="uncertain";renderIssue(id,filterType,filterValue);};
+    document.querySelectorAll("[data-month]").forEach(button=>button.onclick=()=>route("issue",id,["month",button.dataset.month]));
   }
 
   function voiceCard(person) {
-    const reach = person.network_reach;
-    return `<button class="voice-card" data-route="voice" data-id="${esc(person.id)}">
-      <span class="row-top"><span class="row-title">${esc(person.name)}</span><span class="meta">${fmt(person.n_episodes)} episodes</span></span>
-      <span class="pill-row">
-        ${person.authority != null ? `<span class="pill good">Authority ${Number(person.authority).toFixed(2)}</span>` : `<span class="pill warn">Authority unscored</span>`}
-        ${reach ? `<span class="pill">Network reach ${Math.round(reach.score || 0)}</span>` : ""}
-        ${person.moves_count ? `<span class="pill shift">${person.moves_count} changed view</span>` : ""}
-        ${person.contrarian_count ? `<span class="pill shift">${person.contrarian_count} field disagreement</span>` : ""}
-        <span class="pill">${person.direct_evidence_count} direct excerpts</span>
-      </span>
-      <span class="meta">${esc(person.top_topics.map(item => cap(item.topic)).join(" · "))}</span>
-    </button>`;
+    return `<button class="voice-card" data-route="voice" data-id="${esc(person.id)}"><span class="row-top"><span class="row-title">${esc(person.name)}</span><span class="meta">${fmt(person.n_episodes)} episodes</span></span><span class="pill-row"><span class="pill">${fmt(person.direct_evidence_count)} recorded direct excerpts</span><span class="pill">${person.shows.length} shows</span></span><span class="meta">Explore statements, their sources, and attribution limits.</span></button>`;
   }
 
   function voiceRows() {
@@ -379,71 +341,31 @@
   function renderVoices() {
     navState("voices");
     const rows = voiceRows();
-    const views = [["influential", "Influential now"], ["rising", "Rising voices"], ["changed", "Changed minds"], ["contrarian", "Contrarians"], ["evidence", "Most evidence"]];
-    app.innerHTML = `<section class="view"><div class="home-head"><div><div class="eyebrow">Credible voices</div><h1>Who is shaping it?</h1>
-      <p class="lede">Separate direct statements from mentions, inspect expertise and evidence breadth, and follow changes and disagreements.</p></div></div>
+    const views = [["evidence", "Most direct evidence"], ["influential", "Published profiles"]];
+    app.innerHTML = `<section class="view">${snapshotNote()}<div class="home-head"><div><div class="eyebrow">Recorded voices</div><h1>Who is saying what?</h1>
+      <p class="lede">Inspect a person’s recorded statements and original sources. Frequency and network reach are not expertise.</p></div></div>
       <input class="search" id="voice-search" aria-label="Search voices, shows, and issues" placeholder="Search people, shows, or issues" value="${esc(state.voiceQuery)}">
       <div class="briefing-tabs">${views.map(([value, label]) => `<button class="chip" data-voice-view="${value}" aria-pressed="${state.voiceView === value}">${label}</button>`).join("")}</div>
       <div class="results-status" role="status">${rows.length} voices</div>
-      <div class="list">${rows.length ? rows.slice(0, 80).map(voiceCard).join("") : `<div class="empty">No voice matches this view. Clear the search or select another view.</div>`}</div>
+      <div class="list">${rows.length ? rows.map(voiceCard).join("") : `<div class="empty">No voice matches this view. Clear the search or select another view.</div>`}</div>
       ${coverageFooter()}</section>`;
-    byId("voice-search").oninput = event => { state.voiceQuery = event.target.value; renderVoices(); byId("voice-search")?.focus(); };
+    byId("voice-search").oninput = event => { const pos=event.target.selectionStart; state.voiceQuery = event.target.value; renderVoices(); byId("voice-search")?.focus(); byId("voice-search")?.setSelectionRange(pos,pos); };
     document.querySelectorAll("[data-voice-view]").forEach(button => button.onclick = () => { state.voiceView = button.dataset.voiceView; renderVoices(); });
   }
 
   async function renderVoice(value) {
-    navState("voices");
-    const id = resolveVoice(value);
-    const [voicePayload, networkPayload] = await Promise.all([load("voices"), load("network")]);
-    const person = voicePayload.voices[id];
-    if (!person) return renderNotFound("voices");
-    const isPublished = INDEX.voices.some(candidate => candidate.id === id);
-    if (!isPublished) {
-      app.innerHTML = `<section class="view evidence-page">
-        ${breadcrumb([{label: "Voices", route: "voices"}, {label: person.name}])}
-        <div class="eyebrow detail-label">Candidate voice · not published</div>
-        <h1>${esc(person.name)}</h1>
-        <p class="lede">Signal Desk has observed this identity, but does not yet have enough clean, directly attributed speech to publish a useful voice profile.</p>
-        <section class="panel" style="margin-top:24px"><h2 class="panel-title">Why this page is withheld</h2>
-          <p>${fmt(person.evidence_coverage.direct || 0)} direct excerpts across ${fmt(person.evidence_coverage.episodes || 0)} episodes passed attribution checks. Public profiles require at least two accepted excerpts from two episodes.</p>
-          <div class="callout danger" style="margin-top:14px">Third-party mentions are not substituted for this person’s own views.</div>
-          <div class="button-row" style="margin-top:16px"><button class="primary" data-route="voices">Browse researchable voices</button><button class="secondary" data-route="coverage">Inspect corpus coverage</button></div>
-        </section>${coverageFooter()}
-      </section>`;
-      return;
-    }
-    const publishedVoiceIds = new Set(INDEX.voices.map(candidate => candidate.id));
-    const connections = (networkPayload.network.people[id] || []).filter(row => publishedVoiceIds.has(row.person_id)).slice(0, 10);
-    const claims = person.top_topics.slice(0, 6);
-    const direct = person.direct_evidence.slice(0, 12);
-    app.innerHTML = `<section class="view">
-      ${breadcrumb([{label: "Voices", route: "voices"}, {label: person.name}])}
-      <div class="detail-head"><div><div class="eyebrow detail-label">Voice profile</div><h1>${esc(person.name)}</h1>
-        <p class="lede">${person.authority != null ? `Authority ${Number(person.authority).toFixed(2)} · ` : "Authority unscored · "}${person.n_episodes} episodes across ${person.shows.length} shows. Only accepted direct-speech evidence appears under “What they say.”</p></div>
-        <button class="coverage-badge" data-route="coverage" data-tail="voice/${esc(id)}">${person.evidence_coverage.direct} direct excerpts · ${person.evidence_coverage.shows} shows</button>
-      </div>
-      <div class="research-grid"><div>
-        <section class="panel"><h2 class="panel-title">Current recorded views</h2><p class="panel-sub">Recurring issues in accepted direct statements—not third-party mentions.</p>
-          <div class="claim-list">${claims.length ? claims.map(claim => {
-            const issueId = resolveIssue(claim.topic);
-            const hasIssue = INDEX.issues.some(issue => issue.id === issueId);
-            return `<button class="claim-card" ${hasIssue ? `data-route="issue" data-id="${esc(issueId)}"` : "disabled aria-disabled=\"true\""}><b>${esc(cap(claim.topic))}</b><p>${claim.count} recorded positions · ${claim.positive || 0} supportive · ${claim.negative || 0} skeptical</p></button>`;
-          }).join("") : `<div class="empty">No recurring accepted claim yet.</div>`}</div>
-        </section>
-        ${person.moves.length ? `<section class="panel"><h2 class="panel-title">Changed views</h2><div class="claim-list">${person.moves.map(move => `<button class="claim-card" data-route="issue" data-id="${esc(resolveIssue(move.topic))}"><b>${esc(cap(move.topic))}</b><p>${esc(cap(move.from))} → ${esc(cap(move.to))} · ${esc(move.from_date)} to ${esc(move.to_date)}</p></button>`).join("")}</div></section>` : ""}
-        ${person.against_field.length ? `<section class="panel"><h2 class="panel-title">Where they differ from the field</h2><div class="claim-list">${person.against_field.map(row => `<button class="claim-card" data-route="issue" data-id="${esc(resolveIssue(row.topic))}"><b>${esc(cap(row.topic))}</b><p>${esc(cap(row.stance))} while ${Math.round(row.majority_share * 100)}% of recorded field positions are ${esc(row.field_majority)}</p></button>`).join("")}</div></section>` : ""}
-        <section class="panel"><h2 class="panel-title">What they say</h2><p class="panel-sub">Accepted direct-speech evidence, deduplicated and ranked by quality.</p><div class="evidence-list">${direct.length ? direct.map(item => evidenceCard(item, item.issue_id || resolveIssue(item.topic))).join("") : `<div class="empty">No excerpt passes the direct-attribution publication gate yet.</div>`}</div></section>
-        <section class="panel"><h2 class="panel-title">What others say about them</h2><p class="panel-sub">Third-party mentions are kept separate and never counted as this person’s position.</p><div class="evidence-list">${person.mentions.slice(0, 6).map(item => evidenceCard(item, item.issue_id || resolveIssue(item.topic))).join("") || `<div class="empty">No distinct third-party mention is attached.</div>`}</div></section>
-      </div><aside>
-        <section class="panel"><h2 class="panel-title">Relevant expertise</h2><p class="panel-sub">Authority and reach are different measurements.</p>
-          ${person.authority != null ? `<div class="callout">Authority score ${Number(person.authority).toFixed(2)}. Interpret within the scored domain and available evidence.</div>` : `<div class="callout danger">No domain authority score is available. Do not infer expertise from frequency alone.</div>`}
-          ${person.network_reach ? `<p style="margin-top:12px"><strong>Network reach:</strong> ${Math.round(person.network_reach.score || 0)}/100 across ${person.network_reach.n_links || 0} co-appearance links. Connectivity is not correctness.</p>` : ""}
-        </section>
-        <section class="panel"><h2 class="panel-title">Co-appearance network</h2><p class="panel-sub">People appearing in the same episodes; not endorsements or verified relationships.</p>
-          <div class="claim-list">${connections.length ? connections.map(row => `<button class="claim-card" data-route="voice" data-id="${esc(row.person_id)}"><b>${esc(row.name)}</b><p>${fmt(row.weight)} shared-episode weight</p></button>`).join("") : `<div class="empty">No accepted connection.</div>`}</div>
-        </section>
-        <section class="panel"><h2 class="panel-title">Appears on</h2><p>${esc(person.shows.join(" · "))}</p></section>
-      </aside></div>${coverageFooter()}</section>`;
+    navState("voices");const expected=location.hash,id=resolveVoice(value),payload=await load("voices");
+    if(location.hash!==expected)return;const person=payload.voices[id];if(!person)return renderNotFound("voices");
+    if(!INDEX.voices.some(p=>p.id===id))return renderNotFound("voices");
+    const direct=[...(person.direct_evidence || [])].sort((a,b)=>String(b.date || "").localeCompare(String(a.date || ""))),mentions=person.mentions || [];
+    const renderEvidence=e=>evidenceCard(e,e.issue_id||resolveIssue(e.topic),{origin:"voice",originId:id});
+    app.innerHTML=`<section class="view">${snapshotNote()}${breadcrumb([{label:"Voices",route:"voices"},{label:person.name}])}<div class="detail-head"><div><div class="eyebrow detail-label">Voice research</div><h1>${esc(person.name)}</h1><p class="lede">Recorded statements, their original sources, and the issues they touch.</p></div></div>
+      <div class="scope-strip"><span><strong>${direct.length}</strong> direct-labeled excerpts</span><span><strong>${person.n_episodes}</strong> episodes</span><span><strong>${person.shows.length}</strong> shows</span></div>
+      ${readingLinks([["voice-statements","Statements"],["voice-mentions","Third-party mentions"],["voice-basis","Evidence basis"]])}
+      <div class="research-grid"><div><section class="panel" id="voice-statements"><h2 class="panel-title">What the record says</h2><p class="panel-sub">Legacy direct-speech labels require source-context verification. Reported speech inside an excerpt must not be mistaken for this person’s own position.</p><div class="evidence-list">${direct.slice(0,3).map(renderEvidence).join("")||`<div class="empty">No direct-labeled evidence is available.</div>`}</div>${direct.length>3?`<details class="evidence-more"><summary>Read ${direct.length-3} more statements</summary><div class="evidence-list">${direct.slice(3).map(renderEvidence).join("")}</div></details>`:""}</section>
+      <section class="panel" id="voice-mentions"><h2 class="panel-title">What others say about them</h2><p class="panel-sub">Third-party mentions are not this person’s own claims.</p><div class="evidence-list">${mentions.slice(0,3).map(renderEvidence).join("")||`<div class="empty">No separate mentions are attached.</div>`}</div>${mentions.length>3?`<details class="evidence-more"><summary>Read ${mentions.length-3} more mentions</summary><div class="evidence-list">${mentions.slice(3).map(renderEvidence).join("")}</div></details>`:""}</section></div>
+      <aside><section class="panel" id="voice-basis"><h2 class="panel-title">Evidence, not a reputation score</h2><p>A verified domain-specific expertise assessment is not available in this payload. The site does not rank this person’s correctness from popularity.</p><h3 class="subhead">Source appearances</h3><p>${esc(person.shows.join(" · "))}</p><button class="text-button" data-route="coverage" data-tail="voice/${esc(id)}">Inspect source coverage</button></section>
+      <section class="panel"><h2 class="panel-title">Issues in the record</h2><div class="claim-list">${person.top_topics.slice(0,8).map(topic=>{const issueId=resolveIssue(topic.topic),exists=INDEX.issues.some(i=>i.id===issueId);return exists?`<button class="claim-card" data-route="issue" data-id="${esc(issueId)}"><b>${esc(cap(topic.topic))}</b><p>Open issue evidence →</p></button>`:`<div class="topic-label">${esc(cap(topic.topic))}<small>Canonical issue page not yet available</small></div>`;}).join("")}</div></section></aside></div>${coverageFooter()}</section>`;
   }
 
   function scoreTokens(tokens, text) {
@@ -469,17 +391,16 @@
     navState("ask");
     const matches = q ? askMatches(q) : [];
     const best = matches[0]?.issue;
-    app.innerHTML = `<section class="view"><div class="home-head"><div><div class="eyebrow">Grounded Ask</div><h1>Ask the evidence.</h1>
-      <p class="lede">Signal Desk resolves your question to tracked issues, then answers only from cited accepted evidence. Weak matches fail closed.</p></div></div>
+    app.innerHTML = `<section class="view">${snapshotNote()}<div class="home-head"><div><div class="eyebrow">Ask · issue lookup</div><h1>Ask the evidence.</h1>
+      <p class="lede">Find the issues related to your question, then explore their evidence. A generated answer requires approved claim-level synthesis, which is not available yet.</p></div></div>
       <form class="toolbar" id="ask-form" role="search" style="grid-template-columns:minmax(0,1fr) auto">
         <input class="search" id="ask-input" aria-label="Ask Signal Desk" value="${esc(q)}" placeholder="What changed on AI jobs? Where do credible voices disagree on agents?">
         <button class="primary" type="submit">Ask</button>
       </form>
-      ${!q ? `<div class="empty">Ask about a tracked industry issue. You will get a cited brief, competing evidence, and limitations—not an uncited generated answer.</div>` :
+      ${!q ? `<div class="empty">Ask about a tracked industry issue. You will get matching research paths and their evidence limitations.</div>` :
         !best ? `<div class="callout danger">Signal Desk cannot confidently resolve that question to a tracked issue. Try a specific issue, product, company, or policy term.</div>` :
-        `<section class="panel"><div class="eyebrow">Resolved to ${esc(best.name)}</div><h2 class="panel-title">Grounded answer</h2>
-          ${sentence(best.brief.what_changed)}${sentence(best.brief.why_it_matters)}${best.brief.implications.map(item => sentence(item)).join("")}
-          <div class="button-row"><button class="primary" data-route="issue" data-id="${esc(best.id)}">Open full decision brief</button>${coveragePill(best.brief, best.id)}</div>
+        `<section class="panel"><div class="eyebrow">Resolved to ${esc(best.name)}</div><h2 class="panel-title">${esc(cap(best.name))}</h2><p class="panel-sub">This is an issue match, not an answer to your question. Read the statements and source material to assess it.</p>
+          <div class="button-row"><button class="primary" data-route="issue" data-id="${esc(best.id)}">Explore issue evidence</button>${coveragePill(best.brief, best.id)}</div>
           ${matches.length > 1 ? `<div class="section-head"><h3>Other possible meanings</h3></div><div class="claim-list">${matches.slice(1, 5).map(row => `<button class="claim-card" data-route="issue" data-id="${esc(row.issue.id)}"><b>${esc(row.issue.name)}</b><p>${esc(row.issue.brief.what_changed.text)}</p></button>`).join("")}</div>` : ""}
         </section>`}
       ${coverageFooter()}</section>`;
@@ -495,18 +416,15 @@
     return Math.max(0, Number(previous[key] || 0) - Number(current[key] || 0));
   }
 
-  function stageCard(stage, index, stages) {
-    const previous = stages[index - 1];
-    const dims = ["shows", "episodes", "segments"];
-    return `<button class="stage-card" data-stage-index="${index}" aria-pressed="false">
-      <span class="stage-head"><span><span class="eyebrow">Stage ${index + 1}</span><h3>${esc(stage.label)}</h3></span><span class="explore">Inspect losses →</span></span>
-      <span class="stage-metrics">${dims.map(key => `<span><b>${fmt(stage[key])}</b><small>${key}</small></span>`).join("")}</span>
-      <span class="conversion-grid">${dims.map(key => {
-        const prior = Number(previous?.[key] || stage[key] || 0);
-        const conversion = index ? Number(stage[key] || 0) / Math.max(prior, 1) : 1;
-        return `<span class="conversion">${key}: ${Math.round(conversion * 100)}% · loss ${fmt(stageLoss(stage, previous, key))}</span>`;
-      }).join("")}</span>
-    </button>`;
+  function stageCard(stage,index,stages) {
+    const previous=stages[index-1],dims=["shows","episodes","segments"];
+    return `<article class="stage-card"><div class="stage-head"><div><span class="eyebrow">Stage ${index+1}</span><h3>${esc(stage.label)}</h3></div></div><div class="stage-metrics">${dims.map(key=>`<span><b>${fmt(stage[key])}</b><small>${key}${key==="segments"&&index<2?" · not created yet":""}</small></span>`).join("")}</div><div class="conversion-grid">${dims.map(key=>{
+      const prior=Number(previous?.[key] || 0),current=Number(stage[key] || 0);
+      if(!previous)return `<span class="conversion">${key}: ${key==="segments"?"not applicable":"starting cohort"}</span>`;
+      if(key==="segments"&&!prior)return `<span class="conversion">segments: ${current?"created at this stage":"not applicable"}</span>`;
+      if(!prior)return `<span class="conversion">${key}: no prior denominator</span>`;
+      return `<span class="conversion">${key}: ${Math.round(current/prior*100)}% retained · ${fmt(stageLoss(stage,previous,key))} fewer</span>`;
+    }).join("")}</div></article>`;
   }
 
   function showCard(show) {
@@ -535,7 +453,12 @@
 
   async function renderCoverage(filterType = "", filterValue = "") {
     navState("coverage");
+    const expected=location.hash;
+    const draft=byId("enroll-name") ? {name:byId("enroll-name").value,rss:byId("enroll-rss").value,category:byId("enroll-category").value} : (state.enrollmentDraft || null);
+    if(draft)state.enrollmentDraft=draft;
+    const caret=byId("coverage-search")?.selectionStart;
     const payload = await load("coverage");
+    if(location.hash!==expected)return;
     const funnel = payload.funnel;
     let rows = [...funnel.shows];
     if (state.coverageGap === "needs_attention") rows = rows.filter(show => show.missing_episodes || show.transcript_quarantined || show.duplicate_source);
@@ -546,14 +469,15 @@
     const attempted = funnel.stages[1] || {};
     const missingAttempts = Math.max(0, (first.episodes || 0) - (attempted.episodes || 0));
     const duplicateCount = funnel.duplicate_source_groups?.length || 0;
-    app.innerHTML = `<section class="view">
+    app.innerHTML = `<section class="view">${snapshotNote()}
       <div class="home-head"><div><div class="eyebrow">Coverage &amp; Trust</div><h1>Where are the blind spots?</h1>
         <p class="lede">Understand what entered the corpus, what was lost, which sources need attention, and how coverage can bias a finding.</p></div>
-        <div class="status">Live server data · ${esc(new Date(payload.generated_at).toLocaleString())}</div></div>
+        <div class="status">Server snapshot · ${esc(new Date(payload.generated_at).toLocaleString())}</div></div>
+      ${filterType ? `<div class="callout scope-notice">You arrived from ${esc(cap(filterType))} research. This payload contains global coverage; an exact issue/voice-to-source coverage map is not yet published.</div>` : ""}
       <div class="callout ${missingAttempts || duplicateCount ? "danger" : ""}"><strong>Largest current risk:</strong> ${fmt(missingAttempts)} catalogued episodes have not reached transcript attempt. ${duplicateCount ? `${duplicateCount} duplicate feed group requires adjudication.` : "No duplicate feed is detected."}</div>
-      <div class="coverage-grid">${funnel.stages.map(stageCard).join("")}</div>
+      <div class="coverage-grid">${funnel.stages.map(stageCard).join("")}</div><p class="legend">Stage totals use the producer’s recorded cohorts. The roster resolves ${funnel.raw_show_count} raw feed records to ${funnel.canonical_show_count} canonical sources. Stage-specific loss membership is not supplied by this snapshot.</p>
       <div class="research-grid coverage-layout">
-        <section class="panel coverage-roster"><div class="section-head" style="margin-top:0"><div><div class="eyebrow">Canonical sources</div><h2>Needs attention</h2></div><p>${funnel.canonical_show_count} canonical · ${funnel.raw_show_count} raw records</p></div>
+        <section class="panel coverage-roster"><div class="section-head" style="margin-top:0"><div><div class="eyebrow">Canonical sources</div><h2>${state.coverageGap === "all" ? "All sources" : state.coverageGap === "duplicate" ? "Duplicate feeds" : state.coverageGap === "quarantine" ? "Quarantined sources" : "Needs attention"}</h2></div><p>${funnel.canonical_show_count} canonical · ${funnel.raw_show_count} raw records</p></div>
           <div class="toolbar" style="grid-template-columns:minmax(0,1fr) 210px">
             <input class="search" id="coverage-search" aria-label="Search coverage sources" placeholder="Search shows or categories" value="${esc(state.coverageQuery)}">
             <select class="select" id="coverage-gap" aria-label="Filter coverage gaps">
@@ -565,12 +489,12 @@
           <div class="show-list">${rows.length ? rows.map(showCard).join("") : `<div class="empty">No source matches this coverage view.</div>`}</div>
         </section>
         <aside class="source-intake"><section class="panel"><div class="eyebrow">Source intake</div><h2 class="panel-title">Add a new show</h2>
-          <p class="panel-sub">The public page creates a private request. Feed resolution, duplicate detection, and a bounded dry run remain mandatory gates.</p>
+          <p class="panel-sub">Prepare an enrollment request to copy or open in your mail app. This form does not enroll a show or send a request automatically.</p>
           <form class="enroll-form" id="enroll-form" novalidate>
             <div class="form-field"><label for="enroll-name">Show name</label><input class="search" id="enroll-name" required autocomplete="off" placeholder="Podcast name"><div class="form-error" id="name-error"></div></div>
             <div class="form-field"><label for="enroll-rss">RSS feed URL</label><input class="search" id="enroll-rss" required type="url" inputmode="url" placeholder="https://example.com/feed.xml"><div class="form-error" id="rss-error"></div></div>
             <div class="form-field"><label for="enroll-category">Category</label><select class="select" id="enroll-category"><option value="frontier_ai">Frontier AI</option><option value="enterprise_ai">Enterprise AI</option><option value="developer_tools">Developer tools</option><option value="policy_governance">Policy &amp; governance</option><option value="business_markets">Business &amp; markets</option><option value="general_technology">General technology</option></select></div>
-            <div class="form-actions"><button class="primary" type="submit">Open private request</button><button class="secondary" id="copy-enroll" type="button">Copy enrollment request</button></div>
+            <div class="form-actions"><button class="primary" type="submit">Open email draft</button><button class="secondary" id="copy-enroll" type="button">Copy enrollment request</button></div>
             <div class="results-status" id="enroll-status" role="status" aria-live="polite"></div>
           </form>
         </section>
@@ -580,13 +504,10 @@
         </section></aside>
       </div>${coverageFooter()}</section>`;
     byId("coverage-gap").value = state.coverageGap;
+    if(draft){byId("enroll-name").value=draft.name;byId("enroll-rss").value=draft.rss;byId("enroll-category").value=draft.category;}
+    if(caret!=null && state.coverageQuery){byId("coverage-search").focus();byId("coverage-search").setSelectionRange(caret,caret);}
     byId("coverage-search").oninput = event => { state.coverageQuery = event.target.value; renderCoverage(filterType, filterValue); byId("coverage-search")?.focus(); };
     byId("coverage-gap").onchange = event => { state.coverageGap = event.target.value; renderCoverage(filterType, filterValue); };
-    document.querySelectorAll("[data-stage-index]").forEach(button => button.onclick = () => {
-      state.coverageGap = Number(button.dataset.stageIndex) < 2 ? "needs_attention" : "quarantine";
-      renderCoverage();
-      setTimeout(() => document.querySelector(".coverage-roster")?.scrollIntoView({behavior: "smooth"}), 0);
-    });
     const validate = () => {
       const request = enrollmentBody();
       let ok = true;
@@ -616,7 +537,7 @@
       if (!request) return;
       const body = encodeURIComponent(request.body);
       location.href = `mailto:?subject=${encodeURIComponent(`Enroll podcast: ${request.name}`)}&body=${body}`;
-      byId("enroll-status").textContent = "Private enrollment request opened.";
+      byId("enroll-status").textContent = "Email draft opened. Nothing has been sent or enrolled.";
     };
   }
 
@@ -638,25 +559,18 @@
     return null;
   }
 
-  async function renderEvidence(id, filterType = "", filterValue = "") {
-    navState("");
-    const hit = await findEvidence(id);
-    if (!hit) return renderNotFound(filterType || "briefing");
-    const {issueId, issue, evidence} = hit;
-    const originRoute = filterType === "voice" ? "voice" : "issue";
-    const originId = filterValue || issueId;
-    const url = safeUrl(evidence.source_url);
-    app.innerHTML = `<section class="view evidence-page">
-      ${breadcrumb([{label: originRoute === "voice" ? "Voice" : "Issue", route: originRoute, id: originId}, {label: "Evidence context"}])}
-      <div class="eyebrow detail-label">${esc(cap(evidence.publishability))} evidence · ${esc(cap(evidence.attribution_type))}</div>
-      <h1>${esc(issue?.name || evidence.topic || "Evidence")}</h1>
-      <p class="lede">${esc(evidence.show)} · ${esc(evidence.episode)} · ${esc(evidence.date)}</p>
-      <div class="context-quote">${evidence.context_before ? `<span class="context-dim">…${esc(evidence.context_before)} </span>` : ""}<mark>${esc(evidence.evidence)}</mark>${evidence.context_after ? `<span class="context-dim"> ${esc(evidence.context_after)}…</span>` : ""}</div>
-      <section class="panel"><h2 class="panel-title">Evidence ledger</h2>
-        <div class="metric-grid"><div class="metric"><b>${Math.round((evidence.quality_score || 0) * 100)}</b><span>quality score</span></div><div class="metric"><b>${Math.round((evidence.attribution_confidence || 0) * 100)}%</b><span>attribution confidence</span></div><div class="metric"><b>${esc(cap(evidence.publishability))}</b><span>publication state</span></div><div class="metric"><b>${esc(cap(evidence.group || "neutral"))}</b><span>recorded stance</span></div></div>
-        ${evidence.quality_reasons?.length ? `<div class="callout danger" style="margin-top:14px">Reasons: ${esc(evidence.quality_reasons.join(" · "))}</div>` : `<div class="callout" style="margin-top:14px">No quality exception was recorded for this excerpt.</div>`}
-        <div class="button-row"><button class="secondary" data-route="issue" data-id="${esc(issueId)}">Open issue brief</button>${url ? `<a class="primary" href="${esc(url)}" target="_blank" rel="noopener">Open original source</a>` : ""}</div>
-      </section>${coverageFooter()}</section>`;
+  async function renderEvidence(id,filterType="",filterValue="") {
+    navState("");const expected=location.hash,hit=await findEvidence(id);if(location.hash!==expected)return;
+    if(!hit)return renderNotFound(filterType || "briefing");
+    const {issueId,issue,evidence}=hit,originRoute=filterType==="voice"?"voice":"issue",originId=filterValue||issueId,url=safeUrl(evidence.source_url);
+    const hasContext=Boolean(evidence.context_before || evidence.context_after);
+    app.innerHTML=`<section class="view evidence-page">${snapshotNote()}${breadcrumb([{label:originRoute==="voice"?"Voice profile":"Issue research",route:originRoute,id:originId},{label:"Evidence"}])}
+      <div class="eyebrow detail-label">Source evidence · legacy record</div><h1>${esc(cap(issue?.name || evidence.topic || "Evidence"))}</h1><p class="lede">${esc(excerptIdentity(evidence))} · ${esc(evidence.show)} · ${esc(evidence.date)}</p>
+      <p class="source-title">${esc(evidence.episode)}</p>${evidence.claim_text?`<section class="panel"><h2 class="panel-title">Extracted claim</h2><p>${esc(evidence.claim_text)}</p></section>`:""}
+      <section class="panel"><h2 class="panel-title">${hasContext?"Excerpt in context":"Recorded excerpt"}</h2><div class="context-quote">${evidence.context_before?`<span class="context-dim">${esc(evidence.context_before)} </span>`:""}<mark>${esc(evidence.evidence)}</mark>${evidence.context_after?`<span class="context-dim"> ${esc(evidence.context_after)}</span>`:""}</div>
+      ${!hasContext?`<div class="callout">Surrounding context is not included in this public record. Open the original source to verify the statement; this fragment alone may not establish its meaning.</div>`:""}<div class="button-row">${url?`<a class="primary" href="${esc(url)}" target="_blank" rel="noopener">Open original source ↗</a>`:`<p class="empty">Original source unavailable.</p>`}<button class="secondary" id="research-return" data-route="${originRoute}" data-id="${esc(originId)}">Return to ${originRoute==="voice"?"voice":"issue"}</button></div></section>
+      <details class="panel provenance"><summary>Inspect provenance and limitations</summary><dl><dt>Attribution label</dt><dd>${esc(cap(evidence.attribution_type || "unavailable"))}</dd><dt>Legacy publication label</dt><dd>${esc(cap(evidence.publishability || "unavailable"))}</dd><dt>Recorded stance</dt><dd>${esc(evidence.stance || "unknown")}</dd><dt>Evidence ID</dt><dd>${esc(evidence.id)}</dd></dl><p>These legacy labels are not a clean-corpus approval receipt or a probability that the claim is true.</p>${evidence.quality_reasons?.length?`<p>${esc(evidence.quality_reasons.join(" · "))}</p>`:""}</details>${coverageFooter()}</section>`;
+    byId("research-return").onclick=event=>{if(history.state?.origin){event.preventDefault();event.stopPropagation();history.back();}};
   }
 
   function renderNotFound(returnRoute = "briefing") {
@@ -672,6 +586,8 @@
   async function render() {
     try {
       if (!INDEX) INDEX = await load("index");
+      const expected=location.hash;
+      if(history.state?.filters)Object.assign(state,history.state.filters);
       const current = parseRoute();
       if (current.kind === "briefing") renderBriefing();
       else if (current.kind === "issues") renderIssues();
@@ -682,8 +598,10 @@
       else if (current.kind === "coverage") await renderCoverage(current.filterType, current.filterValue);
       else if (current.kind === "evidence") await renderEvidence(current.id, current.filterType, current.filterValue);
       else renderNotFound();
-      app.focus({preventScroll: true});
-      if (!history.state?.preserveScroll) window.scrollTo(0, 0);
+      if(location.hash!==expected)return;
+      app.focus({preventScroll:true});
+      const scroll=history.state?.scroll || 0;
+      requestAnimationFrame(()=>{if(location.hash!==expected)return;app.scrollTop=scroll;window.scrollTo(0,scroll);});
     } catch (error) {
       console.error(error);
       renderError(error);
@@ -691,6 +609,8 @@
   }
 
   document.addEventListener("click", event => {
+    const jump=event.target.closest("[data-jump]");
+    if(jump){byId(jump.dataset.jump)?.scrollIntoView({behavior:"smooth",block:"start"});return;}
     const target = event.target.closest("[data-route]");
     if (!target || target.disabled) return;
     event.preventDefault();
@@ -702,7 +622,10 @@
   window.setInterval(() => {
     if (parseRoute().kind !== "coverage") return;
     cache.delete("coverage");
-    renderCoverage(parseRoute().filterType, parseRoute().filterValue);
+    load("coverage").then(payload=>{
+      const status=document.querySelector(".home-head .status");
+      if(status && parseRoute().kind==="coverage")status.textContent=`Server snapshot · ${payload.generated_at}. Reopen Coverage to load updated counts.`;
+    }).catch(()=>{});
   }, 60000);
   async function boot() {
     try {
