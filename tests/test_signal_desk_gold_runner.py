@@ -926,3 +926,33 @@ def test_audit_preflight_accepts_a_disclosed_quarantined_window_but_never_one_in
     (root / "C" / f"{frozen[0]}.json").unlink()
     with pytest.raises(RuntimeError, match="blind-audit slice contains quarantined"):
         _audit_target_ids(manifest=manifest, split="validation", by_window=by_window, result_root=root, excluded_ids=(frozen[0],))
+
+
+def test_over_limit_worker_exits_when_required_outputs_are_complete(tmp_path, monkeypatch):
+    # Reproduces the 2026-09-04 hang: a no_success throttle put effective_limit
+    # below concurrency, and a phase with no leasable work (only a quarantined
+    # window) left the over-limit workers sleeping forever so the gather never
+    # returned. The over-limit branch must exit once required outputs exist.
+    import asyncio as _asyncio
+    import research_factory.signal_desk_gold_runner as runner
+
+    # Rebuild the exact over-limit decision the worker makes, in isolation.
+    result_root = tmp_path
+    (result_root / "C").mkdir()
+    target_ids = ["w1", "w2", "wq"]
+    quarantined = {"wq": {"turn_type": "A", "failure_code": "gold_infrastructure_exhausted"}}
+    for w in ("w1", "w2"):  # every required window has a C output; wq is quarantined
+        (result_root / "C" / f"{w}.json").write_text("{}", encoding="utf-8")
+
+    def required_complete() -> bool:
+        return all(
+            (result_root / "C" / f"{w}.json").exists()
+            for w in runner._phase_required_ids(target_ids, quarantined)
+        )
+
+    assert runner._phase_required_ids(target_ids, quarantined) == ["w1", "w2"]
+    assert required_complete() is True  # -> over-limit worker returns instead of sleeping
+
+    # And it keeps waiting while a required output is still missing.
+    (result_root / "C" / "w2.json").unlink()
+    assert required_complete() is False

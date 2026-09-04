@@ -1319,6 +1319,16 @@ async def _run_gold_split_phases(
 
             lock = asyncio.Lock()
 
+            completion_turn = "C" if pipeline_mode else turn_type
+
+            def _required_outputs_complete() -> bool:
+                # Every window this phase must produce (targets minus the
+                # disclosed quarantined set) already has its output.
+                return all(
+                    (result_root / completion_turn / f"{window_id}.json").exists()
+                    for window_id in _phase_required_ids(target_ids, quarantined)
+                )
+
             async def worker(worker_id: int) -> None:
                 async with CodexAppServerClient(
                     command=[binary, "app-server", "--stdio", "--strict-config"],
@@ -1327,6 +1337,15 @@ async def _run_gold_split_phases(
                     while not stop.is_set():
                         adaptive = admission_limit(budget, lane="gold")
                         if worker_id >= int(adaptive["effective_limit"]):
+                            # Throttled below this worker's index: it may not
+                            # process, but it must still exit once the phase's
+                            # required outputs are all present, or it spins on
+                            # this sleep forever after the last window is done
+                            # and the gather never returns (hang on 2026-09-04
+                            # when a no_success throttle to 6 met an empty
+                            # holdout queue).
+                            if _required_outputs_complete():
+                                return
                             await asyncio.sleep(10)
                             continue
                         async with lock:
