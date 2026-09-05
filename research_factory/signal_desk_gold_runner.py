@@ -11,6 +11,7 @@ import sqlite3
 import subprocess
 import time
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping, Sequence, Collection
 
@@ -44,7 +45,7 @@ from .signal_desk_gold_prompt_variant import system_prompts_for_variant
 from .signal_desk_rebuild_contracts import validate_output
 from .signal_desk_rebuild_dispatch import (
     acquire_lease, complete_attempt, enqueue_task, fail_attempt_semantically,
-    initialize_dispatch_schema, release_attempt_for_retry, resurrect_task,
+    initialize_dispatch_schema, LostLease, release_attempt_for_retry, resurrect_task,
 )
 from .signal_desk_rebuild_gold import (
     build_gold_packets, select_blind_gold_audit_windows, verify_frozen_manifest,
@@ -294,6 +295,39 @@ def archive_semantic_rejected_sidecar(
         return None
     sidecar_path.replace(target)
     return target
+
+
+def record_semantic_failure(
+    dispatch: sqlite3.Connection,
+    *,
+    lease: Mapping[str, Any],
+    failure_code: str,
+    failure_detail: str,
+    now: datetime | None = None,
+) -> bool:
+    """Record a semantic failure without letting a stale worker kill the fleet.
+
+    An expired lease is still safe to terminalize when its owner and generation
+    remain current; ``fail_attempt_semantically`` permits that fenced write.
+    If another worker reclaimed the attempt first, the stale result is already
+    superseded.  The reclaimer archives the old sidecar and owns the retry, so
+    this worker returns ``False`` instead of propagating ``LostLease`` through
+    ``asyncio.gather`` and cancelling unrelated workers.
+    """
+
+    try:
+        fail_attempt_semantically(
+            dispatch,
+            attempt_id=int(lease["current_attempt_id"]),
+            lease_owner=str(lease["lease_owner"]),
+            lease_generation=int(lease["lease_generation"]),
+            failure_code=failure_code,
+            failure_detail=failure_detail,
+            now=now,
+        )
+    except LostLease:
+        return False
+    return True
 
 
 def quarantined_window_ids(
@@ -1181,11 +1215,18 @@ async def _run_gold_split_phases(
                         # never accepted) and keep the other workers going
                         # instead of idling the whole campaign.
                         release_gold_admission(budget, admission_id=admission_id)
-                        fail_attempt_semantically(
-                            dispatch, attempt_id=int(lease["current_attempt_id"]),
-                            lease_owner=str(lease["lease_owner"]), lease_generation=int(lease["lease_generation"]),
-                            failure_code="gold_contract_failure", failure_detail=detail,
+                        recorded = record_semantic_failure(
+                            dispatch,
+                            lease=lease,
+                            failure_code="gold_contract_failure",
+                            failure_detail=detail,
                         )
+                        if not recorded:
+                            # The lease was reclaimed while this stale
+                            # provider result was being validated.  Do not
+                            # touch the replacement sidecar or stop the other
+                            # workers; its owner has the retry lineage.
+                            return
                         archive_semantic_rejected_sidecar(
                             sidecar_path=sidecar_path,
                             recovery_root=result_root / "recovery-sidecars" / task_turn_type,
@@ -1246,13 +1287,14 @@ async def _run_gold_split_phases(
                             infra_failures.append((time.monotonic(), window_id))
                             window_fail_count = sum(1 for _, w in infra_failures if w == window_id)
                             if action == "quarantine":
-                                fail_attempt_semantically(
-                                    dispatch, attempt_id=int(lease["current_attempt_id"]),
-                                    lease_owner=str(lease["lease_owner"]),
-                                    lease_generation=int(lease["lease_generation"]),
+                                recorded = record_semantic_failure(
+                                    dispatch,
+                                    lease=lease,
                                     failure_code="gold_infrastructure_exhausted",
                                     failure_detail=f"{detail}; {window_fail_count} real failures",
                                 )
+                                if not recorded:
+                                    return
                                 quarantined[window_id] = {
                                     "turn_type": task_turn_type,
                                     "failure_code": "gold_infrastructure_exhausted",

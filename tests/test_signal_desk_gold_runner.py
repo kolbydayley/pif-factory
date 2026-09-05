@@ -1,6 +1,7 @@
 import asyncio
 import json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -19,8 +20,10 @@ from research_factory.signal_desk_gold_runner import (
     run_gold_split_phase,
 )
 from research_factory.signal_desk_rebuild_dispatch import (
+    acquire_lease,
     complete_attempt,
     enqueue_task,
+    get_task,
     initialize_dispatch_schema,
 )
 
@@ -104,6 +107,98 @@ def test_pipeline_lease_finishes_c_then_b_before_admitting_more_a():
             output={"ok": True},
         )
     assert observed == ["C", "B", "A", "A"]
+
+
+def test_expired_contract_failure_at_concurrency_two_is_durable_and_peer_survives():
+    """A slow contract rejection must not cancel the other Gold worker."""
+
+    import research_factory.signal_desk_gold_runner as runner
+
+    t0 = datetime(2026, 9, 5, 12, 0, tzinfo=timezone.utc)
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    initialize_dispatch_schema(conn)
+    for window_id in ("w-expired-contract", "w-peer"):
+        enqueue_task(
+            conn,
+            task_key=f"dev:A:{window_id}",
+            task_type="gold_window",
+            payload={"turn_type": "A", "window_id": window_id},
+            now=t0,
+        )
+
+    # This models the two-worker pool: the first provider result arrives after
+    # its short lease expires while the second worker is still in flight.
+    expired = acquire_lease(
+        conn, lease_owner="gold-worker-0", lease_seconds=5,
+        task_key_prefix="dev:A:", now=t0,
+    )
+    peer = acquire_lease(
+        conn, lease_owner="gold-worker-1", lease_seconds=120,
+        task_key_prefix="dev:A:", now=t0,
+    )
+    assert expired is not None and peer is not None
+    assert expired["payload"]["window_id"] == "w-expired-contract"
+    assert peer["payload"]["window_id"] == "w-peer"
+
+    recorded = runner.record_semantic_failure(
+        conn,
+        lease=expired,
+        failure_code="gold_contract_failure",
+        failure_detail="EvidenceContractError: excerpt does not match declared offsets",
+        now=t0 + timedelta(seconds=6),
+    )
+
+    assert recorded is True
+    assert get_task(conn, "dev:A:w-expired-contract")["status"] == "terminal_failed"
+    # The peer's active lease is untouched; asyncio.gather would have
+    # cancelled it in the pre-fix runner when LostLease escaped this branch.
+    assert get_task(conn, "dev:A:w-peer")["status"] == "running"
+    assert conn.execute(
+        "SELECT semantic_failure_code FROM signal_desk_rebuild_attempts "
+        "WHERE id = ?", (expired["current_attempt_id"],)
+    ).fetchone()[0] == "gold_contract_failure"
+    conn.close()
+
+
+def test_stale_contract_failure_after_reclaim_is_ignored_without_fleet_error():
+    """A reclaimed generation owns the retry; stale validation is harmless."""
+
+    import research_factory.signal_desk_gold_runner as runner
+
+    t0 = datetime(2026, 9, 5, 12, 0, tzinfo=timezone.utc)
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    initialize_dispatch_schema(conn)
+    enqueue_task(
+        conn,
+        task_key="dev:A:w-reclaimed",
+        task_type="gold_window",
+        payload={"turn_type": "A", "window_id": "w-reclaimed"},
+        now=t0,
+    )
+    stale = acquire_lease(
+        conn, lease_owner="gold-worker-0", lease_seconds=5,
+        task_key_prefix="dev:A:", now=t0,
+    )
+    reclaimed = acquire_lease(
+        conn, lease_owner="gold-worker-1", lease_seconds=120,
+        task_key_prefix="dev:A:", now=t0 + timedelta(seconds=6),
+    )
+    assert stale is not None and reclaimed is not None
+    assert reclaimed["lease_generation"] > stale["lease_generation"]
+
+    assert runner.record_semantic_failure(
+        conn,
+        lease=stale,
+        failure_code="gold_contract_failure",
+        failure_detail="EvidenceContractError: stale result",
+        now=t0 + timedelta(seconds=6),
+    ) is False
+    current = get_task(conn, "dev:A:w-reclaimed")
+    assert current["status"] == "running"
+    assert current["lease_owner"] == "gold-worker-1"
+    conn.close()
 
 
 def test_ambiguous_excerpt_is_never_rebound():

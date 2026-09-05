@@ -329,6 +329,7 @@ def _assert_lease(
     lease_owner: str,
     lease_generation: int,
     now: Optional[datetime],
+    allow_expired: bool = False,
 ) -> sqlite3.Row:
     row = conn.execute(
         "SELECT * FROM signal_desk_rebuild_attempts WHERE id = ?", (attempt_id,)
@@ -339,7 +340,7 @@ def _assert_lease(
         row["status"] != "running"
         or row["lease_owner"] != lease_owner
         or int(row["lease_generation"]) != lease_generation
-        or row["lease_until"] <= _timestamp(now)
+        or (not allow_expired and row["lease_until"] <= _timestamp(now))
     ):
         raise LostLease(f"lease for attempt {attempt_id} is no longer valid")
     return row
@@ -435,7 +436,15 @@ def fail_attempt_semantically(
     failure_detail: str,
     now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
-    """Terminalize semantic work; only explicit resurrection can retry it."""
+    """Terminalize semantic work; only explicit resurrection can retry it.
+
+    A semantic result can arrive after the provider turn outlives its dispatch
+    lease.  If the attempt has not been reclaimed, the owner and generation
+    still fence the result, so recording the terminal failure is safe even
+    though the wall-clock lease has expired.  If another worker reclaimed the
+    attempt first, the normal fencing check still raises :class:`LostLease`;
+    callers must treat that as a superseded result, not as a fleet-fatal error.
+    """
 
     if not failure_code.strip():
         raise ValueError("failure_code must be non-empty")
@@ -447,6 +456,11 @@ def fail_attempt_semantically(
             lease_owner=lease_owner,
             lease_generation=lease_generation,
             now=now,
+            # The generation/owner check is the fencing boundary here.  An
+            # expired but unreclaimed lease has no competing owner and its
+            # semantic rejection must remain durable rather than crashing the
+            # worker while it tries to terminalize the attempt.
+            allow_expired=True,
         )
         conn.execute(
             """
