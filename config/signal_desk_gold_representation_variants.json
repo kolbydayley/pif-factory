@@ -55,6 +55,21 @@
       "full_transcript_surface_support_required": true,
       "semantic_fields_frozen": true,
       "provider_calls_started": false
+    },
+    {
+      "variant_id": "gold-c-full-source-provenance-v5",
+      "family_id": "signal-desk-gold-attribution-projection",
+      "family_type": "deterministic_projection",
+      "parent_variant_id": "gold-c-structured-speaker-projection-v3",
+      "changed_dimension": "full_transcript_speaker_provenance",
+      "model": null,
+      "reasoning_effort": null,
+      "scorer_version": "scorer-v6",
+      "eligible_splits": ["development"],
+      "expected_windows": 189,
+      "expected_calls": {"deterministic": 0, "gpt_5_5_wider_context_planned": 9, "started": 0},
+      "semantic_fields_frozen": true,
+      "provider_calls_started": false
     }
   ]
 }
