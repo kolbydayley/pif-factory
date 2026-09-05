@@ -6,6 +6,7 @@ import pytest
 
 from research_factory.signal_desk_gold_audit import (
     GoldAuditError,
+    evaluate_adjudicated_gold_reliability,
     evaluate_dev_audit,
     select_dev_audit_windows,
 )
@@ -261,3 +262,85 @@ def test_only_adjudicated_reversal_is_catastrophic(tmp_path):
     )
     assert resolved["catastrophic_windows"] == 1
     assert resolved["catastrophic"]["reason_counts"] == {"adjudicated_reversed_meaning": 1}
+
+
+def _raw_receipt_for_adjudicated_reliability(*, catastrophic=True, semantic=True,
+                                             oversplitting=False, powered=True):
+    return {
+        "catastrophic": {"windows": 0 if catastrophic else 1,
+                          "reason_counts": {}, "passed": catastrophic},
+        "semantic_reversal_review": {"candidate_count": 0, "unresolved_count": 0,
+                                      "complete": semantic},
+        "over_splitting": {"flagged_windows": [] if not oversplitting else [{"window_id": "w1"}],
+                           "resolved_windows": [],
+                           "requires_readjudication": oversplitting},
+        "event_power": {"event_denominator": 4, "minimum": 1, "passed": powered},
+        "agreement": {"point": 0.5, "bound": 0.2},
+        "critical_errors": {"errors": 2, "event_denominator": 4},
+    }
+
+
+def test_adjudicated_reliability_does_not_recount_gold_supported_audit_disagreements():
+    cases = [
+        {"case_id": "unmatched", "window_id": "w1", "gold_index": 0},
+        {"case_id": "paired-gold", "window_id": "w1", "gold_index": 1},
+        {"case_id": "paired-audit", "window_id": "w1", "gold_index": 2},
+    ]
+    decisions = {
+        "unmatched": "gold_supported",
+        "paired-gold": "both_supported",
+        "paired-audit": "audit_supported",
+    }
+    receipt = evaluate_adjudicated_gold_reliability(
+        gold_event_denominator=4,
+        cases=cases,
+        decisions=decisions,
+        raw_audit_receipt=_raw_receipt_for_adjudicated_reliability(),
+        input_hashes={"manifest": "m", "gold": "g", "audit": "a", "decisions": "d"},
+        agreement_minimum=0.0,
+        critical_error_maximum=1.0,
+    )
+    # The undisputed fourth event is accepted, and the two GPT-5.5-supported
+    # cases are accepted.  The independent audit's other disagreements do not
+    # re-enter this numerator.
+    assert receipt["agreement"]["supporting_events"] == 3
+    assert receipt["agreement"]["denominator"] == 4
+    assert receipt["critical_errors"]["errors"] == 1
+    assert receipt["adjudication"]["decision_counts"] == {
+        "audit_supported": 1, "both_supported": 1, "gold_supported": 1
+    }
+    assert receipt["input_hashes"]["decisions"] == "d"
+
+
+def test_adjudicated_reliability_keeps_uncertain_fail_closed_and_preserves_other_gates():
+    cases = [{"case_id": "uncertain", "window_id": "w1", "gold_index": 0}]
+    receipt = evaluate_adjudicated_gold_reliability(
+        gold_event_denominator=1,
+        cases=cases,
+        decisions={"uncertain": "uncertain"},
+        raw_audit_receipt=_raw_receipt_for_adjudicated_reliability(
+            catastrophic=False, semantic=False, oversplitting=True, powered=False,
+        ),
+        agreement_minimum=0.0,
+        critical_error_maximum=1.0,
+    )
+    assert receipt["status"] == "requires_adjudication"
+    assert receipt["passed"] is False
+    assert receipt["critical_errors"]["unresolved_events"] == 1
+    assert receipt["preserved_gates"]["catastrophic"]["passed"] is False
+    assert receipt["preserved_gates"]["over_splitting"]["requires_readjudication"] is True
+    assert receipt["preserved_gates"]["event_power"]["passed"] is False
+
+
+def test_adjudicated_reliability_rejects_duplicate_gold_event_cases():
+    cases = [
+        {"case_id": "first", "window_id": "w1", "gold_index": 0},
+        {"case_id": "second", "window_id": "w1", "gold_index": 0},
+    ]
+    with pytest.raises(GoldAuditError, match="multiple adjudication cases"):
+        evaluate_adjudicated_gold_reliability(
+            gold_event_denominator=2,
+            cases=cases,
+            decisions={"first": "gold_supported", "second": "gold_supported"},
+            raw_audit_receipt=_raw_receipt_for_adjudicated_reliability(),
+        )

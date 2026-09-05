@@ -34,6 +34,13 @@ ATOMICITY_REVIEW_VERDICTS = frozenset(
     {"valid_atomic_split", "independent_audit_over_split", "gold_c_needs_correction",
      "both_need_correction", "uncertain"}
 )
+ADJUDICATED_SUPPORTING_DECISIONS = frozenset({"gold_supported", "both_supported"})
+ADJUDICATED_UNSUPPORTED_DECISIONS = frozenset({"audit_supported", "neither_supported"})
+ADJUDICATED_DECISIONS = (
+    ADJUDICATED_SUPPORTING_DECISIONS
+    | ADJUDICATED_UNSUPPORTED_DECISIONS
+    | {"uncertain"}
+)
 _NEGATION_CANDIDATE_RE = re.compile(
     r"\b(?:not|never|no|cannot|can't|won't|isn't|aren't|doesn't|don't|didn't)\b",
     re.I,
@@ -162,6 +169,200 @@ def _load_outputs(path: Path) -> dict[str, Mapping[str, Any]]:
         item.stem: json.loads(item.read_text(encoding="utf-8"))
         for item in sorted(path.glob("*.json"))
     }
+
+
+def evaluate_adjudicated_gold_reliability(
+    *,
+    gold_event_denominator: int,
+    cases: Sequence[Mapping[str, Any]],
+    decisions: Mapping[str, Mapping[str, Any] | str],
+    raw_audit_receipt: Mapping[str, Any],
+    input_hashes: Mapping[str, str] | None = None,
+    agreement_minimum: float = AGREEMENT_MINIMUM,
+    critical_error_maximum: float = CRITICAL_ERROR_MAXIMUM,
+) -> dict[str, Any]:
+    """Score authored Gold-C against GPT-5.5-adjudicated truth.
+
+    The independent audit is a disagreement *source*, not the post-adjudication
+    reference.  A ``gold_supported`` decision therefore counts as a correct
+    Gold-C event even though the independent pass disagreed; counting it again
+    would measure auditor agreement after adjudication and falsely fail the
+    authoring gate.  ``audit_supported`` and ``neither_supported`` mean the
+    authored event is not supported by the final authority and are charged as
+    critical event errors.  ``uncertain`` is fail-closed: it is both unresolved
+    and charged as an error so it cannot disappear from the denominator.
+
+    The independent receipt remains required because source integrity,
+    catastrophic checks, semantic reversal review, and over-splitting review
+    are preserved from the same frozen audit.  This function only changes the
+    reliability/agreement numerator to be decision-aware.
+    """
+
+    if (
+        isinstance(gold_event_denominator, bool)
+        or not isinstance(gold_event_denominator, int)
+        or gold_event_denominator < 1
+    ):
+        raise GoldAuditError("gold_event_denominator must be a positive integer")
+    if not isinstance(raw_audit_receipt, Mapping):
+        raise GoldAuditError("raw_audit_receipt is required for preserved audit gates")
+
+    expected_ids = {str(case.get("case_id") or "") for case in cases}
+    if "" in expected_ids or len(expected_ids) != len(cases):
+        raise GoldAuditError("adjudication cases must have unique non-empty case_id values")
+    if set(str(case_id) for case_id in decisions) != expected_ids:
+        raise GoldAuditError(
+            f"adjudication decisions cover {len(decisions)}/{len(expected_ids)} cases"
+        )
+
+    seen_gold_events: set[tuple[str, int]] = set()
+    decision_counts: Counter[str] = Counter()
+    supporting_cases = 0
+    unsupported_cases = 0
+    unresolved_cases = 0
+    for case in cases:
+        case_id = str(case["case_id"])
+        window_id = str(case.get("window_id") or "")
+        try:
+            gold_index = int(case["gold_index"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise GoldAuditError(f"adjudication case has no valid gold_index: {case_id}") from exc
+        if not window_id or gold_index < 0:
+            raise GoldAuditError(f"adjudication case has invalid Gold-C identity: {case_id}")
+        identity = (window_id, gold_index)
+        if identity in seen_gold_events:
+            raise GoldAuditError(f"multiple adjudication cases target one Gold-C event: {case_id}")
+        seen_gold_events.add(identity)
+        raw = decisions[case_id]
+        decision = str(raw.get("decision") if isinstance(raw, Mapping) else raw)
+        if decision not in ADJUDICATED_DECISIONS:
+            raise GoldAuditError(f"invalid adjudication decision for {case_id}: {decision}")
+        decision_counts[decision] += 1
+        if decision in ADJUDICATED_SUPPORTING_DECISIONS:
+            supporting_cases += 1
+        elif decision in ADJUDICATED_UNSUPPORTED_DECISIONS:
+            unsupported_cases += 1
+        else:
+            unresolved_cases += 1
+
+    if len(seen_gold_events) > gold_event_denominator:
+        raise GoldAuditError("adjudication cases exceed the selected Gold-C event denominator")
+
+    # Every selected Gold-C event that was not disputed is accepted by the
+    # adjudicated authority.  Disputed events are accepted only for the two
+    # authority decisions explicitly supporting the authored Gold-C event.
+    unchanged_supported = gold_event_denominator - len(seen_gold_events)
+    supported_events = unchanged_supported + supporting_cases
+    critical_errors = unsupported_cases + unresolved_cases
+    agreement_gate = evaluate_rate_gate(
+        supported_events,
+        gold_event_denominator,
+        threshold=agreement_minimum,
+        direction="minimum",
+    )
+    critical_gate = evaluate_rate_gate(
+        critical_errors,
+        gold_event_denominator,
+        threshold=critical_error_maximum,
+        direction="maximum",
+    )
+
+    raw_catastrophic = raw_audit_receipt.get("catastrophic")
+    raw_semantic = raw_audit_receipt.get("semantic_reversal_review")
+    raw_over_splitting = raw_audit_receipt.get("over_splitting")
+    raw_power = raw_audit_receipt.get("event_power")
+    if not all(isinstance(value, Mapping) for value in (
+        raw_catastrophic, raw_semantic, raw_over_splitting, raw_power
+    )):
+        raise GoldAuditError("raw audit receipt is missing preserved reliability gates")
+    catastrophic_passed = bool(raw_catastrophic.get("passed"))
+    semantic_complete = bool(raw_semantic.get("complete"))
+    over_splitting_clear = not bool(raw_over_splitting.get("requires_readjudication"))
+    powered = bool(raw_power.get("passed"))
+    passed = (
+        agreement_gate["passed"]
+        and critical_gate["passed"]
+        and catastrophic_passed
+        and semantic_complete
+        and over_splitting_clear
+        and powered
+    )
+    if unresolved_cases:
+        status = "requires_adjudication"
+    else:
+        status = "passed" if passed else "failed"
+    receipt: dict[str, Any] = {
+        "schema_version": "pif_signal_desk_dev_gold_adjudicated_reliability_v1",
+        "status": status,
+        "passed": passed,
+        "final_authority": "gpt-5.5-disagreement-decisions",
+        "decision_semantics": {
+            "supporting_gold": sorted(ADJUDICATED_SUPPORTING_DECISIONS),
+            "gold_error": sorted(ADJUDICATED_UNSUPPORTED_DECISIONS),
+            "uncertain": "fail_closed_and_charged_as_critical_error",
+            "undisputed_gold_events": "accepted_after_source_validated_audit",
+        },
+        "agreement": {
+            "metric": "gold_event_agreement_with_gpt55_adjudicated_truth",
+            "supporting_events": supported_events,
+            "denominator": gold_event_denominator,
+            **agreement_gate,
+        },
+        "critical_errors": {
+            "definition": (
+                "Gold-C event rejected by GPT-5.5 as audit-supported or neither-supported, "
+                "plus unresolved GPT-5.5 decisions charged fail-closed"
+            ),
+            "errors": critical_errors,
+            "event_denominator": gold_event_denominator,
+            "adjudicator_rejected_events": unsupported_cases,
+            "unresolved_events": unresolved_cases,
+            "one_sided_wilson_ucb": critical_gate["bound"],
+            **critical_gate,
+        },
+        "adjudication": {
+            "case_count": len(cases),
+            "case_gold_event_count": len(seen_gold_events),
+            "decision_counts": dict(sorted(decision_counts.items())),
+            "supporting_cases": supporting_cases,
+            "unchanged_supported_events": unchanged_supported,
+            "unsupported_cases": unsupported_cases,
+            "unresolved_cases": unresolved_cases,
+        },
+        "preserved_gates": {
+            "catastrophic": {
+                "windows": raw_catastrophic.get("windows"),
+                "reason_counts": raw_catastrophic.get("reason_counts", {}),
+                "passed": catastrophic_passed,
+            },
+            "semantic_reversal_review": {
+                "candidate_count": raw_semantic.get("candidate_count"),
+                "unresolved_count": raw_semantic.get("unresolved_count"),
+                "complete": semantic_complete,
+            },
+            "over_splitting": {
+                "flagged_windows": raw_over_splitting.get("flagged_windows", []),
+                "resolved_windows": raw_over_splitting.get("resolved_windows", []),
+                "requires_readjudication": not over_splitting_clear,
+            },
+            "event_power": {
+                "event_denominator": raw_power.get("event_denominator"),
+                "minimum": raw_power.get("minimum"),
+                "passed": powered,
+            },
+        },
+        "raw_independent_audit": {
+            "agreement": raw_audit_receipt.get("agreement"),
+            "critical_errors": raw_audit_receipt.get("critical_errors"),
+            "note": "diagnostic only; not used as the post-adjudication truth numerator",
+        },
+        "input_hashes": dict(sorted((input_hashes or {}).items())),
+        "item_outputs_exposed": False,
+    }
+    receipt["receipt_sha256"] = hashlib.sha256(
+        json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return receipt
 
 
 def evaluate_dev_audit(
