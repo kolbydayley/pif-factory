@@ -42,6 +42,10 @@ from .signal_desk_gold_measurement import (
     A_SYSTEM_PROMPT, AUDIT_SYSTEM_PROMPT, B_SYSTEM_PROMPT, C_SYSTEM_PROMPT,
 )
 from .signal_desk_gold_prompt_variant import system_prompts_for_variant
+from .signal_desk_gold_representation import (
+    REPRESENTATION_VARIANT_ID,
+    build_speaker_map_header,
+)
 from .signal_desk_rebuild_contracts import validate_output
 from .signal_desk_rebuild_dispatch import (
     acquire_lease, complete_attempt, enqueue_task, fail_attempt_semantically,
@@ -490,7 +494,13 @@ def _import_seed_outputs(
         destination = result_root / turn_type
         destination.mkdir(parents=True, exist_ok=True)
         count = 0
-        for source in sorted(source_root.glob("*.output.json")):
+        sources = sorted(source_root.glob("*.output.json"))
+        # Frozen benchmark results use ``<window>.json`` while private
+        # authoring sidecars use ``<window>.output.json``.  Both are valid
+        # immutable seeds; the caller still supplies the explicit source root.
+        if not sources:
+            sources = sorted(source_root.glob("*.json"))
+        for source in sources:
             value = json.loads(source.read_text(encoding="utf-8"))
             if str(value["window_id"]) not in allowed_ids[turn_type]:
                 continue
@@ -819,6 +829,8 @@ async def _run_gold_split_phases(
     concurrency: int = 8, binary: str = "codex",
     foreground_admission: Callable[..., Any] = gold_model_admission,
     prompt_variant_id: str | None = None,
+    representation_variant_id: str | None = None,
+    target_window_ids: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     if not 2 <= concurrency <= 8:
         raise ValueError("gold concurrency must be 2-8")
@@ -850,8 +862,27 @@ async def _run_gold_split_phases(
         allow_sealed=split == "sealed_holdout",
     )
     by_window = {str(packet["input"]["window_id"]): packet for packet in packets}
+    if target_window_ids is not None:
+        selected_ids = {str(window_id) for window_id in target_window_ids}
+        if not selected_ids.issubset(by_window):
+            raise GoldResumePlanError("target window selection contains an ID outside the frozen split")
+        by_window = {window_id: packet for window_id, packet in by_window.items() if window_id in selected_ids}
     if not by_window:
         raise GoldResumePlanError(f"Gold split has no frozen packets: {split}")
+    representation_headers: dict[str, dict[str, Any]] = {}
+    if representation_variant_id:
+        if representation_variant_id != REPRESENTATION_VARIANT_ID:
+            raise GoldResumePlanError(f"unknown Gold representation variant: {representation_variant_id}")
+        metadata_by_id = {
+            str(row["window_id"]): row for row in manifest.get("windows", [])
+        }
+        representation_headers = {
+            window_id: build_speaker_map_header(
+                metadata=metadata_by_id[window_id],
+                window_text=str(packet["input"]["window_text"]),
+            )
+            for window_id, packet in by_window.items()
+        }
     blind_audit_ids = tuple(
         window_id
         for window_id in select_blind_gold_audit_windows(manifest)
@@ -1093,6 +1124,17 @@ async def _run_gold_split_phases(
                     return
                 reservation_id = str(reservation["reservation_id"])
                 prompt = _prompt(packet)
+                if representation_variant_id:
+                    prompt += (
+                        "\n\nDETERMINISTIC SPEAKER-MAP HEADER (representation family "
+                        f"{representation_variant_id}; do not infer beyond this map)\n"
+                        + json.dumps(
+                            representation_headers[window_id],
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                            sort_keys=True,
+                        )
+                    )
                 if task_turn_type == "C":
                     a = json.loads((result_root / "A" / f"{window_id}.json").read_text())
                     b = json.loads((result_root / "B" / f"{window_id}.json").read_text())
@@ -1497,6 +1539,17 @@ async def _run_gold_split_phases(
             "lease_seconds": 1800,
             "deadline_seconds": 900,
             "prompt_variant_id": prompt_variant_id or "gold-authoring-baseline-v2",
+            "representation_variant_id": representation_variant_id,
+            "representation_header_sha256": (
+                hashlib.sha256(
+                    json.dumps(
+                        representation_headers,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode()
+                ).hexdigest()
+                if representation_headers else None
+            ),
             "prompt_sha256": {
                 turn_type: hashlib.sha256(active_system_prompts[turn_type].encode()).hexdigest()
                 for turn_type in ("A", "B", "C", "AUDIT")
@@ -1555,6 +1608,8 @@ async def run_gold_split_phase(
     binary: str = "codex",
     foreground_admission: Callable[..., Any] = gold_model_admission,
     prompt_variant_id: str | None = None,
+    representation_variant_id: str | None = None,
+    target_window_ids: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Run one resumable Gold phase for one frozen benchmark split.
 
@@ -1587,6 +1642,8 @@ async def run_gold_split_phase(
         binary=binary,
         foreground_admission=foreground_admission,
         prompt_variant_id=prompt_variant_id,
+        representation_variant_id=representation_variant_id,
+        target_window_ids=target_window_ids,
     )
 
 

@@ -1,0 +1,25 @@
+{
+  "schema_version": "pif_signal_desk_gold_representation_registry_v1",
+  "campaign_id": "signal-desk-clean-corpus-2026-08-31",
+  "one_change_per_child": true,
+  "sealed_items_opened": false,
+  "variants": [
+    {
+      "variant_id": "gold-c-speaker-map-header-v2",
+      "family_id": "signal-desk-gold-authoring-representation",
+      "family_type": "representation",
+      "parent_variant_id": "gold-authoring-baseline-v2",
+      "changed_dimension": "representation",
+      "prompt_variant_id": "gold-authoring-baseline-v2",
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "medium",
+      "scorer_version": "scorer-v6",
+      "eligible_splits": ["development"],
+      "expected_windows": 189,
+      "expected_calls": {"A": 0, "B": 0, "C": 189, "total": 189},
+      "pilot": {"windows": 40, "minimum_baseline_events": 1000},
+      "frozen_baseline_ab_required": true,
+      "provider_calls_started": false
+    }
+  ]
+}
