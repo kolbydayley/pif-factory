@@ -192,3 +192,62 @@ def audit_gold_c(*, manifest_path: Path, result_root: Path, project_root: Path |
         output = json.loads(result.read_text(encoding="utf-8"))
         windows.append({"metadata": metadata, "text": text, "events": output.get("events", [])})
     return audit_events(windows=windows, source_name="gold_c")
+
+
+def repair_gold_c(*, manifest_path: Path, result_root: Path, output_root: Path,
+                  project_root: Path | None = None) -> dict[str, Any]:
+    """Create a resumable, append-only repaired view of Gold-C.
+
+    Structured unresolved claims are quarantined unless a frozen speaker map
+    proves an identity.  The current benchmark manifest has no per-window
+    speaker map, so this intentionally repairs zero by guessing and quarantines
+    every unresolved structured claim.  Original C files are never overwritten.
+    """
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    root = project_root or manifest_path.parent
+    output_root.mkdir(parents=True, exist_ok=True)
+    quarantined: list[dict[str, Any]] = []
+    repaired = 0
+    for metadata in manifest.get("windows", []):
+        window_id = str(metadata.get("window_id") or "")
+        source = result_root / "C" / f"{window_id}.json"
+        if not source.exists():
+            continue
+        output = json.loads(source.read_text(encoding="utf-8"))
+        kept = []
+        structure = str(metadata.get("transcript_structure") or "unknown")
+        for index, event in enumerate(output.get("events", [])):
+            unresolved = (
+                isinstance(event, Mapping)
+                and _event_is_consequential(event)
+                and event.get("attribution_type") == "unresolved_speaker"
+                and not event.get("speaker_id")
+                and structure in STRICT_STRUCTURES
+            )
+            if not unresolved:
+                kept.append(event)
+                continue
+            quarantined.append({
+                "window_id": window_id, "event_id": str(event.get("event_id") or ""),
+                "event_index": index, "transcript_structure": structure,
+                "reason": "attribution_indeterminable_no_frozen_speaker_map",
+                "evidence_sha256": hashlib.sha256(str(event.get("evidence_text") or "").encode()).hexdigest(),
+            })
+        if len(kept) != len(output.get("events", [])):
+            output = {**output, "events": kept}
+            if not kept:
+                output["window_disposition"] = "no_consequential_claims"
+            repaired += 1
+        (output_root / f"{window_id}.json").write_text(json.dumps(output, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    receipt: dict[str, Any] = {
+        "schema_version": "pif_signal_desk_attribution_repair_v1",
+        "created_at": now_iso(), "source": "gold_c", "immutable_source": True,
+        "repaired_claims": 0, "quarantined_claims": len(quarantined),
+        "quarantined_windows": len({row["window_id"] for row in quarantined}),
+        "policy": "never guess; unresolved structured attribution is quarantined",
+        "quarantine_records": quarantined,
+        "receipt_exposes_transcript_text": False,
+    }
+    receipt["receipt_sha256"] = hashlib.sha256(json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    (output_root / "../attribution-repair-receipt.json").resolve().write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return receipt
