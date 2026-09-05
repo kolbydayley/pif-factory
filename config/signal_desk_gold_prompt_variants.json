@@ -1,0 +1,32 @@
+{
+  "schema_version": "pif_signal_desk_gold_prompt_registry_v1",
+  "campaign_id": "signal-desk-clean-corpus-2026-08-31",
+  "one_change_per_child": true,
+  "sealed_items_opened": false,
+  "variants": [
+    {
+      "variant_id": "gold-c-context-adjudication-v1",
+      "family_id": "signal-desk-gold-authoring-prompt",
+      "family_type": "prompt",
+      "parent_variant_id": "gold-authoring-baseline-v2",
+      "round_number": 1,
+      "changed_dimension": "system_prompt",
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "medium",
+      "scorer_version": "scorer-v6",
+      "eligible_splits": ["development"],
+      "expected_windows": 189,
+      "expected_calls": 567,
+      "addendum_sha256": "bb8e247f9a4ab40b8baf9ab197172d357f735f226202f3c53704f16f0b78a9d5",
+      "prompt_sha256": {
+        "A": "6bb3049062846f88b77a628e8c0009b3266bd274f2a291c7c7b53ead996d6447",
+        "B": "25ad015c7da8880d1c815c54932502a65d2d50be8e9a06329d796baa6ddc66b6",
+        "C": "700b52e0488d2564a898c6d6d7f0db1d1f0456951588b0becf21a243be8aec08",
+        "AUDIT": "227fc468e85253be75beca4b9810972fad5fd8c51347288efb15c7296b99bba3"
+      },
+      "representation_unchanged": true,
+      "schema_unchanged": true,
+      "provider_calls_started": false
+    }
+  ]
+}

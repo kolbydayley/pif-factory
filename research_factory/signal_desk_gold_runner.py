@@ -40,6 +40,7 @@ from .signal_desk_gold_budget import (
 from .signal_desk_gold_measurement import (
     A_SYSTEM_PROMPT, AUDIT_SYSTEM_PROMPT, B_SYSTEM_PROMPT, C_SYSTEM_PROMPT,
 )
+from .signal_desk_gold_prompt_variant import system_prompts_for_variant
 from .signal_desk_rebuild_contracts import validate_output
 from .signal_desk_rebuild_dispatch import (
     acquire_lease, complete_attempt, enqueue_task, fail_attempt_semantically,
@@ -783,6 +784,7 @@ async def _run_gold_split_phases(
     sealed_output_root: Path | None = None,
     concurrency: int = 8, binary: str = "codex",
     foreground_admission: Callable[..., Any] = gold_model_admission,
+    prompt_variant_id: str | None = None,
 ) -> dict[str, Any]:
     if not 2 <= concurrency <= 8:
         raise ValueError("gold concurrency must be 2-8")
@@ -796,6 +798,11 @@ async def _run_gold_split_phases(
         raise GoldResumePlanError("sealed-holdout Gold requires explicit authorization")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     _require_complete_frozen_manifest(manifest)
+    active_system_prompts = (
+        system_prompts_for_variant(prompt_variant_id)
+        if prompt_variant_id
+        else SYSTEM_PROMPTS
+    )
     _secure_result_root(
         result_root,
         split=split,
@@ -1086,7 +1093,7 @@ async def _run_gold_split_phases(
                         provider_started = True
                         return await client.run_ephemeral_structured_turn(
                             model="gpt-5.6-sol", effort="medium",
-                            base_instructions=SYSTEM_PROMPTS[task_turn_type], prompt=prompt,
+                            base_instructions=active_system_prompts[task_turn_type], prompt=prompt,
                             output_schema=packet["output_schema"], cwd=project_root,
                             sidecar_path=sidecar_path, output_path=output_path,
                             timeout_seconds=900,
@@ -1447,6 +1454,11 @@ async def _run_gold_split_phases(
             "initial_adaptive_concurrency": GOLD_BOUNDS.minimum,
             "lease_seconds": 1800,
             "deadline_seconds": 900,
+            "prompt_variant_id": prompt_variant_id or "gold-authoring-baseline-v2",
+            "prompt_sha256": {
+                turn_type: hashlib.sha256(active_system_prompts[turn_type].encode()).hexdigest()
+                for turn_type in ("A", "B", "C", "AUDIT")
+            },
             "task_namespace": task_namespace,
             "dispatch_database": dispatch_database.name,
             "imported_seed_outputs": imported,
@@ -1500,6 +1512,7 @@ async def run_gold_split_phase(
     concurrency: int = 8,
     binary: str = "codex",
     foreground_admission: Callable[..., Any] = gold_model_admission,
+    prompt_variant_id: str | None = None,
 ) -> dict[str, Any]:
     """Run one resumable Gold phase for one frozen benchmark split.
 
@@ -1531,6 +1544,7 @@ async def run_gold_split_phase(
         concurrency=concurrency,
         binary=binary,
         foreground_admission=foreground_admission,
+        prompt_variant_id=prompt_variant_id,
     )
 
 
@@ -1540,6 +1554,7 @@ async def run_dev_gold(
     session_root: Path, budget_dir: Path, seed_roots: Mapping[str, Path],
     concurrency: int = 4, binary: str = "codex",
     foreground_admission: Callable[..., Any] = gold_model_admission,
+    prompt_variant_id: str | None = None,
 ) -> dict[str, Any]:
     """Backward-compatible full development A/B/C/audit runner.
 
@@ -1564,6 +1579,7 @@ async def run_dev_gold(
         concurrency=concurrency,
         binary=binary,
         foreground_admission=foreground_admission,
+        prompt_variant_id=prompt_variant_id,
     )
     legacy = {
         "schema_version": "pif_signal_desk_dev_gold_run_v1",
@@ -1576,6 +1592,8 @@ async def run_dev_gold(
         "development_atomicity_review_windows": receipt["atomicity_review_windows"],
         "development_audit_power_plan": receipt["audit_power_plan"],
         "concurrency": concurrency,
+        "prompt_variant_id": receipt.get("prompt_variant_id", "gold-authoring-baseline-v2"),
+        "prompt_sha256": receipt.get("prompt_sha256"),
         "imported_seed_outputs": receipt["imported_seed_outputs"],
         "phases": receipt["phases"],
         "wall_seconds": receipt["wall_seconds"],
