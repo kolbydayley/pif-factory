@@ -20,6 +20,24 @@
       "pilot": {"windows": 40, "minimum_baseline_events": 1000},
       "frozen_baseline_ab_required": true,
       "provider_calls_started": false
+    },
+    {
+      "variant_id": "gold-c-structured-speaker-projection-v3",
+      "family_id": "signal-desk-gold-attribution-projection",
+      "family_type": "deterministic_projection",
+      "parent_variant_id": "gold-authoring-baseline-v2",
+      "changed_dimension": "speaker_attribution_projection",
+      "model": null,
+      "reasoning_effort": null,
+      "scorer_version": "scorer-v6",
+      "eligible_splits": ["development"],
+      "expected_windows": 189,
+      "expected_calls": {"A": 0, "B": 0, "C": 0, "total": 0},
+      "pilot": {"windows": 40, "minimum_baseline_events": 1000},
+      "frozen_baseline_ab_required": true,
+      "frozen_baseline_c_required": true,
+      "semantic_fields_frozen": true,
+      "provider_calls_started": false
     }
   ]
 }
