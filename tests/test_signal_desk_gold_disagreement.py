@@ -1,7 +1,17 @@
 from research_factory.signal_desk_gold_disagreement import (
+    _event,
     build_batches,
     validate_decisions,
 )
+
+
+def test_packet_retains_actual_attribution_contract_fields():
+    event = {"speaker_id": "interviewer", "quoted_person_id": "quoted guest",
+             "mentioned_person_ids": ["third party"], "attribution_type": "third_party_mention"}
+    packet = _event(event)
+    assert packet["quoted_person_id"] == "quoted guest"
+    assert packet["mentioned_person_ids"] == ["third party"]
+    assert packet["attribution_type"] == "third_party_mention"
 
 
 def test_batches_preserve_exact_case_ids_and_hash_input() -> None:

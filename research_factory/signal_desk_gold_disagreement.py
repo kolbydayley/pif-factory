@@ -15,7 +15,7 @@ from .signal_desk_gold_audit import _load_frozen_window_text
 from .signal_desk_rebuild_contracts import validate_output
 from .signal_desk_rebuild_evaluation import diagnostic_pairs
 
-SCHEMA_VERSION = "pif_signal_desk_gold_disagreement_packet_v1"
+SCHEMA_VERSION = "pif_signal_desk_gold_disagreement_packet_v2"
 MODEL = "gpt-5.5"
 DECISIONS = ("gold_supported", "audit_supported", "both_supported", "neither_supported", "uncertain")
 DISPUTED_FIELDS = ("speaker", "speaker_role", "quoted_person", "mentioned_people", "stance")
@@ -26,7 +26,8 @@ def _event(event: Mapping[str, Any] | None) -> dict[str, Any] | None:
         return None
     return {k: event.get(k) for k in (
         "claim_text", "evidence_text", "evidence_start", "evidence_end",
-        "speaker_id", "attribution_type", "quoted_person", "mentioned_people", "stance",
+        "speaker_id", "attribution_type", "attribution_confidence", "speaker_role",
+        "quoted_person_id", "mentioned_person_ids", "quoted_person", "mentioned_people", "stance",
     )}
 
 
