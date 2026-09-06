@@ -18,6 +18,10 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 SCHEMA_VERSION = "signal_desk_v5"
 MIN_EXCERPT_CHARS = 40
+PUBLIC_ATTRIBUTION_TYPES = frozenset({
+    "direct_speech_verified",
+    "claim_attributed",
+})
 
 _CHROME_PATTERNS = (
     "subscribe listen on", "privacy terms", "discussion about this video",
@@ -149,8 +153,18 @@ def classify_evidence(raw: dict[str, Any], alleged_person: str | None = None
         reasons.append("missing_original_source")
 
     if role == "source_excerpt":
-        attribution_type = "claim_attributed" if person != "Unattributed voice" \
-            else "source_excerpt"
+        # Topic excerpts used to bypass the speaker gate and were published as
+        # ``Unattributed voice``.  That makes a fragment look like a claim by
+        # nobody (and makes it impossible to audit who actually said it).
+        # Keep the row in the private quality ledger, but only allow it into a
+        # public evidence list when the extraction explicitly resolved the
+        # claim's speaker.
+        if person != "Unattributed voice" and speaker_status in {
+                "direct", "claim_attributed"}:
+            attribution_type = "claim_attributed"
+        else:
+            attribution_type = "unresolved_voice"
+            reasons.append("missing_speaker_assignment")
     elif role == "organization":
         attribution_type = "mentioned_organization"
         reasons.append("organization_not_speaker")
@@ -198,6 +212,25 @@ def classify_evidence(raw: dict[str, Any], alleged_person: str | None = None
         ).hexdigest()[:16],
     })
     return item
+
+
+def is_public_evidence(item: dict[str, Any]) -> bool:
+    """Return whether an evidence row is safe to put in a public payload.
+
+    This is intentionally stricter than the internal evidence classifier.  A
+    build may retain uncertain/quarantined rows for adjudication, but public
+    pages must never carry unresolved speakers, placeholder identities,
+    third-party mentions, or invalid source links.
+    """
+    person = canonical_person_name(item.get("person"))
+    return (
+        item.get("publishability") == "accepted"
+        and item.get("attribution_type") in PUBLIC_ATTRIBUTION_TYPES
+        and person != "Unattributed voice"
+        and is_primary_person(person)
+        and len(str(item.get("evidence") or "")) >= MIN_EXCERPT_CHARS
+        and str(item.get("source_url") or "").startswith(("http://", "https://"))
+    )
 
 
 def _citation_sentence(text: str, evidence: list[dict[str, Any]]) -> dict[str, Any]:
@@ -329,10 +362,17 @@ def prepare_topics(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]
             },
             e["quality_score"], e.get("date", "")),
                       reverse=True)
-        item["accepted_evidence"] = [e for e in evidence
-                                     if e["publishability"] == "accepted"]
-        item["uncertain_evidence"] = [e for e in evidence
-                                      if e["publishability"] != "accepted"]
+        public_evidence = [e for e in evidence if is_public_evidence(e)]
+        withheld = [e for e in evidence if not is_public_evidence(e)]
+        item["accepted_evidence"] = public_evidence
+        # Do not ship rejected rows in the static payload.  Keeping only the
+        # count preserves a useful limitation signal without making a public
+        # route into the quarantine ledger.
+        item["uncertain_evidence"] = []
+        item["withheld_evidence_count"] = len(withheld)
+        item["quarantined_evidence_count"] = sum(
+            e.get("publishability") == "quarantined" for e in withheld
+        )
         item["evidence"] = item["accepted_evidence"]
         signal = signals.get(name)
         if signal is None and len(item["accepted_evidence"]) >= 3:
@@ -379,6 +419,7 @@ def prepare_people(data: dict[str, Any], topic_aliases: dict[str, str]
         person_id = stable_id("person", name)
         evidence: list[dict[str, Any]] = []
         mentions: list[dict[str, Any]] = []
+        withheld_mentions = 0
         shows: set[str] = set()
         authority = None
         trust = None
@@ -394,11 +435,15 @@ def prepare_people(data: dict[str, Any], topic_aliases: dict[str, str]
                 classified = classify_evidence({**ev, "person": name}, name)
                 topic_key = str(ev.get("topic") or "").casefold()
                 classified["issue_id"] = topic_aliases.get(topic_key)
-                if classified["attribution_type"] == "direct_speech_verified" \
-                        and classified["publishability"] == "accepted":
+                if is_public_evidence(classified) \
+                        and classified["attribution_type"] == "direct_speech_verified":
                     evidence.append(classified)
+                # Mention records are retained only in the private source
+                # ledger.  A public profile must not expose an unresolved
+                # speaker or let a third-party reference be mistaken for the
+                # person's own statement.
                 else:
-                    mentions.append(classified)
+                    withheld_mentions += 1
         evidence = list({e["deduplication_key"]: e for e in evidence}.values())
         mentions = list({e["deduplication_key"]: e for e in mentions}.values())
         evidence.sort(key=lambda e: (e["quality_score"], e.get("date", "")),
@@ -447,7 +492,8 @@ def prepare_people(data: dict[str, Any], topic_aliases: dict[str, str]
             "n_episodes": episode_count, "shows": sorted(shows),
             "top_topics": topic_rows[:8],
             "moves": moves[-8:], "against_field": [],
-            "direct_evidence": evidence[:40], "mentions": mentions[:40],
+            "direct_evidence": evidence[:40], "mentions": [],
+            "withheld_evidence_count": withheld_mentions,
             "evidence_coverage": {
                 "direct": len(evidence), "mentions": len(mentions),
                 "shows": len({e.get("show") for e in evidence if e.get("show")}),
@@ -540,6 +586,64 @@ def prepare_funnel(raw: dict[str, Any]) -> dict[str, Any]:
     return funnel
 
 
+def validate_public_payloads(payloads: dict[str, dict[str, Any]]) -> None:
+    """Fail the build if any non-publishable evidence crosses the boundary.
+
+    This is deliberately an invariant check rather than a best-effort scrub:
+    if a future producer adds a new evidence array or bypasses
+    ``prepare_topics``/``prepare_people``, the nightly build must fail closed
+    instead of silently publishing bad attribution.
+    """
+    violations: list[str] = []
+
+    def check(rows: Any, location: str) -> None:
+        if rows is None:
+            return
+        if not isinstance(rows, list):
+            violations.append(f"{location}: evidence collection is not a list")
+            return
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict) or not is_public_evidence(row):
+                violations.append(f"{location}[{index}]")
+
+    issues = payloads.get("issues", {}).get("issues", {})
+    for issue_id, issue in issues.items():
+        check(issue.get("accepted_evidence"), f"issue:{issue_id}.accepted_evidence")
+        check(issue.get("evidence"), f"issue:{issue_id}.evidence")
+        if issue.get("uncertain_evidence"):
+            violations.append(f"issue:{issue_id}.uncertain_evidence")
+        if issue.get("mentions"):
+            violations.append(f"issue:{issue_id}.mentions")
+
+    voices = payloads.get("voices", {}).get("voices", {})
+    for person_id, person in voices.items():
+        check(person.get("direct_evidence"), f"voice:{person_id}.direct_evidence")
+        if person.get("mentions"):
+            violations.append(f"voice:{person_id}.mentions")
+
+    # Every brief citation must resolve to a public accepted evidence row.
+    evidence_ids = {
+        row.get("id")
+        for issue in issues.values()
+        for row in issue.get("accepted_evidence", [])
+        if isinstance(row, dict)
+    }
+    for issue_id, issue in issues.items():
+        for field in ("what_changed", "why_it_matters"):
+            for citation in (issue.get("brief", {}).get(field, {})
+                             .get("citations", [])):
+                if citation not in evidence_ids:
+                    violations.append(f"issue:{issue_id}.{field}.citation:{citation}")
+
+    if violations:
+        sample = ", ".join(violations[:8])
+        suffix = "…" if len(violations) > 8 else ""
+        raise ValueError(
+            "public Signal Desk payload failed evidence safety gate: "
+            f"{len(violations)} violation(s): {sample}{suffix}"
+        )
+
+
 def build_payloads(data: dict[str, Any], diff: dict[str, Any] | None = None
                   ) -> dict[str, dict[str, Any]]:
     topics, topic_aliases = prepare_topics(data)
@@ -610,7 +714,7 @@ def build_payloads(data: dict[str, Any], diff: dict[str, Any] | None = None
         "data_through": data.get("data_through"),
         "latest_episode": data.get("latest_episode"),
     }
-    return {
+    payloads = {
         "index": {**common, "corpus": data.get("corpus", {}),
                   "months": data.get("months", []),
                   "month_totals": data.get("month_totals", []),
@@ -623,3 +727,5 @@ def build_payloads(data: dict[str, Any], diff: dict[str, Any] | None = None
         "network": {**common, "network": network},
         "coverage": {**common, "funnel": funnel},
     }
+    validate_public_payloads(payloads)
+    return payloads

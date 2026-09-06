@@ -57,13 +57,14 @@ def test_grounded_direct_speech_can_be_accepted():
     assert row["quality_score"] > 0.7
 
 
-def test_clean_issue_source_excerpt_can_publish_without_person_attribution():
+def test_issue_source_excerpt_without_speaker_is_withheld():
     row = classify_evidence(evidence(
         role="source_excerpt", person="Unattributed voice",
         speaker_attribution={"status": "unresolved", "confidence": 0.9},
     ))
-    assert row["attribution_type"] == "source_excerpt"
-    assert row["publishability"] == "accepted"
+    assert row["attribution_type"] == "unresolved_voice"
+    assert row["publishability"] != "accepted"
+    assert "missing_speaker_assignment" in row["quality_reasons"]
 
 
 def test_unverified_speaker_fails_closed():
@@ -151,7 +152,7 @@ def test_build_payloads_filters_operational_topics_and_cites_brief():
         "agent economics"
     ]
     assert {item["name"] for item in payloads["index"]["briefing"]} == {
-        "agent economics", "agent labor"
+        "agent economics"
     }
     brief = payloads["index"]["briefing"][0]["brief"]
     assert brief["decision_grade"] is True
