@@ -183,12 +183,16 @@ def audit_gold_c(*, manifest_path: Path, result_root: Path, project_root: Path |
     root = project_root or manifest_path.parent
     windows = []
     for metadata in manifest.get("windows", []):
+        # This is the development attribution gate. A full frozen manifest also
+        # lists sealed splits; never open their text, even if outputs coexist.
+        if metadata.get("split", "development") != "development":
+            continue
         window_id = str(metadata.get("window_id") or "")
+        result = result_root / "C" / f"{window_id}.json"
+        if not result.exists(): continue
         path = Path(str(metadata.get("transcript_path") or ""))
         if not path.is_absolute(): path = root / path
         text = path.read_text(encoding="utf-8")[int(metadata["start_char"]):int(metadata["end_char"])]
-        result = result_root / "C" / f"{window_id}.json"
-        if not result.exists(): continue
         output = json.loads(result.read_text(encoding="utf-8"))
         windows.append({"metadata": metadata, "text": text, "events": output.get("events", [])})
     return audit_events(windows=windows, source_name="gold_c")
@@ -209,6 +213,8 @@ def repair_gold_c(*, manifest_path: Path, result_root: Path, output_root: Path,
     quarantined: list[dict[str, Any]] = []
     repaired = 0
     for metadata in manifest.get("windows", []):
+        if metadata.get("split", "development") != "development":
+            continue
         window_id = str(metadata.get("window_id") or "")
         source = result_root / "C" / f"{window_id}.json"
         if not source.exists():
