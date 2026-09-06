@@ -27,6 +27,7 @@ R = G / "development-source-reauthor-v1"
 A = R / "fresh-dev-audit-v1"
 OUT = R / "corrected-review-pilot-v1"
 CONTRACT_VERSION = 1
+FULL_REVIEW = False
 FIELD_NAMES = {"speaker": "speaker_id", "speaker_role": "attribution_type",
                "quoted_person": "quoted_person_id", "mentioned_people": "mentioned_person_ids",
                "stance": "stance", "unsupported_attribution": "attribution_support",
@@ -72,6 +73,32 @@ def wider_context(row):
             "offset_rule": "candidate evidence offsets remain relative to original transcript_window"}
 
 
+def packet_cases(packet):
+    return packet["cases"] if "cases" in packet else [packet["case"]]
+
+
+def batch_packets(packets):
+    """Same source/context only, maximum four independent case decisions per call."""
+    import tiktoken
+    enc = tiktoken.get_encoding("o200k_base")
+    groups = []
+    for packet in packets:
+        common = {k: v for k, v in packet.items() if k not in {"case", "packet_sha256"}}
+        candidate = {**common, "cases": [packet["case"]]}
+        if groups:
+            previous = {k: v for k, v in groups[-1].items() if k != "cases"}
+            trial = {**common, "cases": groups[-1]["cases"] + [packet["case"]]}
+            if previous == common and len(trial["cases"]) <= 4 and len(enc.encode(SYSTEM + json.dumps(trial, ensure_ascii=False))) + 1500 <= 12000:
+                groups[-1] = trial
+                continue
+        if len(enc.encode(SYSTEM + json.dumps(candidate, ensure_ascii=False))) + 1500 > 12000:
+            raise ValueError("batch framing exceeded input bound")
+        groups.append(candidate)
+    for group in groups:
+        group["packet_sha256"] = _sha_json(group)
+    return groups
+
+
 def prepare():
     manifest_path = R / "merged-manifest.json"
     manifest = json.loads(manifest_path.read_text())
@@ -92,8 +119,11 @@ def prepare():
             shows.add(show)
         if len(chosen) == 6:
             break
+    if FULL_REVIEW:
+        chosen = sorted(cases, key=lambda c: (c["window_id"], c["case_id"]))
     OUT.mkdir(parents=True, exist_ok=True, mode=0o700)
     packets = []
+    oversized = []
     for case in chosen:
         row = metadata[case["window_id"]]
         packet = {"case": canonical_fields(case) if CONTRACT_VERSION == 2 else case, "transcript_structure": row["transcript_structure"],
@@ -113,11 +143,22 @@ def prepare():
         else:
             input_tokens = len(encoded_input.encode())
         if input_tokens > 12000:
+            if FULL_REVIEW:
+                oversized.append({"case_id": case["case_id"], "window_id": case["window_id"],
+                                  "input_tokens_with_allowance": input_tokens,
+                                  "reason": "wider_context_requires_bounded_repack_before_review"})
+                continue
             raise ValueError("pilot packet exceeds conservative 12k input-token bound")
         packet["packet_sha256"] = _sha_json(packet)
         immutable_json(OUT / f"{packet['packet_sha256']}.packet.json", packet)
         packets.append(packet)
-    plan = {"contract_version": CONTRACT_VERSION, "pilot_calls": len(packets), "full_disagreement_cases": len(cases),
+    eligible_case_count = len(packets)
+    if FULL_REVIEW:
+        packets = batch_packets(packets)
+        for packet in packets:
+            immutable_json(OUT / f"{packet['packet_sha256']}.packet.json", packet)
+    plan = {"contract_version": CONTRACT_VERSION, "full_review": FULL_REVIEW, "eligible_case_count": eligible_case_count,
+            "pilot_calls": len(packets), "full_disagreement_cases": len(cases), "oversized_pending": oversized,
             "case_families": dict(Counter(c["kind"] for c in cases)),
             "field_flags": dict(Counter(f for c in cases for f in c["fields"])),
             "packet_digests": [p["packet_sha256"] for p in packets], "model": "gpt-5.5",
@@ -136,9 +177,9 @@ async def execute(packets):
                 digest = packet["packet_sha256"]
                 output = OUT / f"{digest}.decision.json"
                 if output.exists():
-                    validate_decisions(json.loads(output.read_text()), [packet["case"]["case_id"]])
+                    validate_decisions(json.loads(output.read_text()), [c["case_id"] for c in packet_cases(packet)])
                     continue
-                key = f"corrected-review-pilot-v{CONTRACT_VERSION}:" + digest
+                key = f"corrected-review-{'full' if FULL_REVIEW else 'pilot'}-v{CONTRACT_VERSION}:" + digest
                 reservation = reserve_call(db, task_key=key, budget=budget)
                 if reservation.get("existing"):
                     raise RuntimeError("existing reservation without decision; inspect sidecar before any retry")
@@ -151,9 +192,10 @@ async def execute(packets):
                     usage = result.usage.total_tokens if result.usage else None
                     if not result.status_ok or result.output is None:
                         raise RuntimeError(result.error_class or result.status)
-                    decisions = validate_decisions(result.output, [packet["case"]["case_id"]])
-                    if packet["case"]["audit"] is None and any(d["decision"] in {"audit_supported", "both_supported"} for d in decisions.values()):
-                        raise ValueError("judge supported a nonexistent audit candidate")
+                    decisions = validate_decisions(result.output, [c["case_id"] for c in packet_cases(packet)])
+                    for case in packet_cases(packet):
+                        if case["audit"] is None and decisions[case["case_id"]]["decision"] in {"audit_supported", "both_supported"}:
+                            raise ValueError("judge supported a nonexistent audit candidate")
                     immutable_json(output, result.output)
                 finally:
                     settle_call(db, reservation_id=reservation["reservation_id"], task_key=key, actual_tokens=usage)
@@ -163,15 +205,18 @@ async def execute(packets):
     for packet in packets:
         output = json.loads((OUT / f"{packet['packet_sha256']}.decision.json").read_text())
         counts.update(d["decision"] for d in output["decisions"])
-    immutable_json(OUT / "receipt.json", {"complete": True, "pilot_only": True,
+    plan = json.loads((OUT / "plan.json").read_text())
+    immutable_json(OUT / "receipt.json", {"complete": not plan["oversized_pending"], "pilot_only": not FULL_REVIEW,
+        "reviewed_cases": sum(len(packet_cases(p)) for p in packets), "oversized_pending": len(plan["oversized_pending"]),
         "decisions": dict(counts), "gold_accepted": False, "next": "inspect rationale and wider-context needs before expanding"})
-    print(json.dumps({"pilot_complete": True, "decisions": dict(counts), "gold_accepted": False}))
+    print(json.dumps({"eligible_review_complete": True, "all_cases_complete": not plan["oversized_pending"], "decisions": dict(counts), "gold_accepted": False}))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--contract-v2", action="store_true")
+    parser.add_argument("--full", action="store_true", help="review all corrected disagreement cases")
     args = parser.parse_args()
     if args.contract_v2:
         CONTRACT_VERSION = 2
@@ -191,7 +236,12 @@ wider retry, say uncertain and explicitly state that wider context was reviewed.
 Your rationale MUST identify the actual disputed field and its competing values; never declare
 both_supported because a nonexistent field is null. Both_supported requires BOTH actual
 disputed values to be defensible. Do not change factual claims to make labels agree."""
+    if args.full:
+        if not args.contract_v2:
+            parser.error("full review requires the corrected v2 contract")
+        FULL_REVIEW = True
+        OUT = R / "corrected-review-full-batched-v2"
     packets, plan = prepare()
-    print(json.dumps(plan), flush=True)
+    print(json.dumps({k: v for k, v in plan.items() if k not in {"packet_digests", "oversized_pending"}}), flush=True)
     if args.execute:
         asyncio.run(execute(packets))

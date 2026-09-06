@@ -1,4 +1,4 @@
-from scripts.pif_signal_desk_gold_review_corrected import canonical_fields
+from scripts.pif_signal_desk_gold_review_corrected import canonical_fields, batch_packets, packet_cases
 
 
 def test_internal_role_maps_to_real_attribution_field_not_occupation():
@@ -17,3 +17,12 @@ def test_internal_role_maps_to_real_attribution_field_not_occupation():
 def test_unmatched_candidate_remains_absent():
     result = canonical_fields({"fields": ["event_presence"], "gold": {}, "audit": None})
     assert result["audit"] is None
+
+
+def test_batches_preserve_exact_cases_and_never_mix_source_context():
+    packets = [{"case": {"case_id": str(i)}, "transcript_window": "same source", "packet_sha256": str(i)} for i in range(9)]
+    packets.append({"case": {"case_id": "other"}, "transcript_window": "different source", "packet_sha256": "other"})
+    batches = batch_packets(packets)
+    assert [len(packet_cases(p)) for p in batches] == [4, 4, 1, 1]
+    assert [c["case_id"] for p in batches for c in packet_cases(p)] == [str(i) for i in range(9)] + ["other"]
+    assert all(len(p["packet_sha256"]) == 64 for p in batches)
