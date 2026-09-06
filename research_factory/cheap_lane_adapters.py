@@ -376,7 +376,8 @@ ZAI_HTTP_MAX_TOKENS = 8000
 
 def draft_glm_http(prompt: str, *, timeout: int = 600,
                    model: str = "glm-5.2",
-                   max_429_retries: int = 3) -> Dict[str, Any]:
+                   max_429_retries: int = 3,
+                   json_mode: bool = False) -> Dict[str, Any]:
     """One GLM drafting call DIRECTLY against the z.ai coding-plan endpoint.
 
     Same subscription billing as the opencode CLI route (the CLI wraps this
@@ -406,6 +407,7 @@ def draft_glm_http(prompt: str, *, timeout: int = 600,
         # labels (measured 2026-08-26). Different config than the CLI route
         # qualified with, so the HTTP transport carries its own judged gate.
         "thinking": {"type": "disabled"},
+        **({"response_format": {"type": "json_object"}} if json_mode else {}),
         "messages": [{"role": "user", "content": prompt}],
     }).encode()
     started = time.monotonic()
