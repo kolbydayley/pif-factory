@@ -5,6 +5,8 @@ import argparse
 import asyncio
 from collections import Counter
 import json
+import hashlib
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -24,6 +26,11 @@ G = ROOT / "work/signal-desk-rebuild/gold-authoring-v2"
 R = G / "development-source-reauthor-v1"
 A = R / "fresh-dev-audit-v1"
 OUT = R / "corrected-review-pilot-v1"
+CONTRACT_VERSION = 1
+FIELD_NAMES = {"speaker": "speaker_id", "speaker_role": "attribution_type",
+               "quoted_person": "quoted_person_id", "mentioned_people": "mentioned_person_ids",
+               "stance": "stance", "unsupported_attribution": "attribution_support",
+               "event_presence": "event_presence"}
 SYSTEM = """You are GPT-5.5, final adjudication authority for a private podcast gold reliability audit.
 Judge the exact disputed event fields against the frozen transcript, not whether the independent
 audit happens to agree. Gold and audit can both be wrong. Distinguish speaker_id, quoted_person_id,
@@ -37,6 +44,32 @@ omitted it. Audit_supported requires an actual audit candidate. Corrections may 
 fields and values, never fabricate evidence. Return one decision per exact case_id, attest gpt-5.5.
 Rationale must distinguish direct source evidence from missing context. No acceptance is automatic:
 this is a diagnostic pilot, and uncertain cases must undergo wider-context review before rejection."""
+
+
+def canonical_fields(case):
+    result = json.loads(json.dumps(case))
+    result["fields"] = [FIELD_NAMES[f] for f in case["fields"]]
+    for key in ("gold", "audit"):
+        if result[key] is not None:
+            for unused in ("speaker_role", "quoted_person", "mentioned_people"):
+                result[key].pop(unused, None)
+    return result
+
+
+def wider_context(row):
+    path = Path(row["transcript_path"])
+    text = (path if path.is_absolute() else ROOT / path).read_text()
+    if hashlib.sha256(text.encode()).hexdigest() != row["transcript_sha256"]:
+        raise ValueError("wider transcript hash mismatch")
+    start, end = int(row["start_char"]), int(row["end_char"])
+    marks = [m.start() for m in re.finditer(r"(?m)(?:^|\n)\s*[A-Za-z][A-Za-z .,'’-]{1,65}:\s*", text)]
+    before = [m for m in marks if m < start]
+    after = [m for m in marks if m >= end]
+    lo = before[-3] if len(before) >= 3 else 0
+    hi = after[3] if len(after) >= 4 else len(text)
+    return {"start_char": lo, "end_char": hi, "original_window_start_char": start,
+            "text": text[lo:hi], "transcript_sha256": row["transcript_sha256"],
+            "offset_rule": "candidate evidence offsets remain relative to original transcript_window"}
 
 
 def prepare():
@@ -63,17 +96,28 @@ def prepare():
     packets = []
     for case in chosen:
         row = metadata[case["window_id"]]
-        packet = {"case": case, "transcript_structure": row["transcript_structure"],
+        packet = {"case": canonical_fields(case) if CONTRACT_VERSION == 2 else case, "transcript_structure": row["transcript_structure"],
                   "transcript_window": _load_frozen_window_text(row, project_root=ROOT),
                   "text_sha256": row["text_sha256"], "manifest_sha256": manifest["manifest_sha256"],
                   "audit_receipt_sha256": audit["receipt_sha256"], "system_sha256": _sha_json(SYSTEM)}
+        if CONTRACT_VERSION == 2:
+            packet["field_contract"] = {"attribution_type": "speech attribution class, NEVER occupation or professional role",
+                "speaker_id": "person who spoke, not a mentioned person", "attribution_support": "identity is supported by supplied source context"}
+            if "speaker" in case["fields"] or "unsupported_attribution" in case["fields"]:
+                packet["wider_context_retry"] = wider_context(row)
         # UTF-8 bytes are a deliberately conservative token upper bound, including system text.
-        if len((SYSTEM + json.dumps(packet, ensure_ascii=False)).encode()) > 12000:
+        encoded_input = SYSTEM + json.dumps(packet, ensure_ascii=False)
+        if CONTRACT_VERSION == 2:
+            import tiktoken
+            input_tokens = len(tiktoken.get_encoding("o200k_base").encode(encoded_input)) + 1500
+        else:
+            input_tokens = len(encoded_input.encode())
+        if input_tokens > 12000:
             raise ValueError("pilot packet exceeds conservative 12k input-token bound")
         packet["packet_sha256"] = _sha_json(packet)
         immutable_json(OUT / f"{packet['packet_sha256']}.packet.json", packet)
         packets.append(packet)
-    plan = {"pilot_calls": len(packets), "full_disagreement_cases": len(cases),
+    plan = {"contract_version": CONTRACT_VERSION, "pilot_calls": len(packets), "full_disagreement_cases": len(cases),
             "case_families": dict(Counter(c["kind"] for c in cases)),
             "field_flags": dict(Counter(f for c in cases for f in c["fields"])),
             "packet_digests": [p["packet_sha256"] for p in packets], "model": "gpt-5.5",
@@ -94,7 +138,7 @@ async def execute(packets):
                 if output.exists():
                     validate_decisions(json.loads(output.read_text()), [packet["case"]["case_id"]])
                     continue
-                key = "corrected-review-pilot-v1:" + digest
+                key = f"corrected-review-pilot-v{CONTRACT_VERSION}:" + digest
                 reservation = reserve_call(db, task_key=key, budget=budget)
                 if reservation.get("existing"):
                     raise RuntimeError("existing reservation without decision; inspect sidecar before any retry")
@@ -127,7 +171,26 @@ async def execute(packets):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--contract-v2", action="store_true")
     args = parser.parse_args()
+    if args.contract_v2:
+        CONTRACT_VERSION = 2
+        OUT = R / "corrected-review-pilot-v2"
+        SYSTEM += """\nFIELD CONTRACT CORRECTION: Judge only the actual fields listed in case.fields.
+attribution_type means direct_speech, quoted_speech, reported_paraphrase, third_party_mention,
+or unresolved_speaker. It NEVER means occupation, professional role, or job title.
+We do not supply any speaker_role property. A host directly asserting a fact about a third
+person is not automatically that third person's speech. Decide the utterance's attribution,
+while preserving people merely mentioned in mentioned_person_ids.
+Some pilot cases have a wider_context_retry with up to three source turns around the original
+window (or full source when no turns exist). Use it for attribution before choosing an unresolved
+speaker. Evidence offsets still index the unchanged original window, not the wider text.
+When a supported source label is before the window, the window clipping is not grounds to
+reject that identity. Mention alone is not a speaker label. If still indeterminable after the
+wider retry, say uncertain and explicitly state that wider context was reviewed.
+Your rationale MUST identify the actual disputed field and its competing values; never declare
+both_supported because a nonexistent field is null. Both_supported requires BOTH actual
+disputed values to be defensible. Do not change factual claims to make labels agree."""
     packets, plan = prepare()
     print(json.dumps(plan), flush=True)
     if args.execute:
