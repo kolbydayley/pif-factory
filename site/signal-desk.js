@@ -31,6 +31,12 @@
     .replace(/\b(Ai|Agi|Us|Llm|Api|Ipo|Mcp|Rss|Css|Html|Htmx|Ipv6)\b/g, token => token.toUpperCase());
   const enc = value => encodeURIComponent(String(value));
   const safeUrl = value => /^https?:\/\//i.test(value || "") ? value : null;
+  const publicEvidence = evidence => Boolean(evidence
+    && evidence.publishability === "accepted"
+    && ["direct_speech_verified", "claim_attributed"].includes(evidence.attribution_type)
+    && evidence.person && evidence.person !== "Unattributed voice"
+    && evidence.evidence && evidence.evidence.length >= 40
+    && safeUrl(evidence.source_url));
   const fmt = value => Number(value || 0).toLocaleString();
   const pct = value => `${(Number(value || 0) * 100).toFixed(Number(value || 0) < .01 ? 2 : 1)}%`;
   const byId = id => document.getElementById(id);
@@ -292,10 +298,13 @@
     const issue=payload.issues[id];if(!issue)return renderNotFound("issues");
     state.selectedMonth=filterType==="month"?filterValue:"";
     const newest=(a,b)=>String(b.date || "").localeCompare(String(a.date || ""));
-    const accepted=[...(issue.accepted_evidence || [])].sort(newest), uncertain=[...(issue.uncertain_evidence || [])].sort(newest);
+    // The server intentionally omits quarantine/uncertain rows.  Keep this
+    // client-side filter as a second boundary for stale or hand-edited static
+    // payloads; a bad row must never become a public quote through a route.
+    const accepted=[...(issue.accepted_evidence || [])].filter(publicEvidence).sort(newest);
     const slice=rows=>state.selectedMonth?rows.filter(e=>e.month===state.selectedMonth):rows;
-    const selectedAccepted=slice(accepted),selectedUncertain=slice(uncertain);
-    const evidence=state.evidenceMode==="accepted"?selectedAccepted:selectedUncertain;
+    const selectedAccepted=slice(accepted);
+    const evidence=selectedAccepted;
     const named=evidence.filter(e=>excerptIdentity(e)!=="Speaker not established");
     const showCount=new Set(evidence.map(e=>e.show)).size;
     const positive=selectedAccepted.filter(e=>e.group==="positive"),negative=selectedAccepted.filter(e=>e.group==="negative");
@@ -309,7 +318,7 @@
       <div class="research-grid"><div>
         <section class="panel" id="issue-evidence"><div class="section-head section-head-tight"><h2>What is being said</h2><p>${state.selectedMonth?esc(state.selectedMonth):"All available dates"}</p></div>
           <p class="panel-sub">Newest excerpts first. Attribution and source context are still under review; inspect the original material before relying on a claim.</p>
-          <div class="filter-row"><button class="chip" id="accepted-toggle" aria-pressed="${state.evidenceMode==="accepted"}">Legacy accepted · ${selectedAccepted.length}</button><button class="chip" id="uncertain-toggle" aria-pressed="${state.evidenceMode==="uncertain"}">Uncertain · ${selectedUncertain.length}</button></div>
+          <div class="filter-row"><button class="chip" id="accepted-toggle" aria-pressed="true">Publishable evidence · ${selectedAccepted.length}</button>${issue.withheld_evidence_count?`<span class="meta">${fmt(issue.withheld_evidence_count)} excerpts withheld pending speaker/source verification.</span>`:""}</div>
           <div class="evidence-list">${evidence.slice(0,3).map(e=>evidenceCard(e,id)).join("") || `<div class="empty">No excerpts match this slice. Select another month or clear the month filter.</div>`}</div>
           ${evidence.length>3?`<details class="evidence-more"><summary>Read ${evidence.length-3} more excerpts</summary><div class="evidence-list">${evidence.slice(3).map(e=>evidenceCard(e,id)).join("")}</div></details>`:""}</section>
         <section class="panel" id="issue-history"><h2 class="panel-title">How attention moved</h2><p class="panel-sub">Share of recorded discourse, not adoption or importance. Select a month to filter the evidence and stance comparison.</p><label class="month-picker">Evidence month<select class="select" id="issue-month"><option value="">All available months</option>${(issue.series || []).map(point=>`<option value="${esc(point.month)}" ${state.selectedMonth===point.month?"selected":""}>${esc(point.month)} · ${fmt(point.vol)} mentions</option>`).join("")}</select></label>${trend(issue,state.selectedMonth)}
@@ -320,7 +329,6 @@
         <section class="panel"><h2 class="panel-title">Keep exploring</h2><p class="panel-sub">Co-mentioned issues are research leads, not established relationships.</p><div class="claim-list">${relatedCards(issue)}</div></section></aside></div>${coverageFooter()}</section>`;
     byId("issue-month").onchange=event=>route("issue",id,event.target.value?["month",event.target.value]:[]);
     byId("accepted-toggle").onclick=()=>{state.evidenceMode="accepted";renderIssue(id,filterType,filterValue);};
-    byId("uncertain-toggle").onclick=()=>{state.evidenceMode="uncertain";renderIssue(id,filterType,filterValue);};
     document.querySelectorAll("[data-month]").forEach(button=>button.onclick=()=>route("issue",id,["month",button.dataset.month]));
   }
 
@@ -357,13 +365,13 @@
     navState("voices");const expected=location.hash,id=resolveVoice(value),payload=await load("voices");
     if(location.hash!==expected)return;const person=payload.voices[id];if(!person)return renderNotFound("voices");
     if(!INDEX.voices.some(p=>p.id===id))return renderNotFound("voices");
-    const direct=[...(person.direct_evidence || [])].sort((a,b)=>String(b.date || "").localeCompare(String(a.date || ""))),mentions=person.mentions || [];
+    const direct=[...(person.direct_evidence || [])].filter(publicEvidence).sort((a,b)=>String(b.date || "").localeCompare(String(a.date || ""))),mentions=[];
     const renderEvidence=e=>evidenceCard(e,e.issue_id||resolveIssue(e.topic),{origin:"voice",originId:id});
     app.innerHTML=`<section class="view">${snapshotNote()}${breadcrumb([{label:"Voices",route:"voices"},{label:person.name}])}<div class="detail-head"><div><div class="eyebrow detail-label">Voice research</div><h1>${esc(person.name)}</h1><p class="lede">Recorded statements, their original sources, and the issues they touch.</p></div></div>
       <div class="scope-strip"><span><strong>${direct.length}</strong> direct-labeled excerpts</span><span><strong>${person.n_episodes}</strong> episodes</span><span><strong>${person.shows.length}</strong> shows</span></div>
       ${readingLinks([["voice-statements","Statements"],["voice-mentions","Third-party mentions"],["voice-basis","Evidence basis"]])}
       <div class="research-grid"><div><section class="panel" id="voice-statements"><h2 class="panel-title">What the record says</h2><p class="panel-sub">Legacy direct-speech labels require source-context verification. Reported speech inside an excerpt must not be mistaken for this person’s own position.</p><div class="evidence-list">${direct.slice(0,3).map(renderEvidence).join("")||`<div class="empty">No direct-labeled evidence is available.</div>`}</div>${direct.length>3?`<details class="evidence-more"><summary>Read ${direct.length-3} more statements</summary><div class="evidence-list">${direct.slice(3).map(renderEvidence).join("")}</div></details>`:""}</section>
-      <section class="panel" id="voice-mentions"><h2 class="panel-title">What others say about them</h2><p class="panel-sub">Third-party mentions are not this person’s own claims.</p><div class="evidence-list">${mentions.slice(0,3).map(renderEvidence).join("")||`<div class="empty">No separate mentions are attached.</div>`}</div>${mentions.length>3?`<details class="evidence-more"><summary>Read ${mentions.length-3} more mentions</summary><div class="evidence-list">${mentions.slice(3).map(renderEvidence).join("")}</div></details>`:""}</section></div>
+      <section class="panel" id="voice-mentions"><h2 class="panel-title">What others say about them</h2><p class="panel-sub">Third-party and unresolved speaker records are withheld from the public corpus until their speaker and source context are verified.</p><div class="evidence-list"><div class="empty">${fmt(person.withheld_evidence_count || 0)} mention${Number(person.withheld_evidence_count || 0) === 1 ? "" : "s"} withheld pending verification.</div></div></section></div>
       <aside><section class="panel" id="voice-basis"><h2 class="panel-title">Evidence, not a reputation score</h2><p>A verified domain-specific expertise assessment is not available in this payload. The site does not rank this person’s correctness from popularity.</p><h3 class="subhead">Source appearances</h3><p>${esc(person.shows.join(" · "))}</p><button class="text-button" data-route="coverage" data-tail="voice/${esc(id)}">Inspect source coverage</button></section>
       <section class="panel"><h2 class="panel-title">Issues in the record</h2><div class="claim-list">${person.top_topics.slice(0,8).map(topic=>{const issueId=resolveIssue(topic.topic),exists=INDEX.issues.some(i=>i.id===issueId);return exists?`<button class="claim-card" data-route="issue" data-id="${esc(issueId)}"><b>${esc(cap(topic.topic))}</b><p>Open issue evidence →</p></button>`:`<div class="topic-label">${esc(cap(topic.topic))}<small>Canonical issue page not yet available</small></div>`;}).join("")}</div></section></aside></div>${coverageFooter()}</section>`;
   }
@@ -544,12 +552,12 @@
   async function findEvidence(id) {
     const [issuesPayload, voicesPayload] = await Promise.all([load("issues"), load("voices")]);
     for (const [issueId, issue] of Object.entries(issuesPayload.issues)) {
-      for (const evidence of [...issue.accepted_evidence, ...issue.uncertain_evidence]) {
+      for (const evidence of (issue.accepted_evidence || []).filter(publicEvidence)) {
         if (evidence.id === id) return {issueId, issue, evidence};
       }
     }
     for (const person of Object.values(voicesPayload.voices)) {
-      for (const evidence of [...person.direct_evidence, ...person.mentions]) {
+      for (const evidence of (person.direct_evidence || []).filter(publicEvidence)) {
         if (evidence.id === id) {
           const issueId = evidence.issue_id || resolveIssue(evidence.topic);
           return {issueId, issue: issuesPayload.issues[issueId], evidence};
