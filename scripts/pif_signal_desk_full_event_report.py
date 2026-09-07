@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from scripts.pif_signal_desk_full_event_review import prepare, OUT, QUAL
+from scripts.pif_signal_desk_full_event_review import prepare, OUT, QUAL, BASE
 from scripts.pif_signal_desk_gold_merge_provenance import immutable_json
 from research_factory.signal_desk_full_event_review import validate_review
 from research_factory.signal_desk_full_event_comparison import compare
@@ -73,6 +73,18 @@ def main():
             authored[wid][role] = json.loads((path / f"{p['packet_sha256']}.result.json").read_text())
     reviews = {p["packet_sha256"]: json.loads((OUT / f"{p['packet_sha256']}.review.json").read_text()) for p in packets}
     result = summarize(packets, reviews, authored, structures)
+    plan = json.loads((QUAL / "plan.json").read_text())
+    prior = {}
+    for wid, sha in plan["source_packets"].items():
+        original = json.loads((BASE / f"{sha}.packet.json").read_text())
+        if digest({k: v for k, v in original.items() if k != "packet_sha256"}) != sha:
+            raise ValueError("original candidate inventory binding changed")
+        prior[wid] = {"prior_candidate_events": original["candidate_event_count"],
+            "current_C_events": len(authored[wid]["C"]["events"]), "source_packet_sha256": sha,
+            "source_review_required": True}
+    result["prior_candidate_count_comparison"] = prior
+    result["prior_candidate_events"] = sum(v["prior_candidate_events"] for v in prior.values())
+    result["candidate_count_warning"] = "Count reduction is not a quality gain; prior/new disagreement needs source review. Prior candidates are not assumed correct."
     immutable_json(QUAL / "diagnostic-report.json", result)
     print(json.dumps({"windows": result["windows"], "candidate_events": result["candidate_events"], "verdicts": result["verdicts"], "qualified": False}))
 
