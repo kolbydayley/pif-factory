@@ -86,3 +86,17 @@ def test_capacity_failure_opens_shared_circuit(tmp_path, monkeypatch):
         asyncio.run(runner.execute(packets))
     assert any(n == "record_capacity_failure" for n, _ in calls)
     assert any(n == "record_outcome" and kw["outcome"] == "rate_limit" for n, kw in calls)
+
+
+def test_explicit_full_event_adapter_keeps_role_metering(tmp_path, monkeypatch):
+    packets, calls = setup(tmp_path, monkeypatch)
+    def reserve(*a, **kw):
+        calls.append(("reserve", kw)); return {"allowed": True, "reservation_id": "r"}
+    monkeypatch.setattr(runner, "reserve_gold_call", reserve)
+    target = tmp_path / "full"
+    assert asyncio.run(runner.execute(packets, output_root=target, task_prefix="full-test",
+        system_for_packet=lambda p: "candidate-system", schema_for_packet=lambda p: {"candidate": True},
+        validator=lambda value, p: value, turn_for_packet=lambda p: "C")) == 0
+    assert any(n == "reserve" and k["turn_type"] == "C" and k["reserve_tokens"] == 75000 for n, k in calls)
+    assert any(n == "provider" and k["base_instructions"] == "candidate-system" and k["output_schema"] == {"candidate": True} for n, k in calls)
+    assert (target / "receipt.json").exists()
