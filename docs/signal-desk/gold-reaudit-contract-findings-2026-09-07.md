@@ -145,3 +145,29 @@ and resolved. Completion hooks remain the primary continuation mechanism; Kolby'
 active task goal. The older supervisor remains paused. See
 `gold-completion-control.md`. This document does not authorize a new spend scope
 or grant extension.
+
+## Attribution-schema contrast: source inspection, 2026-09-07 20:59 UTC
+
+The isolated SOL-medium probe completed all 16 development packets (45 fixed
+claim anchors). The independent GPT-5.5 review is still running. Successful
+schema validation is not acceptance, and this anchor sample cannot measure
+extraction recall or corpus error prevalence.
+
+Two full-window inspections support the intended semantic distinction:
+
+- Hidden Brain `sdw_99a1771e94fa2b923f9e_e13`: the labeled Tom Bonsaint turn
+  describes his own decision after hearing others' doubts. The main proposition
+  belongs to Tom, not to the unnamed doubters. SOL and the returned GPT-5.5 review
+  now both preserve own-statement attribution, unlike the earlier disputed review.
+- Ride Home `sdw_0ffa09f4e0354c6dd896`: the flattened window embeds a TechCrunch
+  report, a statement about Tim Ryan, and an explicitly credited Josh Konstein
+  quotation. SOL separates organization-owned reporting, a mentioned event actor,
+  and a named quotation owner; all three retain an unknown transcript voice.
+  The source's closing host self-identification is not a covering speaker map.
+  These records therefore demonstrate why narrator identity and proposition
+  ownership cannot share one required speaker field. GPT-5.5 disposition for
+  this packet must still be checked when available.
+
+These are bounded source-read observations, not qualification results. Preserve
+ASR surface spelling and unknown identities. Do not infer that one repaired
+regression proves all five gold roles or the full reliability gate now pass.
