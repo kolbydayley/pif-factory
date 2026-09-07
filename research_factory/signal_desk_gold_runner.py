@@ -831,6 +831,7 @@ async def _run_gold_split_phases(
     prompt_variant_id: str | None = None,
     representation_variant_id: str | None = None,
     target_window_ids: Sequence[str] | None = None,
+    qualification_audit_plan: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not 2 <= concurrency <= 8:
         raise ValueError("gold concurrency must be 2-8")
@@ -844,6 +845,11 @@ async def _run_gold_split_phases(
         raise GoldResumePlanError("sealed-holdout Gold requires explicit authorization")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     _require_complete_frozen_manifest(manifest)
+    if qualification_audit_plan is not None:
+        from .signal_desk_qualification_audit import validate_qualification_scope
+        validate_qualification_scope(qualification_audit_plan, manifest=manifest,
+            split=split, phase_order=phase_order, target_window_ids=target_window_ids,
+            prompt_variant_id=prompt_variant_id, task_namespace=task_namespace)
     active_system_prompts = (
         system_prompts_for_variant(prompt_variant_id)
         if prompt_variant_id
@@ -951,7 +957,18 @@ async def _run_gold_split_phases(
                     required_ids=all_ids,
                     excluded_ids=excluded_at_start,
                 )
-            if turn_type == "AUDIT":
+            if turn_type == "AUDIT" and qualification_audit_plan is not None:
+                if excluded_at_start:
+                    raise GoldRunnerError("qualification audit cannot exclude frozen members")
+                for required_phase in ("A", "B", "C"):
+                    _validate_phase_outputs(result_root=result_root, turn_type=required_phase,
+                        by_window=by_window, required_ids=all_ids)
+                target_ids = all_ids
+                audit_ids = set(all_ids)
+                blind_audit_ids = ()
+                audit_plan = {"purpose": "bounded_role_consistency_only",
+                              "decision_ready": False, "reliability_gate_eligible": False}
+            elif turn_type == "AUDIT":
                 # ``_audit_target_ids`` validates C before selecting either
                 # the expanded Dev slice or the frozen validation/holdout
                 # slice.  This must happen before dispatch enqueue.
@@ -1534,6 +1551,7 @@ async def _run_gold_split_phases(
             "blind_audit_windows": len(blind_audit_ids),
             "atomicity_review_windows": len(atomicity_review_ids),
             "audit_power_plan": audit_plan,
+            "qualification_audit_only": qualification_audit_plan is not None,
             "configured_max_concurrency": concurrency,
             "initial_adaptive_concurrency": GOLD_BOUNDS.minimum,
             "lease_seconds": 1800,
@@ -1610,6 +1628,7 @@ async def run_gold_split_phase(
     prompt_variant_id: str | None = None,
     representation_variant_id: str | None = None,
     target_window_ids: Sequence[str] | None = None,
+    qualification_audit_plan: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run one resumable Gold phase for one frozen benchmark split.
 
@@ -1644,6 +1663,7 @@ async def run_gold_split_phase(
         prompt_variant_id=prompt_variant_id,
         representation_variant_id=representation_variant_id,
         target_window_ids=target_window_ids,
+        qualification_audit_plan=qualification_audit_plan,
     )
 
 
