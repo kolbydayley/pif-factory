@@ -266,12 +266,95 @@ def prepare_pending_retry(source):
     return packets, plan
 
 
+def prepare_oversized():
+    from scripts.pif_signal_desk_gold_context_survey import range_index
+    import tiktoken
+    enc = tiktoken.get_encoding("o200k_base")
+    survey = R / "oversized-context-survey-v2"
+    survey_plan = json.loads((survey / "plan.json").read_text())
+    if not json.loads((survey / "receipt.json").read_text())["source_index_complete"]:
+        raise ValueError("source survey incomplete")
+    indexed = {}
+    for digest in survey_plan["packet_digests"]:
+        packet = json.loads((survey / f"{digest}.packet.json").read_text())
+        bare = {k: v for k, v in packet.items() if k != "packet_sha256"}
+        if _sha_json(bare) != digest:
+            raise ValueError("survey packet drift")
+        result = json.loads((survey / f"{digest}.index.json").read_text())
+        if range_index(json.loads((survey / f"{digest}.output.json").read_text()), packet) != result:
+            raise ValueError("survey index drift")
+        indexed.setdefault(packet["transcript_sha256"], []).extend(result["findings"])
+    original = json.loads((R / "corrected-review-full-batched-v2/plan.json").read_text())
+    wanted = {x["case_id"] for x in original["oversized_pending"]}
+    manifest_path = R / "merged-manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    audit = json.loads((A / "audit.json").read_text())
+    if manifest["manifest_sha256"] != audit["manifest_sha256"]:
+        raise ValueError("audit manifest mismatch")
+    rows = {w["window_id"]: w for w in manifest["windows"] if w["split"] == "development"}
+    cases = [c for c in build_cases(manifest_path=manifest_path, result_root=A / "results", project_root=ROOT,
+        selected_window_ids=audit["audit_selection"]["window_ids"]) if c["case_id"] in wanted]
+    if {c["case_id"] for c in cases} != wanted:
+        raise ValueError("oversized inventory mismatch")
+    packets = []
+    for case in sorted(cases, key=lambda c: (c["window_id"], c["case_id"])):
+        row = rows[case["window_id"]]
+        path = Path(row["transcript_path"])
+        text = (path if path.is_absolute() else ROOT / path).read_text()
+        sha = hashlib.sha256(text.encode()).hexdigest()
+        if sha != row["transcript_sha256"] or sha not in indexed:
+            raise ValueError("source hash mismatch or absent survey")
+        start, end = int(row["start_char"]), int(row["end_char"])
+        lo, hi = max(0, start - 6000), min(len(text), end + 6000)
+        names = {str(e["speaker_id"]).casefold() for e in (case["gold"], case["audit"]) if e and e.get("speaker_id")}
+        extras = []
+        seen = set()
+        for finding in indexed[sha]:
+            for s, e in finding["source_locations"]:
+                if finding["quote"] != text[s:e]:
+                    raise ValueError("indexed quote drift")
+                if (s, e) in seen or (lo <= s and e <= hi):
+                    continue
+                seen.add((s, e))
+                if names and any(name in text[s:e].casefold() for name in names):
+                    extras.append({"start_char": s, "end_char": e, "text": text[s:e]})
+        extras.sort(key=lambda x: min(abs(x["end_char"] - start), abs(x["start_char"] - end)))
+        packet = {"case": canonical_fields(case), "transcript_structure": row["transcript_structure"],
+            "transcript_window": _load_frozen_window_text(row, project_root=ROOT), "text_sha256": row["text_sha256"],
+            "manifest_sha256": manifest["manifest_sha256"], "audit_receipt_sha256": audit["receipt_sha256"],
+            "system_sha256": _sha_json(SYSTEM), "context_retrieval": {
+                "transcript_sha256": sha, "original_window_start_char": start,
+                "contiguous_context": {"start_char": lo, "end_char": hi, "text": text[lo:hi]},
+                "additional_passages": [], "relevant_indexed_passages_available": len(extras),
+                "source_length": len(text), "survey_plan_sha256": _sha_json(survey_plan),
+                "warning": "Selected context, NOT full source. Gaps omit turns. Remote name mentions do not establish local speaker identity. Request more context via uncertain if needed."}}
+        for extra in extras:
+            trial = json.loads(json.dumps(packet))
+            trial["context_retrieval"]["additional_passages"].append(extra)
+            if len(enc.encode(SYSTEM + json.dumps(trial, ensure_ascii=False))) + 1500 <= 11200:
+                packet = trial
+        if len(enc.encode(SYSTEM + json.dumps(packet, ensure_ascii=False))) + 1500 > 12000:
+            raise ValueError("retrieved packet still oversized; do not truncate")
+        packet["packet_sha256"] = _sha_json(packet)
+        immutable_json(OUT / f"{packet['packet_sha256']}.packet.json", packet)
+        packets.append(packet)
+    packets = batch_packets(packets)
+    for packet in packets:
+        immutable_json(OUT / f"{packet['packet_sha256']}.packet.json", packet)
+    plan = {"packet_digests": [p["packet_sha256"] for p in packets], "oversized_pending": [],
+        "case_count": len(cases), "calls": len(packets), "reserved_token_ceiling": len(packets) * 50000,
+        "source_survey": str(survey), "gold_accepted": False, "concurrency": 1}
+    immutable_json(OUT / "plan.json", plan)
+    return packets, plan
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--contract-v2", action="store_true")
     parser.add_argument("--full", action="store_true", help="review all corrected disagreement cases")
     parser.add_argument("--retry-pending", action="store_true", help="isolated second attempt for malformed full-review batches only")
+    parser.add_argument("--review-oversized", action="store_true", help="adjudicate 94 cases using source-grounded retrieval")
     args = parser.parse_args()
     if args.contract_v2:
         CONTRACT_VERSION = 2
@@ -296,7 +379,22 @@ disputed values to be defensible. Do not change factual claims to make labels ag
             parser.error("full review requires the corrected v2 contract")
         FULL_REVIEW = True
         OUT = R / "corrected-review-full-batched-v2"
-    if args.retry_pending:
+    if args.review_oversized:
+        if not args.full or args.retry_pending:
+            parser.error("oversized review requires --full --contract-v2, without retry-pending")
+        OUT = R / "corrected-review-oversized-v1"
+        OUT.mkdir(parents=True, exist_ok=True, mode=0o700)
+        SYSTEM += """\nCONTEXT RETRIEVAL CONTRACT: context_retrieval contains exact source passages, not the
+whole transcript. All 40 source sections were indexed, but this packet includes only a contiguous
+neighborhood and selected additional ranges. The index can miss cues. Never bridge unobserved turns,
+infer a speaker from a remote introduction, or mistake a mentioned name for a speaker label.
+Use source offsets to distinguish remote passages from the utterance's context. If context is
+insufficient, choose uncertain and identify the specific missing source range or boundary needed.
+Do not equate an index's absence of a label with proof that no label exists. No claims may be
+accepted by mere consistency with a named person's views. Evidence offsets remain window-relative.
+Return correction_json only for disputed fields; leave genuinely indeterminable identity null."""
+        packets, plan = prepare_oversized()
+    elif args.retry_pending:
         if not args.full:
             parser.error("pending retry requires --full --contract-v2")
         source = OUT
