@@ -57,6 +57,50 @@ missing claims solely because the supplied Gold-C candidates were supported.
 
 ## Next bounded work, in order
 
+### Completed shared-rubric qualification diagnostic
+
+The fixed 16-window sample has 48 A/B/C outputs and 16 independent AUDIT
+outputs. All 432 audit events passed exact source/offset/schema validation;
+one failed-offset attempt was preserved and succeeded on its bounded retry.
+The C population remains 477 events. GPT-5.5 reviewed all 27 packets: 19
+first-pass responses validated and eight failed the correction-field contract.
+An explicitly versioned, source-identical format retry recovered those eight;
+it does not erase the first-pass failure rate or changed judgments.
+The combined reference proposals are 434 supported and 43 needs-correction.
+These are proposals, not a passed corpus reliability gate.
+
+Current artifacts: `shared-rubric-qualification-v1/role-comparison.json`,
+`reference-review/receipt.json`, and `reference-review/format-retry-v1/` beneath
+the development-source-reauthor-v1 work directory. Source/candidate hashes,
+first-pass failures, original/retry responses, and changed judgments are retained.
+
+The diagnostic exposes a schema/rubric inconsistency, not only a prompt problem:
+
+- `validate_event` requires `speaker_id` for quoted speech even when the
+  embedded quoted person is explicit but the narrating transcript voice is
+  indeterminable. The rubric requires abstaining from guessed narrator identity.
+- A dry validation of the 43 proposed patches finds 11 schema conflicts:
+  seven lack the required actual speaker and four lack `quoted_person_id`.
+  None of these patches has been applied.
+- `eligible_for_person_says` includes reported paraphrases. That conflicts with
+  the product's direct-or-explicitly-quoted-speech boundary unless that surface
+  is separately labelled as reporting about the person.
+- The final reviewer still sometimes equates asserting a negative proposition
+  with supportive stance (sdw_480fb8f1b232f6c0e823_e030), despite the shared
+  neutral-descriptive rule. Reviewer proposals cannot be treated as truth solely
+  because GPT-5.5 produced them.
+
+Next implementation must separate transcript voice identity from the owner of
+an embedded quote/report, and define attribution to the event's main proposition,
+not incidental subordinate speech. Unknown narrator identity must not erase a
+source-explicit quotation owner. Conversely, reported beliefs must not become
+direct quotations. Prototype the schema and rendering eligibility in a separate
+versioned contract with regression tests; do not mutate frozen v1 outputs or
+retroactively improve its measured scores. Resolve the stance decision rule in
+the same documented design before another paid full-window qualification run.
+Any schema experiment is a separate family, not a prompt-only comparison.
+No further full-corpus reauthoring is justified yet.
+
 ### Attribution representation finding during qualification
 
 Read-only inspection of two completed ASR development windows found that the
