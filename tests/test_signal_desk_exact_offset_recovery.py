@@ -1,6 +1,7 @@
 import pytest
 from research_factory.signal_desk_exact_offset_recovery import recover
 from research_factory.signal_desk_exact_offset_recovery import load_call
+from research_factory.signal_desk_exact_offset_recovery import recover_binding
 import json
 from research_factory.signal_desk_full_event_experiment import VERSION
 
@@ -36,3 +37,30 @@ def test_recovery_provenance_must_reproduce_result(tmp_path):
     fixed["events"][0]["stance"] = "supportive"
     (tmp_path / "p.result.json").write_text(json.dumps(fixed))
     with pytest.raises(ValueError, match="unverified"): load_call(tmp_path, packet)
+
+
+def binding_fixture():
+    value = fixture(); event = value["events"][0]; event["evidence_end"] = 12
+    event["attribution"]["relation"] = "reported_statement"
+    event["attribution"]["proposition_owner"] = {"surface_name": "Redfin", "kind": "organization",
+        "binding_span": {"text": "data from Redfin that claims", "start": 13, "end": 40}}
+    return value
+
+
+def test_binding_projection_preserves_name_text_and_claim(tmp_path):
+    value = binding_fixture(); source = "Demand grew. data from Redfin that claims"
+    fixed, receipt = recover_binding(value, source=source, window_id="w")
+    assert receipt["changes"] == [{"event_id": "e", "role": "proposition_owner", "before": [13, 40], "after": [13, 41]}]
+    assert value["events"][0]["attribution"]["proposition_owner"]["binding_span"]["end"] == 40
+    packet = {"packet_sha256": "p", "transcript_window": source, "window_id": "w"}
+    for filename, data in (("p.output.json", value), ("p.result.json", fixed), ("offset-recovery.json", receipt)):
+        (tmp_path / filename).write_text(json.dumps(data))
+    assert load_call(tmp_path, packet)[1]["offset_recovery"]
+    fixed["events"][0]["attribution"]["proposition_owner"]["surface_name"] = "Other"
+    (tmp_path / "p.result.json").write_text(json.dumps(fixed))
+    with pytest.raises(ValueError, match="unverified"): load_call(tmp_path, packet)
+
+
+@pytest.mark.parametrize("source", ["Demand grew. Redfin", "Demand grew. data from Redfin that claims data from Redfin that claims", "Demand grew. many extra words data from Redfin that claims"])
+def test_binding_missing_ambiguous_or_far_rejected(source):
+    with pytest.raises(ValueError): recover_binding(binding_fixture(), source=source, window_id="w")
