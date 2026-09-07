@@ -19,7 +19,7 @@ from research_factory.signal_desk_rubric_reference_packets import digest
 from research_factory.codex_app_server import CodexAppServerClient
 from research_factory.signal_desk_rebuild_dispatch import initialize_dispatch_schema, enqueue_task, acquire_lease, complete_attempt, fail_attempt_semantically, release_attempt_for_retry
 from research_factory.signal_desk_gold_budget import ensure_gold_budget_schema, reserve_gold_call, settle_gold_call, mark_provider_started, release_unstarted_reservation
-from research_factory.signal_desk_gold_capacity import admit_gold_call, release_gold_admission, record_gold_admission_success, capacity_error_from_sidecar, capacity_backend_message_from_sidecar, record_capacity_failure
+from research_factory.signal_desk_gold_capacity import admit_gold_call, release_gold_admission, record_gold_admission_success, capacity_error_from_sidecar, capacity_backend_message_from_sidecar, record_capacity_failure, is_model_capacity_error
 from research_factory.signal_desk_adaptive_concurrency import initialize_lane, GOLD_BOUNDS, admission_limit, record_outcome
 
 BASE = QUAL / "attribution-schema-v3-contrasts-v1"
@@ -41,7 +41,7 @@ async def execute(packets):
                 lease = acquire_lease(dispatch, lease_owner=f"attribution-probe:{os.getpid()}", lease_seconds=1800)
                 if lease is None: break
                 fence = {"attempt_id": lease["current_attempt_id"], "lease_owner": lease["lease_owner"], "lease_generation": lease["lease_generation"]}
-                sha = json.loads(lease["payload_json"])["packet_sha256"]; packet = by_sha[sha]
+                sha = lease["payload"]["packet_sha256"]; packet = by_sha[sha]
                 result_path = OUT / f"{sha}.result.json"
                 if result_path.exists():
                     result = validate_response(json.loads(result_path.read_text()), packet)
@@ -49,6 +49,8 @@ async def execute(packets):
                 # Unknown previous paid work is never silently sent a second time.
                 previous = budget.execute("SELECT id FROM signal_desk_gold_budget_reservations WHERE task_key LIKE ? AND provider_started=1", (f"attribution-probe-sol-v1:{sha}:%",)).fetchone()
                 if previous:
+                    release_attempt_for_retry(dispatch, **fence, failure_code="previous_provider_recovery_required",
+                        failure_detail="previous paid attempt must be recovered; no duplicate dispatch")
                     raise RuntimeError("previous provider attempt requires sidecar recovery before redispatch")
                 key = f"attribution-probe-sol-v1:{sha}:{fence['attempt_id']}:{fence['lease_generation']}"
                 limit = admission_limit(budget, lane="gold")["effective_limit"]
@@ -87,6 +89,8 @@ async def execute(packets):
                 except Exception as exc:
                     sidecar = OUT / f"{sha}.sidecar.json"
                     capacity_code = capacity_error_from_sidecar(sidecar) if sidecar.exists() else None
+                    if not is_model_capacity_error(error_code=capacity_code):
+                        capacity_code = None
                     if capacity_code:
                         record_capacity_failure(budget, admission_id=admitted["admission_id"], error_code=capacity_code,
                             backend_message=capacity_backend_message_from_sidecar(sidecar))
