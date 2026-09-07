@@ -75,6 +75,12 @@ def baseline_system_prompts() -> dict[str, str]:
 def system_prompts_for_variant(variant_id: str = VARIANT_ID) -> dict[str, str]:
     """Return only the prompt-mutated Gold A/B/C/AUDIT system prompts."""
 
+    from .signal_desk_gold_shared_rubric import RUBRIC_ID, TEXT
+    if variant_id == RUBRIC_ID:
+        # Explicit opt-in for bounded qualification only; no baseline mutation.
+        return {turn: prompt + "\nThe following candidate rubric supersedes conflicting semantic guidance above.\n" + TEXT
+                for turn, prompt in baseline_system_prompts().items()}
+
     if variant_id != VARIANT_ID:
         raise ValueError(f"unknown Signal Desk Gold prompt variant: {variant_id}")
     return {turn: prompt + CONTEXT_FIRST_ADDENDUM
