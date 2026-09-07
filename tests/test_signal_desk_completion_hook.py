@@ -38,3 +38,28 @@ def test_prompt_distinguishes_delivery_from_acknowledgement():
     prompt = hook.completion_prompt("event", 0, True)
     assert "acknowledgement, not dispatch success" in prompt
     assert "Keep scheduled monitors paused" in prompt
+
+
+def test_retry_only_known_predispatch_owner_failure(tmp_path,monkeypatch):
+    calls=[]
+    class IPC:
+        sock=SimpleNamespace(close=lambda:None)
+        def deliver(self,*args):
+            calls.append(args)
+            if len(calls)==1:raise hook.OwnerUnavailable()
+            return {"resultType":"success"}
+    monkeypatch.setattr(hook,"DesktopIPC",IPC)
+    monkeypatch.setattr(hook.time,"sleep",lambda seconds:None)
+    result=hook.deliver_with_owner_retry("event",0,False,tmp_path/"r.json",{})
+    assert result["resultType"]=="success" and len(calls)==2
+
+
+def test_uncertain_delivery_is_never_retried(tmp_path,monkeypatch):
+    calls=[]
+    class IPC:
+        sock=SimpleNamespace(close=lambda:None)
+        def deliver(self,*args):
+            calls.append(args);raise RuntimeError("connection lost after send")
+    monkeypatch.setattr(hook,"DesktopIPC",IPC)
+    with pytest.raises(RuntimeError):hook.deliver_with_owner_retry("event",0,False,tmp_path/"r.json",{})
+    assert len(calls)==1

@@ -12,6 +12,7 @@ import stat
 import struct
 import subprocess
 import sys
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -43,6 +44,10 @@ def completion_prompt(event_id, code, canary):
         "completion wrapper, preserve exit/result receipts, and never duplicate a running child. "
         "Do not launch more canaries, reset hosts, bypass quality gates, or infer that authored gold is accepted."
     )
+
+
+class OwnerUnavailable(RuntimeError):
+    """Owner discovery rejected before any start-turn request was sent."""
 
 
 class DesktopIPC:
@@ -82,6 +87,8 @@ class DesktopIPC:
             if response.get("type") != "response" or response.get("requestId") != request_id:
                 continue
             if response.get("resultType") != "success":
+                if method == "thread-owner-discovery" and response.get("error") == "no-client-found":
+                    raise OwnerUnavailable("owner unavailable before dispatch")
                 raise RuntimeError("IPC request failed: " + str(response.get("error")))
             return response
 
@@ -95,6 +102,22 @@ class DesktopIPC:
                 "clientUserMessageId": event_id,
                 "input": [{"type": "text", "text": completion_prompt(event_id, code, canary), "text_elements": []}]},
                 "context": {"inheritThreadSettings": True}}}, target=self.owner())
+
+
+def deliver_with_owner_retry(event_id, code, canary, receipt_path, state):
+    for attempt in range(1441):
+        ipc = DesktopIPC()
+        try:
+            return ipc.deliver(event_id, code, canary)
+        except OwnerUnavailable:
+            if attempt == 1440:
+                raise
+            state.update(status="waiting_for_owner_before_dispatch", owner_lookup_attempts=attempt+1,
+                         start_turn_sent=False)
+            save_receipt(receipt_path,state)
+        finally:
+            ipc.sock.close()
+        time.sleep(60)
 
 
 def main():
@@ -144,12 +167,8 @@ def main():
             code = process.wait()  # OS process-exit event, not a polling timer.
         state.update(status="child_exited", child_exit_code=code, exited_at=datetime.now(timezone.utc).isoformat())
         save_receipt(receipt_path, state)
-        ipc = DesktopIPC()
-        try:
-            response = ipc.deliver(event_id, code, a.canary)
-            state.update(status="dispatch_accepted", response_type=response["resultType"])
-        finally:
-            ipc.sock.close()
+        response = deliver_with_owner_retry(event_id, code, a.canary, receipt_path, state)
+        state.update(status="dispatch_accepted", response_type=response["resultType"], start_turn_sent=True)
     except Exception as exc:
         # Never automatically resend an uncertain delivery: it might have landed.
         state.update(status="failed_or_delivery_uncertain", error=str(exc))

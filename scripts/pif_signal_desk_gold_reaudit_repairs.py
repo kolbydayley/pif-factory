@@ -11,7 +11,23 @@ from scripts.pif_signal_desk_gold_review_corrected import R,A,_sha_json,build_ca
 from scripts.pif_signal_desk_gold_project_repairs import patch_event
 from scripts.pif_signal_desk_gold_merge_provenance import immutable_json
 from research_factory.signal_desk_gold_audit import _load_frozen_window_text,evaluate_dev_audit
-from research_factory.signal_desk_gold_runner import run_gold_split_phase
+from research_factory.signal_desk_gold_runner import run_gold_split_phase, GoldCapacityDeferred
+from research_factory.util import write_text_atomic
+
+
+async def run_with_capacity_recovery(**kwargs):
+    while True:
+        try:
+            return await run_gold_split_phase(**kwargs)
+        except GoldCapacityDeferred as exc:
+            delay=max(1,int(exc.capacity.get("retry_after_seconds") or 300))
+            write_text_atomic(OUT/"capacity-wait.json",json.dumps({"status":"capacity_backoff", "capacity":exc.capacity,
+                "retry_after_seconds":delay,"automatic_resume":True,"completed_outputs_preserved":True})+"\n")
+            print(json.dumps({"status":"capacity_backoff","retry_after_seconds":delay,"automatic_resume":True}),flush=True)
+            while delay:
+                step=min(60,delay)
+                await asyncio.sleep(step)
+                delay-=step
 
 OUT=R/"repaired-dev-reaudit-v1"
 
@@ -66,7 +82,7 @@ def main():
     p=argparse.ArgumentParser();p.add_argument("--execute",action="store_true");args=p.parse_args()
     plan=prepare();print(json.dumps({k:v for k,v in plan.items() if k not in {"candidate_inventory","initial_ids","target_ids"}}),flush=True)
     if not args.execute:return 0
-    run=asyncio.run(run_gold_split_phase(manifest_path=R/"merged-manifest.json",project_root=ROOT,result_root=OUT/"results",
+    run=asyncio.run(run_with_capacity_recovery(manifest_path=R/"merged-manifest.json",project_root=ROOT,result_root=OUT/"results",
         dispatch_database=OUT/"dispatch.sqlite",budget_database=ROOT/"data/factory.sqlite",
         grant_path=ROOT/"config/signal_desk_gold_authoring_budget_grant.json",session_root=Path.home()/".codex/sessions",
         budget_dir=ROOT/"work/pif-ops/budget",split="development",turn_type="AUDIT",task_namespace="repaired-dev-reaudit-v1",concurrency=2))
