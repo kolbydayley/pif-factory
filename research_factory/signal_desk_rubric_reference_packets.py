@@ -80,7 +80,27 @@ def validate_reference(output,packet):
     return output
 
 
-def build_reference_packets(*,plan,manifest,result_root,project_root,max_events=4,max_input_tokens=12000,token_count):
+def bounded_groups(events, *, max_events, fits):
+    """Greedy lossless packing; an oversized single event must fail closed."""
+    if not 1 <= max_events <= 25:
+        raise ValueError("reference batch limit must be between 1 and 25")
+    if not events:
+        if not fits([]): raise ValueError("reference packet oversized; no truncation permitted")
+        return [[]]
+    groups=[]; current=[]
+    for event in events:
+        candidate=current+[event]
+        if len(candidate)<=max_events and fits(candidate):
+            current=candidate
+        else:
+            if current: groups.append(current)
+            current=[event]
+            if not fits(current): raise ValueError("reference packet oversized; no truncation permitted")
+    if current: groups.append(current)
+    return groups
+
+
+def build_reference_packets(*,plan,manifest,result_root,project_root,max_events=25,max_input_tokens=12000,token_count):
     if plan["rubric"] != rubric_receipt():
         raise ValueError("qualification rubric changed")
     if plan["manifest_sha256"] != manifest["manifest_sha256"]:
@@ -107,15 +127,16 @@ def build_reference_packets(*,plan,manifest,result_root,project_root,max_events=
     for wid in ids:
         value=validated[wid]
         events=value["C"]["events"]
-        # Empty windows still need explicit independent reference review.
-        groups=[events[i:i+max_events] for i in range(0,len(events),max_events)] or [[]]
-        for group in groups:
-            packet={"window_id":wid,"transcript_window":value["text"],"transcript_structure":rows[wid]["transcript_structure"],
+        def make_packet(group):
+            return {"window_id":wid,"transcript_window":value["text"],"transcript_structure":rows[wid]["transcript_structure"],
                 "text_sha256":rows[wid]["text_sha256"],"manifest_sha256":manifest["manifest_sha256"],
                 "rubric_sha256":plan["rubric"]["sha256"],"candidate_events":group,
                 "empty_window_review":not events,"c_sha256":inventory[f"{wid}:C"],"system_sha256":digest(REFERENCE_SYSTEM)}
-            if token_count(REFERENCE_SYSTEM+json.dumps(packet,ensure_ascii=False))+1500>max_input_tokens:
-                raise ValueError("reference packet oversized; no truncation permitted")
+        # Preserve source text and every event; shrink batches, never evidence.
+        groups=bounded_groups(events,max_events=max_events,
+            fits=lambda group: token_count(REFERENCE_SYSTEM+json.dumps(make_packet(group),ensure_ascii=False))+1500<=max_input_tokens)
+        for group in groups:
+            packet=make_packet(group)
             packet["packet_sha256"]=digest(packet);packets.append(packet)
     return {"packets":packets,"inventory":inventory,"rubric_qualified":False,"gold_accepted":False,
             "requires_independent_role_checks":True}

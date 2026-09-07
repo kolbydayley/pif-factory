@@ -34,6 +34,7 @@ def prepare():
     receipt={"packet_digests":[p["packet_sha256"] for p in result["packets"]],"source_inventory":result["inventory"],
         "rubric_sha256":plan["rubric"]["sha256"],"system_sha256":digest(REFERENCE_SYSTEM),
         "model":"gpt-5.5","effort":"high","concurrency":1,
+        "batching":{"max_candidates":25,"max_input_tokens":12000,"schema_token_allowance":1500,"truncation_allowed":False},
         "candidate_events":sum(len(p["candidate_events"]) for p in result["packets"]),
         "empty_windows":sum(p["empty_window_review"] for p in result["packets"]),
         "gold_accepted":False,"rubric_qualified":False}

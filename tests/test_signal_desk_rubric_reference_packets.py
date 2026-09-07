@@ -2,6 +2,27 @@ import pytest
 from research_factory.signal_desk_rubric_reference_packets import build_reference_packets
 from research_factory.signal_desk_gold_shared_rubric import receipt
 from research_factory.signal_desk_rubric_reference_packets import validate_reference
+from research_factory.signal_desk_rubric_reference_packets import bounded_groups
+
+
+def test_lossless_batches_respect_both_limits():
+    events=list(range(60))
+    groups=bounded_groups(events,max_events=25,fits=lambda g:len(g)<=17)
+    assert [e for g in groups for e in g]==events
+    assert [len(g) for g in groups]==[17,17,17,9]
+
+
+def test_candidate_cap_is_hard_even_with_unlimited_tokens():
+    assert [len(g) for g in bounded_groups(list(range(51)),max_events=25,fits=lambda g:True)]==[25,25,1]
+
+
+def test_oversized_event_is_not_dropped_or_truncated():
+    with pytest.raises(ValueError,match="no truncation"):
+        bounded_groups(["small","oversized"],max_events=25,fits=lambda g:"oversized" not in g)
+
+
+def test_empty_window_still_gets_one_packet():
+    assert bounded_groups([],max_events=25,fits=lambda g:True)==[[]]
 
 
 def reference():
