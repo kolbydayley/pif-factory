@@ -1,5 +1,7 @@
 import pytest
 from research_factory.signal_desk_exact_offset_recovery import recover
+from research_factory.signal_desk_exact_offset_recovery import load_call
+import json
 from research_factory.signal_desk_full_event_experiment import VERSION
 
 
@@ -21,3 +23,16 @@ def test_unique_offset_repair_preserves_original_and_semantics():
 @pytest.mark.parametrize("source", ["Demand shrank.", "Demand grew. Demand grew.", "Something far away. Demand grew."])
 def test_nonunique_missing_or_far_span_not_repaired(source):
     with pytest.raises(ValueError): recover(fixture(), source=source, window_id="w")
+
+
+def test_recovery_provenance_must_reproduce_result(tmp_path):
+    original = fixture(); fixed, receipt = recover(original, source="Demand grew.", window_id="w")
+    packet = {"packet_sha256": "p", "transcript_window": "Demand grew.", "window_id": "w"}
+    (tmp_path / "p.output.json").write_text(json.dumps(original))
+    (tmp_path / "p.result.json").write_text(json.dumps(fixed))
+    (tmp_path / "offset-recovery.json").write_text(json.dumps(receipt))
+    result, provenance = load_call(tmp_path, packet)
+    assert result == fixed and provenance["offset_recovery"]
+    fixed["events"][0]["stance"] = "supportive"
+    (tmp_path / "p.result.json").write_text(json.dumps(fixed))
+    with pytest.raises(ValueError, match="unverified"): load_call(tmp_path, packet)

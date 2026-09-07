@@ -23,6 +23,7 @@ def setup(tmp_path, monkeypatch):
             (path / "packet.json").write_text(json.dumps(p))
             output = {"schema_version": VERSION, "window_id": wid, "window_disposition": "no_consequential_claims", "events": []}
             (path / f"{p['packet_sha256']}.result.json").write_text(json.dumps(output))
+            (path / f"{p['packet_sha256']}.output.json").write_text(json.dumps(output))
             authors[role] = output
     execution = {"final_system_sha256": digest(runner.SYSTEM), "final_schema_sha256": digest(runner.schema()), "frozen_plan_sha256": digest(plan)}
     (runner.QUAL / "execution-contract.json").write_text(json.dumps(execution))

@@ -15,6 +15,7 @@ from research_factory.signal_desk_full_event_prompts import packet
 from research_factory.signal_desk_full_event_experiment import validate
 from research_factory.signal_desk_full_event_review import packets as review_packets, SYSTEM, schema, validate_review
 from research_factory.signal_desk_rubric_reference_packets import digest
+from research_factory.signal_desk_exact_offset_recovery import load_call
 OUT = QUAL / "final-review"
 
 
@@ -36,9 +37,7 @@ def prepare():
             path = QUAL / "calls" / wid / role
             if json.loads((path / "packet.json").read_text()) != expected:
                 raise ValueError("source/author/role packet provenance mismatch")
-            authored[role] = validate(json.loads((path / f"{expected['packet_sha256']}.result.json").read_text()),
-                source=source["transcript_window"], window_id=wid)
-            inventory[wid][role] = digest(authored[role])
+            authored[role], inventory[wid][role] = load_call(path, expected)
         selected.extend(review_packets(authored["C"], source=source["transcript_window"], window_id=wid,
             token_count=lambda s: len(enc.encode(s))))
     # Nothing is frozen or dispatched until all sixteen A/B/C/AUDIT chains validate.

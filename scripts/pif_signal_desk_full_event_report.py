@@ -73,6 +73,11 @@ def main():
             authored[wid][role] = json.loads((path / f"{p['packet_sha256']}.result.json").read_text())
     reviews = {p["packet_sha256"]: json.loads((OUT / f"{p['packet_sha256']}.review.json").read_text()) for p in packets}
     result = summarize(packets, reviews, authored, structures)
+    final_plan = json.loads((OUT / "plan.json").read_text())
+    result["authoring_output_provenance"] = final_plan["inventory"]
+    result["offset_recovered_calls"] = sum(bool(provenance["offset_recovery"])
+        for roles in final_plan["inventory"].values() for provenance in roles.values())
+    result["first_pass_failure_warning"] = "Recovered outputs do not erase original contract failures; inspect versioned attempt lineage and recovery receipts."
     plan = json.loads((QUAL / "plan.json").read_text())
     prior = {}
     for wid, sha in plan["source_packets"].items():
