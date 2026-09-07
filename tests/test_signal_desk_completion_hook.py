@@ -37,7 +37,8 @@ def test_dispatch_runs_after_child_exit_with_saved_receipt(tmp_path, monkeypatch
 def test_prompt_distinguishes_delivery_from_acknowledgement():
     prompt = hook.completion_prompt("event", 0, True)
     assert "acknowledgement, not dispatch success" in prompt
-    assert "Keep scheduled monitors paused" in prompt
+    assert "keep signal-desk-completion-monitor active" in prompt
+    assert "signal-desk-gold-rebuild-supervisor paused" in prompt
 
 
 def test_retry_only_known_predispatch_owner_failure(tmp_path,monkeypatch):

@@ -40,7 +40,10 @@ def completion_prompt(event_id, code, canary):
         "That acknowledgement, not dispatch success, establishes that the process hook resumed the task. "
         "Report the canary result if this is the canary. Then continue the authorized gold work from "
         f"{ROOT}/work/signal-desk-rebuild/gold-authoring-v2/artifacts/continuation-handoff.md. "
-        "Keep scheduled monitors paused. For subsequent long-running processes, use this one-shot "
+        "Kolby reauthorized one scheduled backstop on 2026-09-07: keep signal-desk-completion-monitor active, "
+        "and keep the older signal-desk-gold-rebuild-supervisor paused. Follow the current active goal "
+        "and newest continuation handoff, not obsolete blanket pause instructions. "
+        "For subsequent long-running processes, use this one-shot "
         "completion wrapper, preserve exit/result receipts, and never duplicate a running child. "
         "Do not launch more canaries, reset hosts, bypass quality gates, or infer that authored gold is accepted."
     )
