@@ -200,7 +200,7 @@ async def execute(packets):
                 usage = None
                 try:
                     result = await client.run_ephemeral_structured_turn(model="gpt-5.5", effort="high",
-                        base_instructions=SYSTEM, prompt=json.dumps(packet, ensure_ascii=False), output_schema=SCHEMA,
+                        base_instructions=SYSTEM, prompt=json.dumps(packet, ensure_ascii=False), output_schema=packet_schema(packet),
                         cwd=ROOT, sidecar_path=OUT / f"{digest}.sidecar.json", output_path=OUT / f"{digest}.output.json",
                         timeout_seconds=900)
                     usage = result.usage.total_tokens if result.usage else None
@@ -239,11 +239,39 @@ def validate_packet_decisions(output, packet):
     return decisions
 
 
+def packet_schema(packet):
+    schema = json.loads(json.dumps(SCHEMA))
+    schema["properties"]["decisions"]["items"]["properties"]["case_id"]["enum"] = [c["case_id"] for c in packet_cases(packet)]
+    return schema
+
+
+def prepare_pending_retry(source):
+    original = json.loads((source / "plan.json").read_text())
+    receipt = json.loads((source / "receipt.json").read_text())
+    packets = []
+    for digest in receipt["pending_batches"]:
+        if digest not in original["packet_digests"] or (source / f"{digest}.decision.json").exists():
+            raise ValueError("retry must refer to an unresolved original batch")
+        packet = json.loads((source / f"{digest}.packet.json").read_text())
+        if packet.pop("packet_sha256") != digest or _sha_json(packet) != digest:
+            raise ValueError("original packet digest mismatch")
+        packet["retry_lineage"] = {"parent_packet_sha256": digest, "attempt": 2,
+            "reason": "invalid response case coverage; no previous decision accepted"}
+        packet["packet_sha256"] = _sha_json(packet)
+        immutable_json(OUT / f"{packet['packet_sha256']}.packet.json", packet)
+        packets.append(packet)
+    plan = {"packet_digests": [p["packet_sha256"] for p in packets], "oversized_pending": original["oversized_pending"],
+        "retry_source": str(source), "gold_accepted": False, "concurrency": 1}
+    immutable_json(OUT / "plan.json", plan)
+    return packets, plan
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--contract-v2", action="store_true")
     parser.add_argument("--full", action="store_true", help="review all corrected disagreement cases")
+    parser.add_argument("--retry-pending", action="store_true", help="isolated second attempt for malformed full-review batches only")
     args = parser.parse_args()
     if args.contract_v2:
         CONTRACT_VERSION = 2
@@ -268,7 +296,15 @@ disputed values to be defensible. Do not change factual claims to make labels ag
             parser.error("full review requires the corrected v2 contract")
         FULL_REVIEW = True
         OUT = R / "corrected-review-full-batched-v2"
-    packets, plan = prepare()
+    if args.retry_pending:
+        if not args.full:
+            parser.error("pending retry requires --full --contract-v2")
+        source = OUT
+        OUT = R / "corrected-review-malformed-retry-v1"
+        OUT.mkdir(parents=True, exist_ok=True, mode=0o700)
+        packets, plan = prepare_pending_retry(source)
+    else:
+        packets, plan = prepare()
     print(json.dumps({k: v for k, v in plan.items() if k not in {"packet_digests", "oversized_pending"}}), flush=True)
     if args.execute:
         asyncio.run(execute(packets))

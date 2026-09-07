@@ -1,6 +1,12 @@
 from scripts.pif_signal_desk_gold_review_corrected import canonical_fields, batch_packets, packet_cases
 from scripts.pif_signal_desk_gold_review_corrected import validate_packet_decisions
 import pytest
+from scripts.pif_signal_desk_gold_review_corrected import packet_schema
+
+
+def test_schema_restricts_response_ids_to_requested_cases_without_mutating_template():
+    assert packet_schema({"cases": [{"case_id": "one"}]})["properties"]["decisions"]["items"]["properties"]["case_id"]["enum"] == ["one"]
+    assert packet_schema({"cases": [{"case_id": "two"}]})["properties"]["decisions"]["items"]["properties"]["case_id"]["enum"] == ["two"]
 
 
 def test_malformed_case_id_never_counts_as_reviewed():
