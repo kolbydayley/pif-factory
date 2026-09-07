@@ -26,7 +26,58 @@ from the benchmark denominator. Never manufacture identity or evidence. Requests
 for missing context remain unresolved. Do not infer approval of Gold A/B or corpus
 quality from the candidates supplied in this packet. This run creates reference
 proposals only; no automatic gold/rubric acceptance follows.
+Return one decision per exact event_id, with source_basis explaining the concrete
+source wording and any speaker boundary. needs_correction is not approval of a
+proposed correction. supported requires an empty correction_json object; unresolved
+requires an explicit missing_context explanation. Do not patch claims or evidence.
+For strategically relevant, explain a plausible industry decision or change the
+event informs; for incidental, explain why factual support alone is insufficient.
+For an empty candidate window, explicitly judge whether it is genuinely empty of
+extractable events; never pass it merely because no candidates were supplied.
 The following shared contract governs semantic decisions:\n""" + TEXT
+
+
+def reference_schema(packet):
+    ids=[e["event_id"] for e in packet["candidate_events"]]
+    return {"type":"object","additionalProperties":False,"required":["model","decisions","empty_window_verdict","empty_window_rationale"],"properties":{
+        "model":{"type":"string","const":"gpt-5.5"},
+        "decisions":{"type":"array","maxItems":len(ids),"items":{"type":"object","additionalProperties":False,
+            "required":["event_id","verdict","source_basis","correction_json","missing_context","strategic_relevance","relevance_rationale"],
+            "properties":{"event_id":{"type":"string", "enum":ids or ["no_candidates"]},
+                "verdict":{"type":"string","enum":["supported","needs_correction","unresolved"]},
+                "source_basis":{"type":"string","minLength":1},"correction_json":{"type":"string"},
+                "missing_context":{"type":"string"},"strategic_relevance":{"type":"string","enum":["industry_relevant","incidental","undetermined"]},
+                "relevance_rationale":{"type":"string","minLength":1}}}},
+        "empty_window_verdict":{"type":"string","enum":["not_applicable","supported_empty","missed_events","unresolved"]},
+        "empty_window_rationale":{"type":"string"}}}
+
+
+def validate_reference(output,packet):
+    if output.get("model")!="gpt-5.5" or not isinstance(output.get("decisions"),list):
+        raise ValueError("reference response model/envelope invalid")
+    expected={e["event_id"] for e in packet["candidate_events"]};seen=set()
+    allowed={"speaker_id","attribution_type","quoted_person_id","mentioned_person_ids","stance"}
+    for row in output["decisions"]:
+        if row.get("event_id") not in expected or row["event_id"] in seen:
+            raise ValueError("unexpected or duplicate reference event")
+        seen.add(row["event_id"])
+        if row.get("verdict") not in {"supported","needs_correction","unresolved"} or not row.get("source_basis"):
+            raise ValueError("reference decision lacks verdict/source explanation")
+        correction=json.loads(row.get("correction_json") or "{}")
+        if not isinstance(correction,dict) or set(correction)-allowed:
+            raise ValueError("reference correction exceeds field scope")
+        if row["verdict"]=="supported" and correction:
+            raise ValueError("supported verdict cannot silently change gold")
+        if row["verdict"]=="unresolved" and not row.get("missing_context"):
+            raise ValueError("unresolved reference requires explicit limitation")
+        if row.get("strategic_relevance") not in {"industry_relevant","incidental","undetermined"} or not row.get("relevance_rationale"):
+            raise ValueError("strategic relevance must be separately justified")
+    if seen!=expected:raise ValueError("reference response incomplete")
+    if expected:
+        if output.get("empty_window_verdict")!="not_applicable":raise ValueError("nonempty window cannot pass empty check")
+    elif output.get("empty_window_verdict") not in {"supported_empty","missed_events","unresolved"} or not output.get("empty_window_rationale"):
+        raise ValueError("empty window requires explicit source judgment")
+    return output
 
 
 def build_reference_packets(*,plan,manifest,result_root,project_root,max_events=4,max_input_tokens=12000,token_count):
