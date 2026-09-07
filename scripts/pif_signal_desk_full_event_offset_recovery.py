@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit recovery of one identified failed C call; never dispatches a model."""
+"""Explicit recovery of inspected C/AUDIT offset failures; no model dispatch."""
 import argparse
 import fcntl
 import json
@@ -18,17 +18,18 @@ WID = "sdw_4117ea30ae4ec3f116ef"
 
 
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument("--execute", action="store_true"); args = parser.parse_args()
+    parser = argparse.ArgumentParser(); parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--role", choices=("C", "AUDIT"), default="C"); args = parser.parse_args()
     plan = prepare()
     with (OUT / "runner.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         source = json.loads((BASE / f"{plan['source_packets'][WID]}.packet.json").read_text())
         authors = {}
-        for role in ("A", "B"):
+        for role in (("A", "B") if args.role == "C" else ()):
             p = packet(source, role)
             authors[role] = json.loads((OUT / "calls" / WID / role / f"{p['packet_sha256']}.result.json").read_text())
-        expected = packet(source, "C", author_a=authors["A"], author_b=authors["B"])
-        target = OUT / "calls" / WID / "C"; sha = expected["packet_sha256"]
+        expected = packet(source, args.role, author_a=authors.get("A"), author_b=authors.get("B"))
+        target = OUT / "calls" / WID / args.role; sha = expected["packet_sha256"]
         if json.loads((target / "packet.json").read_text()) != expected: raise ValueError("source/author binding changed")
         original = json.loads((target / f"{sha}.output.json").read_text())
         fixed, receipt = recover(original, source=source["transcript_window"], window_id=WID)
