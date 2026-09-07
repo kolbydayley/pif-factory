@@ -57,3 +57,44 @@ def test_missing_usage_keeps_conservative_settlement(tmp_path, monkeypatch):
     packets, calls = setup(tmp_path, monkeypatch, missing_usage=True)
     asyncio.run(runner.execute(packets))
     assert any(n == "settle" and k["actual_tokens"] is None for n, k in calls)
+
+
+def prepare_fixture(tmp_path, monkeypatch):
+    from research_factory.signal_desk_rubric_reference_packets import digest
+    monkeypatch.setattr(runner, "BASE", tmp_path / "base")
+    monkeypatch.setattr(runner, "SOL", tmp_path / "sol")
+    monkeypatch.setattr(runner, "OUT", tmp_path / "review")
+    monkeypatch.setattr(runner, "freeze", lambda: None)
+    runner.BASE.mkdir(); runner.SOL.mkdir()
+    shas = []
+    for i in range(16):
+        packet = {"anchors": [], "transcript_window": "original source " + str(i)}
+        sha = digest(packet); packet["packet_sha256"] = sha; shas.append(sha)
+        (runner.BASE / f"{sha}.packet.json").write_text(json.dumps(packet))
+        (runner.SOL / f"{sha}.result.json").write_text(json.dumps({"decisions": []}))
+    (runner.BASE / "plan.json").write_text(json.dumps({"packet_digests": shas}))
+    return shas
+
+
+def test_prepare_complete_set_and_freezes_proposals(tmp_path, monkeypatch):
+    prepare_fixture(tmp_path, monkeypatch)
+    packets = runner.prepare()
+    assert len(packets) == 16
+    assert len(list(runner.OUT.glob("*.packet.json"))) == 16
+    assert not json.loads((runner.OUT / "plan.json").read_text())["qualified"]
+
+
+def test_prepare_missing_result_freezes_nothing(tmp_path, monkeypatch):
+    shas = prepare_fixture(tmp_path, monkeypatch)
+    (runner.SOL / f"{shas[-1]}.result.json").unlink()
+    with pytest.raises(FileNotFoundError): runner.prepare()
+    assert not runner.OUT.exists()
+
+
+def test_prepare_changed_source_fails_closed(tmp_path, monkeypatch):
+    shas = prepare_fixture(tmp_path, monkeypatch)
+    path = runner.BASE / f"{shas[-1]}.packet.json"
+    packet = json.loads(path.read_text()); packet["transcript_window"] = "changed"
+    path.write_text(json.dumps(packet))
+    with pytest.raises(ValueError, match="digest mismatch"): runner.prepare()
+    assert not runner.OUT.exists()
