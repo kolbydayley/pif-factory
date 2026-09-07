@@ -1,7 +1,7 @@
 """Fixed attribution probes; diagnostic only, not an extraction benchmark."""
 import json
 from pathlib import Path
-from .signal_desk_attribution_experiment import receipt, RULES, schema
+from .signal_desk_attribution_experiment import receipt, RULES, schema, validate
 from .signal_desk_rubric_reference_packets import digest
 from .signal_desk_rebuild_contracts import validate_output
 from .signal_desk_gold_audit import _load_frozen_window_text
@@ -19,6 +19,27 @@ outside knowledge to repair ASR spellings. Assign person versus organization.
 No preceding model answers or expected labels are supplied. This is not gold
 acceptance and does not measure recall, omissions, or corpus reliability.
 """ + RULES
+
+
+def validate_response(value, packet):
+    if not isinstance(value, dict) or set(value) != {"decisions"} or not isinstance(value["decisions"], list):
+        raise ValueError("invalid contrast response envelope")
+    expected = {a["event_id"] for a in packet["anchors"]}; seen = set()
+    for decision in value["decisions"]:
+        if not isinstance(decision, dict) or set(decision) != {"event_id", "claim_status", "attribution", "stance", "source_rationale"}:
+            raise ValueError("invalid contrast decision envelope")
+        eid = decision["event_id"]
+        if eid not in expected or eid in seen:
+            raise ValueError("unexpected or duplicate contrast event")
+        seen.add(eid)
+        if decision["claim_status"] not in {"supported", "unsupported", "ambiguous"} or decision["stance"] not in {"neutral", "supportive", "skeptical", "warning", "mixed", "unknown"}:
+            raise ValueError("invalid contrast disposition")
+        if not isinstance(decision["source_rationale"], str) or not decision["source_rationale"].strip():
+            raise ValueError("missing contrast rationale")
+        validate(decision["attribution"], source=packet["transcript_window"])
+    if seen != expected:
+        raise ValueError("incomplete contrast response")
+    return value
 
 
 def response_schema(packet):
