@@ -25,3 +25,14 @@ def test_scope_cannot_expand_or_shrink(field, value):
 def test_protected_member_rejected():
     kw = inputs(); kw["manifest"]["windows"][0]["split"] = "validation"
     with pytest.raises(ValueError, match="protected"): validate_qualification_scope(**kw)
+
+
+def test_entrypoint_keeps_existing_metered_runner_and_isolated_dispatch():
+    from scripts.pif_signal_desk_rubric_independent_audit import run_arguments
+    plan = inputs()["plan"]
+    args = run_arguments(plan)
+    assert args["qualification_audit_plan"] is plan
+    assert args["turn_type"] == "AUDIT" and args["concurrency"] == 2
+    assert args["dispatch_database"].name == "independent-audit-dispatch.sqlite"
+    assert args["grant_path"].name == "signal_desk_gold_authoring_budget_grant.json"
+    assert args["target_window_ids"] == plan["window_ids"]
