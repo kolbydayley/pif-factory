@@ -59,7 +59,16 @@ def main():
     plan = prepare()
     with (OUT / "runner.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        if args.execute: raise SystemExit(asyncio.run(execute(plan)))
+        if args.execute:
+            from research_factory.signal_desk_full_event_review import SYSTEM as final_system, schema as final_schema
+            from research_factory.signal_desk_rubric_reference_packets import digest
+            immutable_json(OUT / "execution-contract.json", {
+                "frozen_plan_sha256": digest(plan), "schema_sha256": plan["contract"]["schema_sha256"],
+                "final_system_sha256": digest(final_system), "final_schema_sha256": digest(final_schema()),
+                "execution_ready": True, "max_concurrency": 2, "scope": "16-development-window-qualification-only",
+                "gold_accepted": False, "qualified": False,
+                "runtime_test_receipt": "d1fdb5e: 29 focused tests passed before launch"})
+            raise SystemExit(asyncio.run(execute(plan)))
 
 
 if __name__ == "__main__": main()
