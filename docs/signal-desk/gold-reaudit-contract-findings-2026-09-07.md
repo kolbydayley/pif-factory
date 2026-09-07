@@ -57,6 +57,26 @@ missing claims solely because the supplied Gold-C candidates were supported.
 
 ## Next bounded work, in order
 
+### Attribution representation finding during qualification
+
+Read-only inspection of two completed ASR development windows found that the
+model-visible text had no turn labels, despite the acquisition stratum being
+`asr_diarized`. For `sdw_0ffa09f4e0354c6dd896`, the frozen manifest explicitly
+records `alignment: flattened`, raw transcript selection, and the diarized-word-
+timestamp acquisition contract. Its 3,800-character window is one line. The
+host identifies himself near the end; that does not establish every preceding
+utterance's boundary under the current strict contract. A assigned the host,
+while B/C abstained. This is diagnostic evidence, not an adjudicated error rate.
+
+Report acquisition stratum and actual window alignment separately. Reference
+packets now carry both. Do not assume that diarization metadata reached the
+model, or infer names from a show title. If a future representation experiment
+reconstructs verified turns from timestamp artifacts, freeze it as a separate
+representation family, retain the current baseline, and verify the production
+selection contract. Do not silently rewrite these frozen inputs mid-run.
+
+### Remaining sequence
+
 1. Build a blinded development-only qualification set from the frozen source:
    explicit speaker labels, stable speaker maps, unlabeled dialogue, mentions,
    quoted speech, descriptive assertions, explicit endorsements, warnings, and

@@ -129,6 +129,7 @@ def build_reference_packets(*,plan,manifest,result_root,project_root,max_events=
         events=value["C"]["events"]
         def make_packet(group):
             return {"window_id":wid,"transcript_window":value["text"],"transcript_structure":rows[wid]["transcript_structure"],
+                "window_alignment":rows[wid].get("alignment"),
                 "text_sha256":rows[wid]["text_sha256"],"manifest_sha256":manifest["manifest_sha256"],
                 "rubric_sha256":plan["rubric"]["sha256"],"candidate_events":group,
                 "empty_window_review":not events,"c_sha256":inventory[f"{wid}:C"],"system_sha256":digest(REFERENCE_SYSTEM)}
