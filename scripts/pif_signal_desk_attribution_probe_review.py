@@ -49,33 +49,41 @@ def prepare():
     return packets
 
 
-async def execute(packets):
+async def execute(packets, *, output_root=None, task_prefix="attribution-probe-gpt55-review-v1",
+                  system=None, schema_for_packet=None, validator=None, packet_id=None,
+                  verdict_rows=None):
+    out = output_root if output_root is not None else OUT
+    system = system or REVIEW_SYSTEM
+    schema_for_packet = schema_for_packet or (lambda p: schema(p["original_packet"]))
+    validator = validator or (lambda v, p: validate_review(v, p["original_packet"], p["proposed_labels"]))
+    packet_id = packet_id or (lambda p: p["review_packet_sha256"])
+    verdict_rows = verdict_rows or (lambda v: v["reviews"])
     db = sqlite3.connect(ROOT / "data/factory.sqlite", timeout=30)
     budget = ApprovalBudgetConfig(campaign_id="signal-desk-clean-corpus-2026-08-31",
         grant_path=ROOT / "config/signal_desk_rebuild_budget_grant.json", budget_dir=ROOT / "work/pif-ops/budget")
     try:
         async with CodexAppServerClient(command=["codex", "app-server", "--stdio", "--strict-config"], expected_cli_version="0.147.0") as client:
             for packet in packets:
-                sha = packet["review_packet_sha256"]; original = packet["original_packet"]; proposed = packet["proposed_labels"]
-                target = OUT / f"{sha}.review.json"
+                sha = packet_id(packet)
+                target = out / f"{sha}.review.json"
                 if target.exists():
-                    validate_review(json.loads(target.read_text()), original, proposed); continue
-                if (OUT / f"{sha}.pending.json").exists(): continue
-                key = "attribution-probe-gpt55-review-v1:" + sha
+                    validator(json.loads(target.read_text()), packet); continue
+                if (out / f"{sha}.pending.json").exists(): continue
+                key = task_prefix + ":" + sha
                 reservation = reserve_call(db, task_key=key, budget=budget)
                 if reservation.get("existing"):
                     raise RuntimeError("existing paid review requires sidecar recovery; no blind redispatch")
                 usage = None
                 try:
-                    result = await client.run_ephemeral_structured_turn(model="gpt-5.5", effort="high", base_instructions=REVIEW_SYSTEM,
-                        prompt=json.dumps(packet, ensure_ascii=False), output_schema=schema(original), cwd=ROOT,
-                        sidecar_path=OUT / f"{sha}.sidecar.json", output_path=OUT / f"{sha}.output.json", timeout_seconds=900)
+                    result = await client.run_ephemeral_structured_turn(model="gpt-5.5", effort="high", base_instructions=system,
+                        prompt=json.dumps(packet, ensure_ascii=False), output_schema=schema_for_packet(packet), cwd=ROOT,
+                        sidecar_path=out / f"{sha}.sidecar.json", output_path=out / f"{sha}.output.json", timeout_seconds=900)
                     usage = result.usage.total_tokens if result.usage else None
                     if not result.status_ok or result.output is None:
                         raise RuntimeError(result.error_class or result.status)
-                    try: validate_review(result.output, original, proposed)
+                    try: validator(result.output, packet)
                     except ValueError as exc:
-                        immutable_json(OUT / f"{sha}.pending.json", {"packet_sha256": sha, "reason": str(exc), "gold_accepted": False})
+                        immutable_json(out / f"{sha}.pending.json", {"packet_sha256": sha, "reason": str(exc), "gold_accepted": False})
                         continue
                     immutable_json(target, result.output)
                 finally:
@@ -84,13 +92,13 @@ async def execute(packets):
     finally: db.close()
     counts = Counter(); pending = []
     for packet in packets:
-        sha = packet["review_packet_sha256"]; path = OUT / f"{sha}.review.json"
+        sha = packet_id(packet); path = out / f"{sha}.review.json"
         if not path.exists(): pending.append(sha); continue
-        value = validate_review(json.loads(path.read_text()), packet["original_packet"], packet["proposed_labels"])
-        counts.update(row["verdict"] for row in value["reviews"])
+        value = validator(json.loads(path.read_text()), packet)
+        counts.update(row["verdict"] for row in verdict_rows(value))
     receipt = {"all_calls_validated": not pending, "verdicts": dict(counts), "pending_packets": pending,
         "qualified": False, "gold_accepted": False, "next": "Inspect source-bound corrections and unresolved rows; no automatic promotion"}
-    immutable_json(OUT / "receipt.json", receipt)
+    immutable_json(out / "receipt.json", receipt)
     print(json.dumps(receipt), flush=True)
     return 0 if not pending else 2
 
