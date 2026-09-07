@@ -1,4 +1,18 @@
 from scripts.pif_signal_desk_gold_review_corrected import canonical_fields, batch_packets, packet_cases
+from scripts.pif_signal_desk_gold_review_corrected import validate_packet_decisions
+import pytest
+
+
+def test_malformed_case_id_never_counts_as_reviewed():
+    packet = {"cases": [{"case_id": "expected", "audit": None}]}
+    with pytest.raises(ValueError):
+        validate_packet_decisions({"model": "gpt-5.5", "decisions": [{"case_id": "typo", "decision": "gold_supported", "rationale": "Grounded"}]}, packet)
+
+
+def test_nonexistent_audit_cannot_be_supported():
+    packet = {"cases": [{"case_id": "expected", "audit": None}]}
+    with pytest.raises(ValueError):
+        validate_packet_decisions({"model": "gpt-5.5", "decisions": [{"case_id": "expected", "decision": "audit_supported", "rationale": "Grounded"}]}, packet)
 
 
 def test_internal_role_maps_to_real_attribution_field_not_occupation():

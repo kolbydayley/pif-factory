@@ -182,7 +182,21 @@ async def execute(packets):
                 key = f"corrected-review-{'full' if FULL_REVIEW else 'pilot'}-v{CONTRACT_VERSION}:" + digest
                 reservation = reserve_call(db, task_key=key, budget=budget)
                 if reservation.get("existing"):
-                    raise RuntimeError("existing reservation without decision; inspect sidecar before any retry")
+                    # Preserve paid output. Invalid case coverage remains pending,
+                    # never accepted or silently retried at additional cost.
+                    sidecar = json.loads((OUT / f"{digest}.sidecar.json").read_text())
+                    raw = (OUT / f"{digest}.output.json").read_text()
+                    if (sidecar.get("state") != "completed" or sidecar.get("model") != "gpt-5.5"
+                            or sidecar.get("prompt_sha256") != hashlib.sha256(json.dumps(packet, ensure_ascii=False).encode()).hexdigest()
+                            or sidecar.get("output_sha256") not in {hashlib.sha256(raw.encode()).hexdigest(), hashlib.sha256(raw.rstrip("\n").encode()).hexdigest()}):
+                        raise RuntimeError("saved response provenance mismatch; manual recovery required")
+                    try:
+                        validate_packet_decisions(json.loads(raw), packet)
+                    except ValueError as exc:
+                        immutable_json(OUT / f"{digest}.pending.json", {"packet_sha256": digest, "reason": str(exc), "gold_accepted": False})
+                        continue
+                    immutable_json(output, json.loads(raw))
+                    continue
                 usage = None
                 try:
                     result = await client.run_ephemeral_structured_turn(model="gpt-5.5", effort="high",
@@ -192,24 +206,37 @@ async def execute(packets):
                     usage = result.usage.total_tokens if result.usage else None
                     if not result.status_ok or result.output is None:
                         raise RuntimeError(result.error_class or result.status)
-                    decisions = validate_decisions(result.output, [c["case_id"] for c in packet_cases(packet)])
-                    for case in packet_cases(packet):
-                        if case["audit"] is None and decisions[case["case_id"]]["decision"] in {"audit_supported", "both_supported"}:
-                            raise ValueError("judge supported a nonexistent audit candidate")
+                    try:
+                        validate_packet_decisions(result.output, packet)
+                    except ValueError as exc:
+                        immutable_json(OUT / f"{digest}.pending.json", {"packet_sha256": digest, "reason": str(exc), "gold_accepted": False})
+                        continue
                     immutable_json(output, result.output)
                 finally:
                     settle_call(db, reservation_id=reservation["reservation_id"], task_key=key, actual_tokens=usage)
     finally:
         db.close()
     counts = Counter()
+    pending = []
     for packet in packets:
+        if not (OUT / f"{packet['packet_sha256']}.decision.json").exists():
+            pending.append(packet['packet_sha256'])
+            continue
         output = json.loads((OUT / f"{packet['packet_sha256']}.decision.json").read_text())
         counts.update(d["decision"] for d in output["decisions"])
     plan = json.loads((OUT / "plan.json").read_text())
-    immutable_json(OUT / "receipt.json", {"complete": not plan["oversized_pending"], "pilot_only": not FULL_REVIEW,
-        "reviewed_cases": sum(len(packet_cases(p)) for p in packets), "oversized_pending": len(plan["oversized_pending"]),
+    immutable_json(OUT / "receipt.json", {"complete": not plan["oversized_pending"] and not pending, "pilot_only": not FULL_REVIEW,
+        "reviewed_cases": sum(counts.values()), "pending_batches": pending, "oversized_pending": len(plan["oversized_pending"]),
         "decisions": dict(counts), "gold_accepted": False, "next": "inspect rationale and wider-context needs before expanding"})
-    print(json.dumps({"eligible_review_complete": True, "all_cases_complete": not plan["oversized_pending"], "decisions": dict(counts), "gold_accepted": False}))
+    print(json.dumps({"eligible_review_complete": not pending, "all_cases_complete": not plan["oversized_pending"] and not pending, "pending_batches": len(pending), "decisions": dict(counts), "gold_accepted": False}))
+
+
+def validate_packet_decisions(output, packet):
+    decisions = validate_decisions(output, [c["case_id"] for c in packet_cases(packet)])
+    for case in packet_cases(packet):
+        if case["audit"] is None and decisions[case["case_id"]]["decision"] in {"audit_supported", "both_supported"}:
+            raise ValueError("judge supported a nonexistent audit candidate")
+    return decisions
 
 
 if __name__ == "__main__":
