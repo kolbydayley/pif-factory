@@ -35,9 +35,25 @@ each judge. Quoted/mentioned people and utterers remain separate.
 ## Implemented boundary
 
 `signal_desk_gold_shared_rubric.py` defines a hash-addressed **candidate** contract
-for authors, independent auditors, and final approvers. It is not wired into the
-live fleet and has no qualification receipt. Existing outputs and gate thresholds
-remain unchanged. Its guard rejects incomplete or stale qualification metadata.
+for authors, independent auditors, and final approvers. It is connected only to
+the isolated 16-window development qualification lane, not the production fleet,
+and has no passed qualification receipt. Existing baseline outputs and gate
+thresholds remain unchanged. Its guard rejects incomplete or stale qualification
+metadata; a receipt hash alone is not evidence that semantic quality passed.
+
+The qualification authoring command runs 48 A/B/C calls with the same rubric.
+The reference-review and independent-audit commands require complete authoring
+inputs. The independent auditor receives source text, not A/B/C answers. Its
+bounded receipt explicitly has `reliability_gate_eligible: false`. All 16 members
+remain required even if a worker quarantines one. Completion of these commands
+is evidence of execution, not evidence that the rubric or full corpus passed.
+
+Qualification reporting must retain the source-stratum and per-role denominators,
+including empty windows and unresolved judgments. Report evidence grounding,
+speaker attribution, stance, strategic relevance, and split/merge disagreement
+separately; factual support must not mask irrelevant material. Do not substitute
+raw scorer disagreement for a source-adjudicated error, or infer absence of
+missing claims solely because the supplied Gold-C candidates were supported.
 
 ## Next bounded work, in order
 
@@ -60,5 +76,8 @@ remain unchanged. Its guard rejects incomplete or stale qualification metadata.
 
 No repeated voting to turn quarantines into approvals. No gate lowering. No
 fresh full-corpus paid campaign until the instruction contradiction is measured
-and resolved. Completion hooks remain the continuation mechanism; schedules stay
-paused. This document does not authorize a new spend scope or grant extension.
+and resolved. Completion hooks remain the primary continuation mechanism; Kolby's
+2026-09-07 authorization adds one quiet 15-minute native recovery backstop and an
+active task goal. The older supervisor remains paused. See
+`gold-completion-control.md`. This document does not authorize a new spend scope
+or grant extension.
