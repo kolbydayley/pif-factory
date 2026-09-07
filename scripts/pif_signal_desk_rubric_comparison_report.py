@@ -13,6 +13,9 @@ from research_factory.signal_desk_gold_audit import _load_frozen_window_text
 from research_factory.signal_desk_rebuild_contracts import validate_output
 from research_factory.signal_desk_rubric_reference_packets import validate_reference, digest
 from research_factory.signal_desk_rubric_comparison import compare_role
+from research_factory.signal_desk_reference_recovery import load_reference
+from research_factory.signal_desk_rubric_reference_packets import REFERENCE_SYSTEM
+from scripts.pif_signal_desk_rubric_reference_format_retry import FORMAT_CONTRACT
 
 
 def main():
@@ -20,12 +23,13 @@ def main():
     plan = json.loads((QUAL / "plan.json").read_text())
     manifest = json.loads((R / "merged-manifest.json").read_text())
     windows = {w["window_id"]: w for w in manifest["windows"] if w["split"] == "development"}
-    reviews = []; inventory = {}; verdicts = Counter(); relevance = Counter()
+    reviews = []; inventory = {}; verdicts = Counter(); relevance = Counter(); recoveries = []
     # Require every review; a partial sample must not look like full qualification.
     for packet in packets:
-        path = OUT / f"{packet['packet_sha256']}.reference.json"
-        reference = validate_reference(json.loads(path.read_text()), packet)
-        inventory[path.name] = digest(reference)
+        reference, bindings, recovery = load_reference(OUT, packet,
+            expected_retry_system_sha256=digest(REFERENCE_SYSTEM + FORMAT_CONTRACT))
+        inventory.update(bindings)
+        if recovery["retried"]: recoveries.append(recovery)
         for decision in reference["decisions"]:
             verdicts[decision["verdict"]] += 1
             relevance[decision["strategic_relevance"]] += 1
@@ -63,6 +67,7 @@ def main():
                 counts[field + "_denominator"] += n
                 counts[field + "_agreement"] += result["field_agreement_counts"][field]
     report = {"source_inventory": inventory, "window_count": len(plan["window_ids"]),
+        "reference_recoveries": recoveries, "first_pass_failed_packets": len(recoveries),
         "reference_verdicts": dict(verdicts), "strategic_relevance": dict(relevance),
         "unresolved_reference_decisions": reviews, "comparisons": comparisons,
         "per_role_stratum": {k: dict(v) for k, v in strata.items()}, "speaker_coverage": speakers,
