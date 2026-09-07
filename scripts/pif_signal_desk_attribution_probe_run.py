@@ -111,7 +111,9 @@ async def execute(packets, *, output_root=None, task_prefix="attribution-probe-s
                         release_unstarted_reservation(budget, reservation["reservation_id"])
         counts = dict(dispatch.execute("SELECT status,COUNT(*) FROM signal_desk_rebuild_tasks GROUP BY status").fetchall())
         complete = counts.get("succeeded", 0) == len(packets)
-        immutable_json(out / "receipt.json", {"complete": complete, "tasks": counts, "qualified": False, "gold_accepted": False})
+        receipt = {"complete": complete, "tasks": counts, "qualified": False, "gold_accepted": False}
+        immutable_json(out / "receipts" / f"{digest(receipt)}.json", receipt)
+        if not (out / "receipt.json").exists(): immutable_json(out / "receipt.json", receipt)
         return 0 if complete else 2
     finally:
         dispatch.close(); budget.close()
