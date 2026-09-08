@@ -83,3 +83,28 @@ diagnostic inventory, freeze fresh role prompts and lineage for the same sixteen
 sources, and obtain full-population independent review. Keep the separate source-need
 clarification out of this one-change family; neither defect may be hidden by repairs
 or reused answers. The complete 804-window acceptance scope remains unchanged.
+
+## Next measured comparison: recovery-rule prompt only
+
+Question-v1 returned A for all sixteen sources: fifteen held and only the chrome
+negative control valid. Its full four roles are valid, giving 19 returned outputs,
+four valid roles, fifteen held and45unfulfilled out of64. The first-error inventory
+is six recovery-rule, six exact-span, two question-boundary and one status conflict.
+This is a failed qualification, not an accepted or repaired baseline.
+
+`scripts/pif_signal_desk_question_recovery_qualification.py` defines
+`question-v1-recovery-rule-clarification-v1`. It appends only the already specified
+recovery-need clarification to each question-v1 role prompt. Schemas, validators,
+source bytes, source population, model, effort and concurrency stay unchanged;
+question-boundary v2 is NOT included. Packets carry new family/prompt hashes and
+cannot reuse old outputs. The same shared locks, per-call metering, stop controls,
+source checks and provider proofs apply. C still requires verified independent A/B;
+held responses are preserved without silent retries. Complete qualification still
+requires all64fresh roles and independent full-source review; no runner exit code
+constitutes acceptance. Nine baseline/comparison execution tests passed in4.30s,
+including64-role fresh execution, idempotence, holds and stale-prompt rejection.
+
+The comparison tests a specific observed cause, not a claim that prompt wording
+alone fixes all defects. Report first-pass failures and missing roles even if the
+recovery error decreases. Exact-span failures and question-boundary conflicts are
+separate dimensions for later isolated changes. Full804audits/A1/A2 remain closed.
