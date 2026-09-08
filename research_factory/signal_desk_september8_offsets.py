@@ -4,6 +4,24 @@ from .signal_desk_full_event_v4_repair import propose
 from .signal_desk_full_event_v5 import validate
 
 CASES = {
+ 'ai-governance-b': {
+  'window':'sdw_3e13b01692fa8508d0cd','role':'B','records':14,'failure':'inexact evidence',
+  'packet':'c20176a2fb40f144dba7c9fe9c2f4692bc212b0138ccefd2de5fe1b21f9598ca',
+  'raw':'c37ceee41e26ff0387c1f432406bec2d891e0a6e6d9685f7a82f223f5a690f5f',
+  'source':'ff1118462633db2182c44578f897008db840ddce2aa1f6fec51824fd5ab37374',
+  'spans':[(0,['position','source_evidence',0],216),
+           (1,['position','source_evidence',0],666),
+           (1,['attitude','evaluation_evidence',0],666),
+           (1,['attitude','modality_evidence',0],666),
+           (7,['position','source_evidence',0],2938),
+           (7,['attitude','evaluation_evidence',0],3004),
+           (9,['position','source_evidence',0],3602),
+           (9,['attitude','modality_evidence',0],3602),
+           (9,['attitude','modality_evidence',1],3647),
+           (11,['attitude','evaluation_evidence',0],4396),
+           (13,['position','source_evidence',0],5212),
+           (13,['position','source_evidence',1],5305),
+           (13,['attitude','modality_evidence',0],5305)]},
  'hidden-brain-audit': {
   'window': 'sdw_99a1771e94fa2b923f9e', 'role': 'AUDIT', 'records': 9,
   'packet': 'b1953d846df1189168eec4c5e64c12fb9e0245ff861d57f7f746f232c9e367ab',
