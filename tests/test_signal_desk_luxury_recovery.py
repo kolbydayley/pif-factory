@@ -21,14 +21,11 @@ def test_reviewed_content_only_and_no_invented_voice():
 
 @pytest.mark.parametrize('missing', [True, False])
 def test_missing_or_rejected_delta_blocks(monkeypatch, missing):
-    actual = recovery.verify
-    def check(module, packets):
-        if module is delta:
-            if missing:
-                raise ValueError('missing approval')
-            return [dict(event_id=e['event_id'], verdict='needs_correction') for p in packets for e in p['candidates']], []
-        return actual(module, packets)
-    monkeypatch.setattr(recovery, 'verify', check)
+    def check():
+        if missing:
+            raise ValueError('missing approval')
+        return [dict(event_id=e['event_id'], verdict='needs_correction') for p in delta.prepare(write=False) for e in p['candidates']], []
+    monkeypatch.setattr(recovery, 'verified_delta', check)
     _, _, p = delta.parent.proposal()
     d = delta.parent.run.OUT/'calls'/p['window_id']/'A'
     raw = json.loads((d/f"{p['packet_sha256']}.output.json").read_text())

@@ -5,6 +5,12 @@ from .signal_desk_rubric_reference_packets import digest
 from .signal_desk_repair_review_proof import verify
 
 
+def verified_delta():
+    from scripts import pif_signal_desk_luxury_capacity_continuation as continuation
+    from .signal_desk_review_capacity_continuation import combined
+    return combined(continuation)
+
+
 def unchanged_outside_delta(baseline, fixed, numbers):
     if len(fixed['events']) != 15 or [e['event_id'] for e in fixed['events']] != [e['event_id'] for e in baseline['events']]:
         raise ValueError('luxury population changed')
@@ -31,7 +37,7 @@ def recover(original, packet):
     if len(rows) != 15 or {r['event_id'] for r in rows} != ids or {r['event_id'] for r in rows if r['verdict'] != 'supported'} != changed:
         raise ValueError('luxury prior review coverage changed')
     fixed, dp, q = delta.proposal()
-    ds, delta_proofs = verify(delta, delta.prepare(write=False))
+    ds, delta_proofs = verified_delta()
     if len(ds) != 4 or {d['event_id'] for d in ds} != changed or any(d['verdict'] != 'supported' for d in ds):
         raise ValueError('luxury corrections not independently supported')
     if q != packet:
