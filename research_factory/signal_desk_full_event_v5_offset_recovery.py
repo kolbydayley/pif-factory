@@ -42,7 +42,9 @@ def load_call(directory,packet):
             saved=json.loads((directory/'reviewed-repair.json').read_text())
             provenance['reviewed_limitation_repair']=True
         else:
-            expected,receipt=recover(raw,source=packet["transcript_window"],window_id=packet["window_id"])
+            from .signal_desk_full_event_v5_registered_offsets import REGISTRY,recover as registered_recover
+            if digest(raw) in REGISTRY:expected,receipt=registered_recover(raw,packet)
+            else:expected,receipt=recover(raw,source=packet["transcript_window"],window_id=packet["window_id"])
             saved=json.loads((directory/"offset-recovery.json").read_text())
             provenance['offset_recovery']=True
         if expected != result or saved != receipt:
