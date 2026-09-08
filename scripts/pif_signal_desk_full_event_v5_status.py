@@ -7,12 +7,13 @@ import sys
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 from scripts.pif_signal_desk_full_event_v4_status import summarize as base_summary
 from scripts.pif_signal_desk_full_event_v5_run import OUT,BASE,contract
+from research_factory.signal_desk_full_event_v5_offset_recovery import load_call
 
 
 def summarize(root=OUT,base=BASE):
     # The bundle conversion reads the unchanged dimensions only; v5 validates
     # context separately before conversion. Context is never a voice candidate.
-    return base_summary(root,base,output_validator=contract.validate)
+    return base_summary(root,base,output_validator=contract.validate,call_loader=load_call)
 
 
 if __name__=="__main__":

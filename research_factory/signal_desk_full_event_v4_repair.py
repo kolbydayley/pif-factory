@@ -4,7 +4,7 @@ from .signal_desk_full_event_v4 import validate
 from .signal_desk_rubric_reference_packets import digest
 
 
-def propose(original, *, source, window_id, expected_original_sha256, replacements):
+def propose(original, *, source, window_id, expected_original_sha256, replacements, output_validator=validate):
     if digest(original) != expected_original_sha256:
         raise ValueError("original response changed")
     value = deepcopy(original)
@@ -26,7 +26,7 @@ def propose(original, *, source, window_id, expected_original_sha256, replacemen
         raise ValueError("repair cannot hide or rename records")
     if [b["voice_binding_id"] for b in original["voice_bindings"]] != [b["voice_binding_id"] for b in value["voice_bindings"]]:
         raise ValueError("binding population changed")
-    validate(value, source=source, window_id=window_id)
+    output_validator(value, source=source, window_id=window_id)
     receipt = {"original_sha256": digest(original), "proposed_sha256": digest(value),
         "source_sha256": digest(source), "window_id": window_id, "replacements": deepcopy(replacements),
         "records_before": len(original["events"]), "records_after": len(value["events"]),

@@ -10,7 +10,7 @@ from research_factory.signal_desk_full_event_v4 import validate, semantic_bundle
 from research_factory.signal_desk_rubric_reference_packets import digest
 
 
-def summarize(root=OUT, base=BASE, *, output_validator=validate, bundle_builder=semantic_bundle):
+def summarize(root=OUT, base=BASE, *, output_validator=validate, bundle_builder=semantic_bundle, call_loader=None):
     plan = json.loads((root / "plan.json").read_text())
     states = Counter(); by_role = {}; problems = []; rows = []; usage = 0; usage_missing = 0
     for wid in plan["window_ids"]:
@@ -41,20 +41,28 @@ def summarize(root=OUT, base=BASE, *, output_validator=validate, bundle_builder=
                     raw_path = directory / f"{psha}.output.json"
                     if s["state"] == "completed" and raw_path.exists():
                         raw = json.loads(raw_path.read_text())
-                        try: output_validator(raw, source=source["transcript_window"], window_id=wid)
+                        candidate = raw; recovered = False
+                        if result_path.exists() and json.loads(result_path.read_text()) != raw:
+                            if call_loader is None: raise ValueError("saved result differs from raw; explicit recovery required")
+                            candidate, provenance = call_loader(directory, p)
+                            recovered = True; item["recovery_provenance"] = provenance
+                            try: output_validator(raw, source=source["transcript_window"], window_id=wid)
+                            except (ValueError, TypeError, KeyError) as exc:
+                                item["original_first_pass_validation_error"] = str(exc)
+                        try: output_validator(candidate, source=source["transcript_window"], window_id=wid)
                         except (ValueError, TypeError, KeyError) as exc:
                             item["state"] = "held_contract_failure"
                             problems.append({"window_id": wid, "role": role, "validation_error": str(exc)})
                         else:
                             if result_path.exists():
-                                if json.loads(result_path.read_text()) != raw: raise ValueError("saved result differs from raw; explicit recovery required")
-                                item["state"] = "authored_not_accepted"
-                                bundle, _ = bundle_builder(raw, source["transcript_window"])
+                                item["state"] = "offset_recovered_not_accepted" if recovered else "authored_not_accepted"
+                                bundle, _ = bundle_builder(candidate, source["transcript_window"])
                                 voices = {r["candidate_id"]: r for r in bundle["voice"]["decisions"]}
                                 totals = by_role.setdefault(role, Counter())
-                                totals["windows"] += 1; totals["records"] += len(raw["events"])
-                                if not raw["events"]: totals["empty_windows"] += 1
-                                for event in raw["events"]:
+                                totals["windows"] += 1; totals["records"] += len(candidate["events"])
+                                if recovered: totals["offset_recovered_windows"] += 1
+                                if not candidate["events"]: totals["empty_windows"] += 1
+                                for event in candidate["events"]:
                                     v = voices[event["event_id"]]; a = event["attribution"]
                                     if event.get("context_evidence"):
                                         totals["records_with_context"] += 1
@@ -66,9 +74,9 @@ def summarize(root=OUT, base=BASE, *, output_validator=validate, bundle_builder=
                                         totals["spoken_named_voice" if a["transcript_voice"] is not None else "spoken_indeterminate_voice"] += 1
                                     if a["proposition_owner"] is not None:
                                         totals["named_owner:" + a["relation"]] += 1
-                                spans = Counter((e["evidence_start"], e["evidence_end"]) for e in raw["events"])
+                                spans = Counter((e["evidence_start"], e["evidence_end"]) for e in candidate["events"])
                                 item["max_same_span"] = max(spans.values(), default=0)
-                                item["records"] = len(raw["events"])
+                                item["records"] = len(candidate["events"])
             states[item["state"]] += 1; rows.append(item)
     return {"plan_sha256": digest(plan), "planned_windows": len(plan["window_ids"]), "planned_calls": len(rows),
         "states": dict(states), "by_role": {k: dict(v) for k, v in by_role.items()}, "calls": rows,

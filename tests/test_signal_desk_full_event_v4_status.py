@@ -53,3 +53,16 @@ def test_empty_window_preserved(tmp_path):
     s = summarize(root, base)
     assert s["by_role"]["A"]["empty_windows"] == 1
     assert s["by_role"]["A"]["records"] == 0
+
+
+def test_explicit_projection_remains_visible_as_first_pass_failure(tmp_path):
+    root,base,prefix=setup(tmp_path)
+    raw=fixture();raw['events'][0]['evidence_start']+=1
+    prefix.with_suffix('.output.json').write_text(json.dumps(raw))
+    def verified_loader(directory,packet):
+        return fixture(),{'offset_recovery':True,'recovery_receipt_sha256':'verified-test'}
+    s=summarize(root,base,call_loader=verified_loader)
+    assert s['states']['offset_recovered_not_accepted']==1
+    assert s['by_role']['A']['offset_recovered_windows']==1
+    assert s['calls'][0]['original_first_pass_validation_error']
+    assert not s['accepted_gold']
