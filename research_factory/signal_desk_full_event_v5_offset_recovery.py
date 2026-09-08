@@ -36,7 +36,12 @@ def load_call(directory,packet):
     result=json.loads((directory/f"{sha}.result.json").read_text())
     provenance={"raw_sha256":digest(raw),"result_sha256":digest(result),"offset_recovery":False}
     if raw != result:
-        if (directory/'reviewed-repair.json').exists():
+        if (directory/'source-need-repair.json').exists():
+            from .signal_desk_reviewed_need_recovery import recover as recover_need
+            expected,receipt=recover_need('hidden-brain',raw,packet)
+            saved=json.loads((directory/'source-need-repair.json').read_text())
+            provenance['reviewed_source_need_repair']=True
+        elif (directory/'reviewed-repair.json').exists():
             from .signal_desk_full_event_v5_limitation_recovery import recover as recover_limitation
             expected,receipt=recover_limitation(raw,packet,directory.parents[2]/'explicit-limitation-review-v1')
             saved=json.loads((directory/'reviewed-repair.json').read_text())

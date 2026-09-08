@@ -43,8 +43,13 @@ def verified_call(directory,p,*,imported=False):
     else:
         value=json.loads((directory/f'{sha}.result.json').read_text())
         raw=json.loads((directory/f'{sha}.output.json').read_text())
-        if raw!=value:raise ValueError('new output requires explicit repair provenance')
         proof={'raw_sha256':digest(raw),'result_sha256':digest(value)}
+        if raw!=value:
+            if not (directory/'source-need-repair.json').exists():raise ValueError('new output requires explicit repair provenance')
+            from research_factory.signal_desk_reviewed_need_recovery import recover
+            expected,repair_proof=recover('marketplace',raw,p)
+            if expected!=value or json.loads((directory/'source-need-repair.json').read_text())!=repair_proof:raise ValueError('reviewed repair changed')
+            proof.update(reviewed_source_need_repair=True,repair_proof_sha256=digest(repair_proof))
     validate(value,p)
     return value,{'directory':str(directory),'packet_sha256':sha,'sidecar_sha256':digest(side),'imported':imported,**proof}
 
