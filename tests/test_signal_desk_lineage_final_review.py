@@ -47,6 +47,7 @@ def test_final_freezes_only_after_all_64_verified_roles(tmp_path,monkeypatch,mis
         p=ps[0];save(kwargs['output_root'],p,response(p));return 0
     monkeypatch.setattr(run,'metered_execute',fake);assert asyncio.run(run.execute(plan))==0
     rows,complete=inventory(plan,require_complete=True);assert len(rows)==64 and len(complete)==16
+    assert all(r['original_first_pass_valid'] and not r['repaired_output'] for r in rows)
     if missing_last_audit:
         next((out/'calls'/'w15'/'AUDIT').glob('*.result.json')).unlink()
         with pytest.raises(ValueError,match='incomplete'):final.prepare()

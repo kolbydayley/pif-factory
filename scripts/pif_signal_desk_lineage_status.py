@@ -27,6 +27,12 @@ def inventory(plan, *, require_complete=False):
                     outputs[role],proofs[role]=run.verified_call(directory,p,imported=imported)
                     value=outputs[role]['records'] if role=='C' else outputs[role]
                     row.update(state='verified_import' if imported else 'authored_not_accepted',records=len(value['events']))
+                    raw=json.loads((directory/f'{sha}.output.json').read_text())
+                    row['repaired_output']=raw!=outputs[role]
+                    try:
+                        run.validate(raw,p);row['original_first_pass_valid']=True
+                    except ValueError as exc:
+                        row.update(original_first_pass_valid=False,original_validation_error=str(exc))
                     if role=='C':row.update(input_dispositions=len(outputs[role]['input_dispositions']),additions=len(outputs[role]['additions']))
                 except (ValueError,OSError) as exc:row.update(state='held',reason=str(exc))
             elif side.exists():
@@ -45,6 +51,10 @@ def summarize():
     if plan['lineage_contract']!=run.lineage.receipt() or plan['independent_role_contract']!=run.previous.author.receipt():raise ValueError('frozen contract changed')
     rows,complete=inventory(plan)
     return {'planned_windows':16,'planned_role_outputs':64,'complete_windows':len(complete),
+            'verified_output_quality':{'first_pass_valid':sum(r.get('original_first_pass_valid') is True for r in rows),
+                'first_pass_invalid':sum(r.get('original_first_pass_valid') is False for r in rows),
+                'explicitly_repaired':sum(r.get('repaired_output') is True for r in rows),
+                'scope':'Verified outputs selected for this diagnostic only; excludes superseded C attempts and pending/held outputs.'},
             'states':dict(Counter(r['state'] for r in rows)),'calls':rows,'qualified':False,'gold_accepted':False}
 
 
