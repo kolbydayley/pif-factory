@@ -39,7 +39,17 @@ The isolated runner is now implemented in
 `scripts/pif_signal_desk_question_qualification.py`: it requires all sixteen
 windows and 64 fresh A/B/C/AUDIT outputs, verifies source and provider hashes,
 preserves held failures, and uses the existing metering and shared runner locks.
-It has not yet been frozen or launched. The independent full-population reviewer
+It was frozen and launched on 2026-09-08 after the original diagnostic was
+accounted for: 8 complete windows, 8 held windows, 42 returned outputs containing
+515 records. Only 8 returned outputs were first-pass structurally valid; 34 failed,
+26 were explicitly repaired, and 8 remain held. All 64 original role slots remain
+in the denominator, including 22 unfulfilled slots. This is diagnostic observation,
+not qualification. Thirty question-family code tests passed before launch.
+
+The new run preserves the question-only change and does not incorporate the
+separate source-need clarification. That known failure risk remains measurable;
+it must not be silently repaired away or hidden by a successful exit code.
+The independent full-population reviewer
 is `scripts/pif_signal_desk_question_final_review.py`; it requires every role
 output before preparing record and adjudication-ledger reviews. Actual review
 receipts are verified separately from dispatch success.
