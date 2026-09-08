@@ -41,8 +41,9 @@ def test_real_receipt_verification_reports_notes_without_accepting_gold(tmp_path
                 else:rows.append({'decision_id':c['decision_id'],'verdict':'supported','rationale':'Exact source.',
                     'correction':'','source_quotes':[p['transcript_window'][:20]]})
             v={'decisions':rows}
-            if kind=='records':v.update(empty_window_verdict='not_applicable',empty_window_rationale='',coverage_notes='')
-            if p==records[0]:v['coverage_notes']='Possible missed consequential proposition requires adjudication.'
+            if kind=='records':v.update(empty_window_verdict='not_applicable',empty_window_rationale='',
+                coverage_notes='No omissions found.',coverage_status='no_omissions_found')
+            if p==records[0]:v.update(coverage_notes='Possible missed consequential proposition requires adjudication.',coverage_status='possible_omissions')
             s={'state':'completed','error_class':None,'model':'gpt-5.5','effort':'high',
                'base_instructions_sha256':h(system),'prompt_sha256':h(json.dumps(p,ensure_ascii=False))}
             for suffix,value in [('sidecar',s),('output',v),('review',v)]:

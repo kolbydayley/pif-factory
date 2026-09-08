@@ -79,9 +79,10 @@ def verify_results():
                 rows.append({'kind':kind,'window_id':p['window_id'],'role':p.get('author_role','C'),
                              'id':decision.get('event_id',decision.get('decision_id')),'verdict':decision['verdict']})
             if kind=='records':
-                if value['coverage_notes'].strip() or value['empty_window_verdict'] in {'missed_records','unusable'}:
+                if value['coverage_status']!='no_omissions_found' or value['empty_window_verdict'] in {'missed_records','unusable'}:
                     notes.append({'packet_sha256':p['packet_sha256'],'window_id':p['window_id'],
-                                  'role':p['author_role'],'requires_source_adjudication':True})
+                                  'role':p['author_role'],'coverage_status':value['coverage_status'],
+                                  'requires_source_adjudication':True})
     return {'windows':16,'role_outputs':64,'verdict_counts':dict(Counter(r['verdict'] for r in rows)),
             'all_decisions_supported':all(r['verdict']=='supported' for r in rows),
             'coverage_adjudications_required':notes,'reviewed_packets':len(proofs),'proofs':proofs,
