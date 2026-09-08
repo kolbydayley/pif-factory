@@ -21,7 +21,7 @@ def verified_diagnosis():
     rows.extend(final)
     original_packets = retry.parent.prepare(write=False)
     expected = [e['event_id'] for p in original_packets for e in p['candidates']]
-    if len(rows) != 14 or [d['event_id'] for d in rows] != expected:
+    if len(rows) != 14 or len({d['event_id'] for d in rows}) != 14 or {d['event_id'] for d in rows} != set(expected):
         raise ValueError('combined review population changed')
     return rows, {'preserved_reviews': lineage['preserved_reviews'], 'retry_reviews': proof,
         'original_capacity_failure_sha256': lineage['original_failure_sha256'],
