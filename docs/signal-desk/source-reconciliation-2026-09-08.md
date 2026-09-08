@@ -18,6 +18,24 @@ The same full Techmeme window contains a closing host self-identification. The f
 
 ## Remaining scope
 
+## Final-review corrections: all 20 checked
+
+Compared every before/after field delta and diagnostic rationale with the source context already read. The diagnostic's necessary/equivalent/harmful labels are not automatically adopted.
+
+- Source-aligned repair proposals: Catherine's driver/actor; accessibility's subjective limited causal claim; venture-capital e09's removal of invented management/information specificity; Tiny Speck mention metadata; antecedent expansion for the predictive-world-model and feature-hierarchy evidence; and identifying the community/channel antecedents for the two Changelog records. The latter two remain promotional regardless of improved grounding.
+- Harmless wording or optional context: Rise of the Rest's temporal/biographical detail, willingness-to-pay would/will, articles/an article, enter/land in, and restoring/omitting AI from the NNAISENSE description. None independently establishes a critical factual error. Preserve the source's temporal qualifiers when improving context, without retroactively calling every less-specific paraphrase false. NNAISENSE's surrounding spelling explanation supplies AI context, unlike guessing an unknown proper name.
+- Fox-judgment simplification is not required and discards useful target context; keep disagreement directed at judgment magnitude. The changing speech-act label depends on the repaired event contract, not reviewer taste.
+- The multi-agent-learning future-challenge statement can be tagged as a forecast while retaining the explanatory contrast. The schema must not force meaningful forecast/explanation content into an arbitrary single winner without a defined primary-proposition rule.
+- Facebook reported/own relation, Gucci quotation/report distinction, Gucci discount referent, factory-farming polarity, and mixed/supportive autonomy remain the explicit contract/ambiguity cases discussed above. Do not treat reviewer agreement with its own correction as independent source proof. A guessed broader Gucci referent remains unsafe.
+
+All diagnostic categories now have a first source-review pass: 39 omission flags, 32 fidelity flags, 100 usefulness boundaries, 20 correction cases and 5 promotional exclusions, overlapping across 186 distinct action cases. This is NOT independent approval, accepted gold, or a passing reliability result.
+
+## Implementation handoff: measured repair, not another cosmetic pass
+
+Next build a separate versioned experimental contract, leaving frozen v3 outputs and scorer untouched. It must distinguish evidence role (substantive/context/metadata/promotion/limitation), target-specific attitude from proposition endorsement, source of the utterance from proposition ownership, and actual reported positions from anticipated objections. Self-identification propagation requires explicit scoped continuity evidence, not blanket host assignment. Preserve raw ASR surfaces and attach verified aliases separately.
+
+Use the inspected cases as regression fixtures with counterexamples, not a new benchmark that replaces 804 windows. Freeze prompt/schema/fixture hashes; test all schema invariants locally before metered calls. Independently review the proposed contract and source-bound repair decisions with the existing GPT-5.5 approval lane, then run shared-contract author/reviewer qualification on the unchanged development diagnostic population. Do not consume sealed answers or run A1/A2 until the measured reliability prerequisites permit. No new accepted-label migration can rely solely on these notes.
+
 ## Usefulness boundary review: all 100 cases
 
 Read all 100 boundary candidates and their reviewer rationales in diagnostic action order, against the complete source windows already inspected above. Do not interpret borderline as rejected or count every illustrative clause as an independent strategic claim.
