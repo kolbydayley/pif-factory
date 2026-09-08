@@ -17,3 +17,10 @@ def test_audit_preserves_population_and_attribution_without_claiming_approval():
     assert 'consulted salespeople' in fixed['events'][6]['claim_text']
     assert 'enabled' not in fixed['events'][11]['claim_text']
     assert not proof['gold_accepted']
+
+
+def test_all_fifteen_audit_records_receive_full_source_review():
+    from scripts import pif_signal_desk_tsmc_audit_review as review
+    ps=review.prepare(write=False);fixed,_,p=prepare()
+    assert [e['event_id'] for q in ps for e in q['candidates']]==[e['event_id'] for e in fixed['events']]
+    assert all(q['transcript_window']==p['transcript_window'] for q in ps)
