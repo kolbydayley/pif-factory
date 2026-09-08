@@ -5,6 +5,17 @@ from research_factory import signal_desk_tsmc_audit_recovery as recovery
 from scripts import pif_signal_desk_tsmc_audit_delta_review as delta
 
 
+def test_actual_full_chain_covers_fifteen_records():
+    _, _, p = delta.parent.proposal()
+    d = delta.parent.run.OUT/'calls'/p['window_id']/'AUDIT'
+    raw = json.loads((d/f"{p['packet_sha256']}.output.json").read_text())
+    fixed, receipt = recovery.recover(raw, p)
+    assert len(fixed['events']) == receipt['approved_records'] == 15
+    assert not receipt['gold_accepted'] and not receipt['qualified']
+    assert fixed['events'][13]['publishability_state'] == 'quarantined'
+    assert fixed['events'][14]['publishability_state'] == 'quarantined'
+
+
 def test_only_reviewed_metadata_can_change():
     baseline, _, _ = delta.parent.proposal()
     fixed, _, _ = delta.proposal()
