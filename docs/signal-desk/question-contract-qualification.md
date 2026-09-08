@@ -65,3 +65,21 @@ Read-only progress is available through
 It retains every planned slot, distinguishes structurally valid raw responses from
 provider-verified authored outputs, and never claims acceptance or process liveness.
 Check the exact child PID independently before deciding whether to resume a run.
+
+## Isolated boundary amendment — not dispatched
+
+The frozen question-v1 diagnostic exposed two non-substantive role conflicts:
+JSParty housekeeping and a clipped luxury-interview inquiry marked as a research
+limitation. `signal_desk_question_boundary_contract.py` is a separate, unqualified
+v2 candidate allowing those two roles in addition to supporting context. It still
+rejects substantive/metadata question roles and asserted question premises, and
+delegates unchanged source, attribution, recovery-need and publication validation.
+The v1 runner, frozen schemas and all recorded responses remain untouched.
+
+Fifteen unit tests passed across v1 and this isolated boundary module. These tests
+verify rule delegation and immutability, not semantic correctness or model quality.
+There is no v2 dispatch or automatic migration. Before any use, finish the original
+diagnostic inventory, freeze fresh role prompts and lineage for the same sixteen
+sources, and obtain full-population independent review. Keep the separate source-need
+clarification out of this one-change family; neither defect may be hidden by repairs
+or reused answers. The complete 804-window acceptance scope remains unchanged.
