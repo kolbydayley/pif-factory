@@ -65,9 +65,34 @@ async def run_review(records,ledger):
         packet_id=lambda p:p['packet_sha256'],verdict_rows=lambda v:v['decisions'])
 
 
+def verify_results():
+    from collections import Counter
+    from research_factory.signal_desk_actual_review_receipt import verify
+    records,ledger,expected=prepare(write=False)
+    if json.loads((OUT/'plan.json').read_text())!=expected:raise ValueError('final review plan changed')
+    rows=[];notes=[];proofs=[]
+    for kind,packets,system,validator in [('records',records,review.SYSTEM,review.validate_review),
+            ('ledger',ledger,review.LEDGER_SYSTEM,review.ledger_review.validate)]:
+        for p in packets:
+            value,proof=verify(OUT/kind,p,system=system,validator=validator);proofs.append(proof)
+            for decision in value['decisions']:
+                rows.append({'kind':kind,'window_id':p['window_id'],'role':p.get('author_role','C'),
+                             'id':decision.get('event_id',decision.get('decision_id')),'verdict':decision['verdict']})
+            if kind=='records':
+                if value['coverage_notes'].strip() or value['empty_window_verdict'] in {'missed_records','unusable'}:
+                    notes.append({'packet_sha256':p['packet_sha256'],'window_id':p['window_id'],
+                                  'role':p['author_role'],'requires_source_adjudication':True})
+    return {'windows':16,'role_outputs':64,'verdict_counts':dict(Counter(r['verdict'] for r in rows)),
+            'all_decisions_supported':all(r['verdict']=='supported' for r in rows),
+            'coverage_adjudications_required':notes,'reviewed_packets':len(proofs),'proofs':proofs,
+            'qualified':False,'gold_accepted':False,'review_does_not_replace_reliability_audit':True}
+
+
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('--execute',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser();group=parser.add_mutually_exclusive_group();group.add_argument('--execute',action='store_true');group.add_argument('--verify',action='store_true');args=parser.parse_args()
     with (run.previous.previous.parent.OUT/'runner.lock').open('a') as v4,(run.previous.previous.OUT/'runner.lock').open('a') as v5:
         for lock in (v4,v5):fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        if args.verify:
+            print(json.dumps(verify_results()),flush=True);raise SystemExit(0)
         records,ledger,_=prepare();print(json.dumps({'record_packets':len(records),'ledger_packets':len(ledger),'gold_accepted':False}),flush=True)
         if args.execute:raise SystemExit(asyncio.run(run_review(records,ledger)))
