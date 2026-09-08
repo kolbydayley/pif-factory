@@ -21,12 +21,16 @@ def test_only_explicit_numeric_fields_change(case):
         for key in change['path'][:-1]:target=target[key]
         target[change['path'][-1]]=change['before']
     assert restored==original
-    assert len(fixed['events'])==CASES[case]['records']
+    records=fixed['records'] if CASES[case]['role']=='C' else fixed
+    assert len(records['events'])==CASES[case]['records']
+    if CASES[case]['role']=='C':
+        assert fixed['input_dispositions']==original['input_dispositions']
+        assert fixed['additions']==original['additions']
     assert proof['semantic_fields_changed'] is False
     assert proof['gold_accepted'] is False
 
 
 @pytest.mark.parametrize('case',list(CASES))
 def test_changed_raw_rejected(case):
-    raw,p=inputs(case);raw['events'][0]['claim_text']+='changed'
+    raw,p=inputs(case);records=raw['records'] if CASES[case]['role']=='C' else raw;records['events'][0]['claim_text']+='changed'
     with pytest.raises(ValueError,match='inspected original'):recover(case,raw,p)

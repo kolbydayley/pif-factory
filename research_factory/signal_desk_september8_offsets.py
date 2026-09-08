@@ -4,6 +4,12 @@ from .signal_desk_full_event_v4_repair import propose
 from .signal_desk_full_event_v5 import validate
 
 CASES = {
+ 'ai-governance-c': {
+  'window':'sdw_3e13b01692fa8508d0cd','role':'C','records':17,'failure':'inexact evidence',
+  'packet':'aa90ed4187cdb1b78d8eabc60c78a1bd4695c69e78829ae4b1f15af3eff5dfb3',
+  'raw':'2605323423ebb9ea1cb90b5270e8f8ee92c1930df3f93db4e979e40c8f8bfc95',
+  'source':'ff1118462633db2182c44578f897008db840ddce2aa1f6fec51824fd5ab37374',
+  'spans':[(3,['position','source_evidence',1],920),(7,['position','source_evidence',1],2801)]},
  'ai-governance-b': {
   'window':'sdw_3e13b01692fa8508d0cd','role':'B','records':14,'failure':'inexact evidence',
   'packet':'c20176a2fb40f144dba7c9fe9c2f4692bc212b0138ccefd2de5fe1b21f9598ca',
@@ -48,13 +54,14 @@ CASES = {
 
 def recover(case, original, packet):
     spec=CASES[case];source=packet['transcript_window']
+    records=original['records'] if spec['role']=='C' else original
     if (packet['window_id']!=spec['window'] or packet['role']!=spec['role'] or
         packet['packet_sha256']!=spec['packet'] or digest({k:v for k,v in packet.items() if k!='packet_sha256'})!=spec['packet'] or
-        digest(original)!=spec['raw'] or digest(source)!=spec['source'] or len(original['events'])!=spec['records']):
+        digest(original)!=spec['raw'] or digest(source)!=spec['source'] or len(records['events'])!=spec['records']):
         raise ValueError('not the inspected original source response')
     changes=[]
     for index,parts,start in spec['spans']:
-        path=['events',index]+parts;span=original
+        path=(['records'] if spec['role']=='C' else [])+['events',index]+parts;span=original
         for key in path:span=span[key]
         if set(span)!={'text','start','end'}:raise ValueError('span shape changed')
         end=start+len(span['text'])
@@ -62,8 +69,19 @@ def recover(case, original, packet):
         for field,after in [('start',start),('end',end)]:
             if span[field]!=after:changes.append({'path':path+[field],'before':span[field],'after':after,
                 'reason':'Individually source-inspected occurrence; numeric offset only. No change to quoted text, identity, claim or uncertainty.'})
-    fixed,proof=propose(original,source=source,window_id=spec['window'],expected_original_sha256=spec['raw'],
-        replacements=changes,output_validator=validate)
+    if spec['role']=='C':
+        from copy import deepcopy
+        from .signal_desk_adjudication_lineage import validate as validate_lineage
+        record_changes=[{**c,'path':c['path'][1:]} for c in changes]
+        repaired,proof=propose(records,source=source,window_id=spec['window'],expected_original_sha256=digest(records),
+            replacements=record_changes,output_validator=validate)
+        fixed=deepcopy(original);fixed['records']=repaired
+        validate_lineage(fixed,source=source,window_id=spec['window'],author_a=packet['author_a'],author_b=packet['author_b'])
+        proof.update(original_envelope_sha256=digest(original),proposed_envelope_sha256=digest(fixed),
+                     replacements=changes,lineage_unchanged=True)
+    else:
+        fixed,proof=propose(original,source=source,window_id=spec['window'],expected_original_sha256=spec['raw'],
+            replacements=changes,output_validator=validate)
     proof.update(repair='september8-inspected-offsets-v1',case=case,packet_sha256=spec['packet'],
         semantic_fields_changed=False,original_failure_preserved=True,inspected_spans=len(spec['spans']))
     return fixed,proof
