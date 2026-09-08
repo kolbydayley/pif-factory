@@ -1,5 +1,13 @@
 # Recovery-rule clarification comparison: development diagnostics
 
+## Dynamic resource allocation — A, held; targeted behavior improves
+
+- Window `sdw_8bc85d983495f3780cb2`; packet SHA `a8261c75ff067e7223d3e78e1acd09528450c45576b05fd80b706747147b55b9`; parsed raw SHA `5f5fe3954ed741c33293a09e43dd6b3d393a3fe7d6f63a8830fdcb4be93d084e`.
+- Twelve records, held `inexact span`. Full source and all claim texts, evidence roles, and voice/owner bindings inspected.
+- Unlike the baseline's recovery-need failures on readable opening claims, the fresh first five records retain null voice/owner and `needs:none`. This is evidence of the intended behavior on one targeted source, not aggregate qualification or acceptance. Later John Belamaric labels do not retroactively identify the opening voice.
+- The anticipated Kubernetes1.33 alpha remains qualified as likely; generalized device substitution is not presented as an established released feature. Broader CPU/memory use retains driver and scaling conditions. Per-workload flexibility is a conditional possibility, not proof of current adoption.
+- The final infrastructure-expertise assessment belongs to Kaslin Fields, separate from Belamaric's recommendations. Individual technically specific claims still require issue relevance and atomicity review; source-span failure remains blocking. No automatic repair applied; TSMC peer still pending when this note was recorded.
+
 ## Coding tools and legal AI — A, held
 
 - Window `sdw_4117ea30ae4ec3f116ef`; packet SHA `d29f1ca4959cb838787b47a3c8424c63af090a0b5c6dd7e368cb87e2f4b41276`; parsed raw SHA `e7c60cd685d9adb7de99fd1852d808e9f7b256456bce7a2e9c2c645996d2acbc`.
