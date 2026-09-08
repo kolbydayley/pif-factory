@@ -12,6 +12,10 @@ The eight-packet run remains frozen while executing. Its results are diagnostic,
 
 These are provisional rule decisions pending the remaining source reviews and failed-row recovery. Do not translate validated reviewer output into accepted labels, corpus prevalence, or A1/A2 eligibility.
 
+### Voice-continuity review: first source
+
+Techmeme review `508a9c3368ebdb2845ba49068ec1d286d55dddafce7162eca26b81ba359408c3` confirms the source includes embedded quotations/tweets and a closing Brian McCullough self-identification. The signoff alone cannot establish the voice throughout the flattened transcript. The reviewer recommends a separate `continuity_evidence` field rather than treating the identity anchor or a selected corridor as proof. This is a useful strengthening to evaluate in v2; the existing validator already enforces source-relative exact offsets and increasing endpoints, but those semantics also need explicit prompt wording. Do not solve missing speakers by relaxing this requirement: where text cannot prove continuity, source/turn/audio recovery remains necessary. Keep transcript narrator distinct from quoted proposition owner, and do not treat unindexed credits/tweets as automatically accepted events.
+
 The complete diagnostic covers 1,027 overlapping candidate/correction cases across 16 development windows. These are not independent events or prevalence estimates. All 53 packets validate after explicit recovery; original failure receipts remain intact.
 
 ## First source checks
