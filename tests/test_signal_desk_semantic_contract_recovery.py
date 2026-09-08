@@ -1,6 +1,7 @@
 from copy import deepcopy
+import json
 import pytest
-from scripts.pif_signal_desk_semantic_contract_recovery import partition, repair_packets, reconcile
+from scripts.pif_signal_desk_semantic_contract_recovery import partition, repair_packets, reconcile, collect, SYSTEM, schema
 from research_factory.signal_desk_rubric_reference_packets import digest
 
 
@@ -46,3 +47,29 @@ def test_reconciliation_lineage_and_population(mutation):
     elif mutation == "missing": pairs = []
     else: pairs *= 2
     with pytest.raises(ValueError): reconcile(p, raw, pairs)
+
+
+@pytest.mark.parametrize("tamper", [False, True])
+def test_collect_checks_actual_raw_output(tmp_path, tamper):
+    original = tmp_path / "original"; recovery = tmp_path / "recovery"
+    original.mkdir(); recovery.mkdir()
+    def save(path, value): path.write_text(json.dumps(value))
+    p, raw = fixture(); parts, packets = repair_packets(p, raw, lambda s: 1)
+    sha = p["packet_sha256"]; r = packets[0]; rsha = r["packet_sha256"]
+    op = {"packets": [sha]}
+    save(original / "plan.json", op)
+    save(original / f"{sha}.packet.json", p); save(original / f"{sha}.output.json", raw)
+    save(recovery / "plan.json", {"original_plan_sha256": digest(op), "system": SYSTEM,
+        "schema_sha256": digest(schema()), "packets": [rsha],
+        "inventory": {sha: {"partition": parts, "packets": [rsha]}}})
+    save(recovery / f"{rsha}.packet.json", r)
+    value = {"decisions": [dict(raw["decisions"][1], source_quotes=["Actual source."])]}
+    save(recovery / f"{rsha}.review.json", value)
+    save(recovery / f"{rsha}.output.json", {} if tamper else value)
+    save(recovery / f"{rsha}.sidecar.json", {"state": "completed"})
+    if tamper:
+        with pytest.raises(ValueError): collect(original, recovery)
+    else:
+        outputs, receipts, pending = collect(original, recovery)
+        assert not pending and len(outputs[sha]["decisions"]) == 2
+        assert receipts[sha]["partition"]["retained"] == [raw["decisions"][0]]

@@ -110,6 +110,44 @@ def prepare():
     return originals, selected, inventory
 
 
+def collect(original_root=ORIGINAL, recovery_root=OUT):
+    """Read and recompute recovery; saved reconciliations are not authority."""
+    plan = json.loads((recovery_root / "plan.json").read_text())
+    original_plan = json.loads((original_root / "plan.json").read_text())
+    if plan["original_plan_sha256"] != digest(original_plan) or plan["system"] != SYSTEM or plan["schema_sha256"] != digest(schema()):
+        raise ValueError("changed recovery plan lineage")
+    if set(plan["inventory"]) - set(original_plan["packets"]):
+        raise ValueError("unknown original in recovery inventory")
+    expected_packets = [r for entry in plan["inventory"].values() for r in entry["packets"]]
+    if expected_packets != plan["packets"] or len(set(expected_packets)) != len(expected_packets):
+        raise ValueError("changed recovery packet inventory")
+    outputs = {}; receipts = {}; pending = []
+    for sha, entry in plan["inventory"].items():
+        original = json.loads((original_root / f"{sha}.packet.json").read_text())
+        raw = json.loads((original_root / f"{sha}.output.json").read_text())
+        if digest({k: v for k, v in original.items() if k != "packet_sha256"}) != sha or original["packet_sha256"] != sha:
+            raise ValueError("changed original packet")
+        if partition(original, raw) != entry["partition"]:
+            raise ValueError("changed original failed output")
+        pairs = []; sidecars = {}
+        for rsha in entry["packets"]:
+            target = recovery_root / f"{rsha}.review.json"
+            if not target.exists(): break
+            if (recovery_root / f"{rsha}.pending.json").exists(): raise ValueError("conflicting recovery state")
+            packet = json.loads((recovery_root / f"{rsha}.packet.json").read_text())
+            value = json.loads(target.read_text())
+            sidecar = json.loads((recovery_root / f"{rsha}.sidecar.json").read_text())
+            if sidecar.get("state") != "completed" or sidecar.get("error_class") or json.loads((recovery_root / f"{rsha}.output.json").read_text()) != value:
+                raise ValueError("recovery not backed by completed raw provider output")
+            if packet["packet_sha256"] != rsha: raise ValueError("wrong repair filename")
+            pairs.append((packet, value)); sidecars[rsha] = digest(sidecar)
+        if len(pairs) != len(entry["packets"]): pending.append(sha); continue
+        output, receipt = reconcile(original, raw, pairs)
+        receipt["sidecar_inventory"] = sidecars
+        outputs[sha] = output; receipts[sha] = receipt
+    return outputs, receipts, pending
+
+
 def main():
     parser = argparse.ArgumentParser(); parser.add_argument("--execute", action="store_true"); args = parser.parse_args()
     with (SOURCE / "semantic-contract-review.lock").open("a") as lock:
