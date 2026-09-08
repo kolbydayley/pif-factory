@@ -20,3 +20,24 @@ def test_one_unsupported_record_blocks_application():
     raw,p=inputs();rows=[{'event_id':e['event_id'],'verdict':'supported'} for e in raw['events']];rows[0]['verdict']='unresolved'
     with patch.object(recovery,'verify',return_value=(rows,[])):
         with pytest.raises(ValueError,match='not independently supported'):recovery.recover(raw,p)
+
+
+def test_delta_cannot_reuse_approval_for_changed_other_record():
+    from copy import deepcopy
+    baseline,_,_=review.proposal()
+    revised=deepcopy(baseline)
+    revised['events'][0]['claim_text']='Unreviewed mutation'
+    with pytest.raises(ValueError,match='previously approved content changed'):
+        recovery.assert_unchanged_approvals(baseline,revised,{'evt_04','evt_06','evt_11'})
+
+
+def test_delta_missing_actual_review_still_blocks():
+    raw,p=inputs()
+    actual_verify=recovery.verify
+    def missing_delta(module,packets):
+        if module is review:
+            return actual_verify(module,packets)
+        raise ValueError('missing actual delta review')
+    with patch.object(recovery,'verify',side_effect=missing_delta):
+        with pytest.raises(ValueError,match='missing actual delta review'):
+            recovery.recover(raw,p)
