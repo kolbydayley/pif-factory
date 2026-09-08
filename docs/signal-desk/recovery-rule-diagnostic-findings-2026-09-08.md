@@ -1,5 +1,14 @@
 # Recovery-rule clarification comparison: development diagnostics
 
+## Coding tools and legal AI — A, held
+
+- Window `sdw_4117ea30ae4ec3f116ef`; packet SHA `d29f1ca4959cb838787b47a3c8424c63af090a0b5c6dd7e368cb87e2f4b41276`; parsed raw SHA `e7c60cd685d9adb7de99fd1852d808e9f7b256456bce7a2e9c2c645996d2acbc`.
+- Twenty-seven records, held `inexact span`. Full source, all claims, evidence roles, and attribution objects inspected. No repair applied.
+- Event 21 says revenue quadrupled **from** roughly $30 million. The source juxtaposes quadrupling and a prior-round figure without clearly specifying that multiplication baseline. Independent review must not accept a newly inferred $120 million claim. Reported/rumored valuation and ARR remain source assertions, not verified financial facts.
+- Event 3 preserves the garbled `doctor at Cursor` as metadata; this must not become verified expertise. Event 16's acquisition recommendation must be read together with event 17's explicit withdrawal of the thesis. Garbled entity surfaces and Shawn/Swyx labels cannot silently become externally resolved identities.
+- Event 14 correctly identifies a garbled forecast noun as needing audio/source, but this single example does not qualify the recovery rule. Other claims mix retrospective events, forecasts, and evaluations; event 24 in particular needs atomicity review. Final valuation explanations remain questions, not endorsed causal answers.
+- Hook c7f8fbaa exited 2 at 14:33:49Z; child55383 absent and acknowledged during the active turn. Four fresh A outputs now held, none qualified. Keep all sixteen sources and64 required roles; next continuation may execute only previously unattempted independent sources.
+
 ## Hidden Brain regrets — A, held
 
 - Window `sdw_99a1771e94fa2b923f9e`; packet SHA `ca7b0e718265c42320d373e639b7df6793069344cd4082962e60b5eef795cf5e`; parsed raw SHA `30e3c702f7b37a58277be9972cccefeabf2f9dbcee1fd0ba11f79b7664054301`.
