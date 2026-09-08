@@ -1,5 +1,13 @@
 # Recovery-rule clarification comparison: development diagnostics
 
+## Hidden Brain regrets — A, held
+
+- Window `sdw_99a1771e94fa2b923f9e`; packet SHA `ca7b0e718265c42320d373e639b7df6793069344cd4082962e60b5eef795cf5e`; parsed raw SHA `30e3c702f7b37a58277be9972cccefeabf2f9dbcee1fd0ba11f79b7664054301`.
+- Eleven records returned; validator reports `inexact span`. No offset or semantic repair applied. Full source and all claim texts, attribution objects, and evidence-role explanations inspected.
+- Research prevalence remains qualified by the speaker's estimates. Intrusive repetitive regret and depression/anxiety are presented as an association reported by Summerville, not demonstrated causation. Tom's behavioral learning is an individual anecdote. Catherine's missed encounter is contextual evidence, not a population-level claim.
+- The final interpretation about limited learning potential belongs to Vedantam, not an answer from Summerville. The source ends before her response. The claimed opportunity closure is a subjective interpretation, not independently proven finality.
+- All records specify recovery need `none`; the baseline here also failed spans, so this is not evidence that the intervention resolves the targeted recovery-need family. All roles and windows remain in the denominator.
+
 Family: `question-v1-recovery-rule-clarification-v1`. Same frozen sixteen development sources and 64 required role outputs; only the recovery-rule prompt clarification changes. No output here is accepted gold. Findings are source-relative, not verification of real-world assertions.
 
 ## Marketplace DEI — A, held
