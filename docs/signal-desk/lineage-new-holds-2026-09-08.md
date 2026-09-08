@@ -43,6 +43,31 @@ source windows. Diagnosis only; no output repaired, no gold accepted. The full
 
 ## Next steps
 
+### Partial opening-voice review findings (verified, not final)
+
+Four completed packets were independently checked against the actual GPT-5.5
+high provider metadata, exact request hashes, saved packets, raw/review equality,
+review schema and exact source quotations. Remaining packets were still running.
+
+- DRA evt01–07: reviewers distinguish readable technical content from missing
+  speaker identity. They recommend neutralizing the evidence-role recovery flag
+  while retaining null voice and uncertain publication state—not inventing a name
+  or quarantining all intelligible content as unusable.
+- DRA evt08: the question is incorrectly marked as an assertion. evt09's
+  firsthand-account scope lacks source support. evt10–12 received supported
+  verdicts. One packet also raises a possible omitted recommendation about ordinary
+  workloads; other packets report no obvious omission. Reconcile against source
+  before changing population; reviewer agreement is not assumed.
+- TSMC first five: evt01–03 have the same identity/content separation problem and
+  unsupported firsthand scope. evt01 also transfers a hedge about a counterfactual
+  opportunity onto an asserted causal explanation. evt04 is readable linked
+  context with an unnamed antecedent, not necessarily a recovery-limited record.
+  evt05 received a supported verdict.
+- Reviewer suggestions such as “none/omitted,” “question or inquiry,” or a scope
+  “if available” are prose, not executable schema edits. Check actual allowed
+  values and produce explicit proposals. No partial review applies corrections or
+  completes the 26-record diagnostic.
+
 The independently metered opening-voice diagnosis is live under hook
 `544b74e0-826c-49e0-9c54-7bd29cfd3c34`, child PID 77942. It covers the other two
 held A windows, all 26 original records. Do not duplicate that worker.
