@@ -168,3 +168,23 @@ the family or replace the required complete-population independent review.
 - Snapshot: 12 raw returns, four structurally/provider-verified role outputs, one
   four-role-complete window, eight held responses and 52 unfulfilled role slots.
   Full population remains 16 windows / 64 roles; qualified=false and gold_accepted=false.
+
+### Machine Learning Street Talk flattened A
+
+- Window `sdw_f367e118b794f35d05f9`; 23 records: 19 substantive, three question
+  context records, and one research limitation. Entire source and all claim texts
+  inspected. Packet `8453336ccba0ab9ddeb3a95b000f400037ebd412457c5d5f77f379bc910f2b96`;
+  parsed raw digest `80d8e252b327543786997e166b762a9909f8bf475ccbd6701f47621d462863fc`.
+- Held by the source-recovery invariant. Readable substantive statements and inquiry
+  context request audio/source because speaker identity is unresolved. This repeats
+  the identity-versus-content recovery confusion; the raw response is not repaired.
+  Unnamed voices cannot be assigned from outside knowledge about the research history
+  or company co-founders, and an explicitly mentioned collaborator is not the speaker.
+- Question records link to the subsequent answers rather than count as votes for
+  their premises. Separately, the definition of predictive coding is flagged as
+  potentially garbled; the supplied text must not have a missing negation invented
+  from technical expectations. Medical-impact and historical-priority assertions
+  remain attributed claims, not independently verified facts. Simulating aspects
+  of consciousness must not become a claim that the system is conscious.
+- Nine responses now held. This local diagnostic inspection is not independent
+  semantic approval. The other live call is allowed to finish before any resumption.
