@@ -114,3 +114,27 @@ the frozen contract or reclassify these outputs silently. Independently adjudica
 the distinction using these sources; if a prompt/schema revision is warranted,
 version it as a new measured family and keep first-pass failures and repairs visible.
 No extra speaker names, benchmark shrinkage, or publication authorization follows.
+
+## Completed coding-tools diagnosis (05:45Z)
+
+All five GPT-5.5 high packets verified against actual request/system hashes,
+completed provider receipts, unchanged raw responses, assigned IDs and exact-source
+quotes. All15 records reviewed: six supported, nine need correction; no label has
+been applied from this diagnosis. This is not a reliability audit or acceptance.
+
+Semantic findings: event07 must not silently normalize the ASR form-factor term;
+event08's garbled target does not justify negative attitude (reviewer proposes null
+target/indeterminate attitude while retaining emphatic epistemic strength);
+event10 adds an unsupported temporal relationship and needs source-faithful rumor
+wording. Reviewer supported event09's unresolved acquirer surface rather than
+inventing a canonical company. This is a content diagnosis, not approval of its
+inconsistent evidence_role.needs combination.
+
+Reviewer notes identify several offset fixes, but omit other deterministically
+invalid nested spans and do not resolve all seven needs/role inconsistencies.
+Therefore applying only its prose suggestions cannot produce a validated record
+set. Build an explicit source-bound projection, preserving all15 IDs and raw
+failure history; independently approve all additional semantic field choices.
+Byte-check every proposed numeric replacement rather than trusting reviewer math.
+The final rhetorical valuation question is a potential context-coverage issue,
+not an automatically missing consequential assertion.
