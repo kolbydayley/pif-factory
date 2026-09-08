@@ -5,6 +5,16 @@ from scripts import pif_signal_desk_stoica_c_review as first
 from scripts import pif_signal_desk_stoica_c_delta_review as second
 
 
+def test_actual_complete_record_and_fresh_ledger_chain():
+    _,_,p=first.proposal();d=first.run.OUT/'calls'/p['window_id']/'C'
+    raw=json.loads((d/f"{p['packet_sha256']}.output.json").read_text())
+    fixed,proof=recovery.recover(raw,p)
+    assert fixed==second.proposal()[0]
+    assert proof['approved_records']==15
+    assert proof['approved_lineage_items']==27
+    assert proof['gold_accepted'] is False
+
+
 @pytest.mark.parametrize('missing',[True,False])
 def test_fresh_ledger_missing_or_rejected_blocks(monkeypatch,missing):
     actual=recovery.verify
