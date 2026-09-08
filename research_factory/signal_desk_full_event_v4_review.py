@@ -58,7 +58,9 @@ def validate_review(value, packet):
     return value
 
 
-def packets(output, *, source, window_id, token_count):
+def packets(output, *, source, window_id, token_count, system=None, schema_for_packet=None):
+    selected_system = SYSTEM if system is None else system
+    selected_schema = (lambda p: schema()) if schema_for_packet is None else schema_for_packet
     validate(output, source=source, window_id=window_id)
     # Full source always retained; compact whole-population index exposes context
     # links without multiplying every detailed record in every review packet.
@@ -69,11 +71,12 @@ def packets(output, *, source, window_id, token_count):
         p = {"window_id": window_id, "transcript_window": source, "source_sha256": digest(source),
             "candidates": events, "voice_bindings": [b for b in output["voice_bindings"] if b["voice_binding_id"] in refs],
             "record_index": index, "candidate_population": len(output["events"]), "original_output_sha256": digest(output),
-            "system_sha256": digest(SYSTEM), "schema_sha256": digest(schema()), "gold_accepted": False}
+            "system_sha256": digest(selected_system), "gold_accepted": False}
+        p["schema_sha256"] = digest(selected_schema(p))
         p["packet_sha256"] = digest(p)
         return p
     def fits(p):
-        return len(p["candidates"]) <= 25 and token_count(SYSTEM + json.dumps(p, ensure_ascii=False) + json.dumps(schema())) + 1500 <= 12000
+        return len(p["candidates"]) <= 25 and token_count(selected_system + json.dumps(p, ensure_ascii=False) + json.dumps(selected_schema(p))) + 1500 <= 12000
     result = []; group = []
     for event in output["events"]:
         if not fits(build(group + [event])):

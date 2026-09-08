@@ -55,7 +55,9 @@ def prepare():
     return plan
 
 
-async def execute(plan):
+async def execute(plan, *, output_root=None, packet_builder=packet, prompt_factory=prompts,
+                  review_contract=final, task_prefix="full-event-semantic-v4-provider-schema-v1"):
+    out = OUT if output_root is None else output_root
     slots = asyncio.Semaphore(2); stop = asyncio.Event()
     async def window(wid):
         async with slots:
@@ -64,11 +66,11 @@ async def execute(plan):
             for role in ("A", "B", "C", "AUDIT"):
                 if stop.is_set(): return {"window_id": wid, "status": "checkpointed_after_peer_failure"}
                 try:
-                    p = packet(s, role, author_a=authored.get("A") if role == "C" else None, author_b=authored.get("B") if role == "C" else None)
-                    target = OUT / "calls" / wid / role
+                    p = packet_builder(s, role, author_a=authored.get("A") if role == "C" else None, author_b=authored.get("B") if role == "C" else None)
+                    target = out / "calls" / wid / role
                     immutable_json(target / "packet.json", p)
-                    code = await metered_execute([p], output_root=target, task_prefix="full-event-semantic-v4-provider-schema-v1",
-                        system_for_packet=lambda q: prompts()[q["role"]], schema_for_packet=lambda q: lower(schema())[0],
+                    code = await metered_execute([p], output_root=target, task_prefix=task_prefix,
+                        system_for_packet=lambda q: prompt_factory()[q["role"]], schema_for_packet=lambda q: lower(schema())[0],
                         validator=lambda v, q: validate(v, source=q["transcript_window"], window_id=q["window_id"]), turn_for_packet=lambda q: q["role"])
                     if code != 0:
                         stop.set(); return {"window_id": wid, "status": "contract_failure", "role": role}
@@ -78,8 +80,8 @@ async def execute(plan):
                         enc = tiktoken.get_encoding("o200k_base")
                         # No provider review starts here; preflight future full-source
                         # approval limits and preserve all candidates before continuing.
-                        reviews = final.packets(authored[role], source=s["transcript_window"], window_id=wid, token_count=lambda text: len(enc.encode(text)))
-                        for r in reviews: immutable_json(OUT / "final-packets" / f"{r['packet_sha256']}.json", r)
+                        reviews = review_contract.packets(authored[role], source=s["transcript_window"], window_id=wid, token_count=lambda text: len(enc.encode(text)))
+                        for r in reviews: immutable_json(out / "final-packets" / f"{r['packet_sha256']}.json", r)
                 except Exception as exc:
                     stop.set(); return {"window_id": wid, "status": "checkpointed_failure", "role": role,
                         "error_class": type(exc).__name__, "detail": str(exc)[:240]}
@@ -87,7 +89,7 @@ async def execute(plan):
     rows = await asyncio.gather(*(window(wid) for wid in plan["window_ids"]))
     result = {"complete": all(r["status"] == "authored_not_accepted" for r in rows), "windows": rows,
         "gold_accepted": False, "qualified": False}
-    immutable_json(OUT / "runs" / f"{digest(result)}.json", result)
+    immutable_json(out / "runs" / f"{digest(result)}.json", result)
     print(json.dumps(result), flush=True)
     return 0 if result["complete"] else 2
 
