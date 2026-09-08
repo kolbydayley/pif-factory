@@ -18,4 +18,14 @@ The same full Techmeme window contains a closing host self-identification. The f
 
 ## Remaining scope
 
+### Omission checks: first six cases
+
+Source context for these three windows was read in full. Case IDs, not reused event IDs, distinguish legacy and current records.
+
+- Changelog `b5d0ac3b61d98557dd4620e73b83eb2348f90fdd7ef611b3798168135b762150` and `19361407dcc1590e0ca4dcda742a86a41b7ea992361c3af39c9e57c5492b1d2c`: both describe Mariko's technical-explainer method from consecutive clauses of one example. Current C does not preserve this particular example. This is one method/example cluster, not two independent strategic omissions. Its research usefulness is a boundary decision: do not add it solely to increase recall while excluding comparable show-context material. Preserve Mikeal as the speaker reporting the method; Mariko is not a quoted speaker here.
+- Gradient `ec09ba353181cd62de7a73f2beb1c35b71248ae4b4bd8e561b94b33abc18724e` (B) and `1fd7331c10b1e909b88d5361ca726aa098679a0f991ff2740c16df9c069d40fd` (AUDIT): both identify the same missing present-trend proposition about growing prominence of self-driving cars and deepfakes. Current e7 retains only the subsequent decade-long diffusion forecast. One potential missing proposition, two diagnostic witnesses; preserve present trend versus future forecast instead of counting two omissions or replacing the existing forecast. The text supports growing topics, not measured adoption or deployment growth.
+- Techmeme `50c9644b2169a32e22b20afa23acbcf4f4ab607dda845ec098518d8c314167ca` (AUDIT) and `bceb2f683fe2ebecc8ea369ea3ac983ef3b4cd4990fd20afe57f95442f3c2529` (legacy): both refer to current e16's same Mims quotation. The comparison is already preserved verbatim. The difference is making its critical rhetorical force explicit, not a missing independent event. Route to stance/speech-act reconciliation, not an additional gold claim. The legacy unresolved-speaker schema must not overwrite the v3 quoted-owner binding.
+
+These six case-level checks reduce to three semantic clusters with distinct dispositions; they are provisional source findings, not independently approved gold. Thirty-three other omission candidates remain to inspect. No aggregate recall gain can be inferred from these diagnostic counts.
+
 Continue source reconciliation of all 186 actionable cases (categories overlap): 39 possible consequential omissions, 5 current-C promotional exclusions, 32 fidelity resolutions, 100 usefulness boundaries, and 20 final-correction reconciliations. Deduplicate semantic claims while retaining every original case ID. Then repair and independently qualify the shared rubric before expanding repairs or rerunning reliability. Full 804-window gold, per-split reliability, A1 and A2 remain unqualified.
