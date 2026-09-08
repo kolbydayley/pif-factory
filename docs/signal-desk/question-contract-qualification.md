@@ -59,3 +59,9 @@ lineage, and provenance safeguards only. They are not evidence of extraction
 quality, speaker accuracy, or accepted gold. The original diagnostic's repaired
 outputs must not be used to disguise its first-pass failure rate or to claim that
 the new question-family prompt has been tested.
+
+Read-only progress is available through
+`python3 -B scripts/pif_signal_desk_question_status.py` (`--calls` for role rows).
+It retains every planned slot, distinguishes structurally valid raw responses from
+provider-verified authored outputs, and never claims acceptance or process liveness.
+Check the exact child PID independently before deciding whether to resume a run.
