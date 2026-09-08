@@ -27,3 +27,30 @@ Do not alter the frozen family based on a returned failure.
   separate target/atomicity review.
 - Raw output remains held. No mechanical repair, full-record independent review,
   or acceptance has been performed.
+
+## JS Party introduction: A
+
+- Window: `sdw_c38394ac01937fde7f33`; 12 returned records.
+- Packet: `7b5c7ce8576c2e67f43330090857703b7f76977024bbec31b4252b91421dae2f`.
+- Parsed raw canonical digest: `18d459f38b9276a69b4bec9fcac8d717c3c73ec404e022703b471aad3aea4045`.
+- Full supplied source and claim list inspected. First failure:
+  `inquiry cannot be a substantive assertion`.
+- The failing `evt_006` is actually `promotion_housekeeping`, not a substantive
+  assertion: it asks about the show's intended audience. The current question-only
+  validator requires supporting_context for every inquiry, even a housekeeping
+  question. This is a representation boundary to adjudicate in a separately
+  versioned follow-up, not evidence that the inquiry was converted to a factual vote.
+- Promotional show commitments versus general claims about teaching jargon need
+  semantic review. A WebRTC complexity judgment is distinct from audience intake;
+  the later music discussion is not industry intelligence. The “Visuals required?”
+  question also needs contextual completeness assessment, not a fabricated answer.
+- Keep this response held and unchanged. Do not weaken the frozen validator or
+  relabel the role mechanically. Other validation errors may remain masked.
+
+## Execution boundary
+
+The first two A outputs are held; 62 role slots remain unfulfilled. Continue only
+unattempted independent windows under the frozen family, preserving failures and
+all denominators. Held parents block their dependent execution; existing raw
+failures must never be silently redispatched. This diagnostic does not qualify
+the family or replace the required complete-population independent review.
