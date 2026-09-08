@@ -212,3 +212,25 @@ the family or replace the required complete-population independent review.
 - Snapshot: 14 returns, four valid authored-not-accepted roles, ten held responses,
   one complete negative-control window, and 50 unfulfilled roles. All 16 windows
   and 64 roles remain required; continue only the unattempted independent sources.
+
+### Venture-strategy ASR A
+
+- Window `sdw_26cf20a6373ef1e6cde8`, Ben and Marc Show, tagged `asr_diarized`;
+  the actual selected window text contains no usable explicit turn labels. Do not
+  treat the structure tag or show identity as speaker evidence. Full source and
+  all twelve claim texts inspected. Packet
+  `8dee7de38c35db089a8ed0d85b3e8a1c533bc6d6f4c3833098f74182b29e8381`;
+  parsed raw digest `89e04c882fed0c5b2140278efd564df92f97587500fb8c0922177e0bed6af15b`.
+- Held for inexact spans. Eight nested span occurrences mismatch, across position,
+  attitude and context evidence in five records; these are not eight independent
+  semantic errors. All spoken identities remain null. The anonymous VC's quoted
+  advice is separately owned by the source-surface description, and the narrator's
+  criticism is a different record—not endorsement of that advice.
+- Preserve the difference between a firm's early ambition and a fully specified
+  strategy, historical reported experience and current verified fact, and a quoted
+  investment amount whose opening antecedent is clipped. ASR holes in the incumbent
+  VC anecdote cannot be filled from knowledge of the participants. A mentioned
+  founder's name is not proof of the current voice. Independent semantic review is
+  still required; this result remains unmodified and held.
+- Eleven held responses, four valid authored-not-accepted roles, one peer call
+  still pending at inspection. All sixteen windows and 64 role slots remain.
