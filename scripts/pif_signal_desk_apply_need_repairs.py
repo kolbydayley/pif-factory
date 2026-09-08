@@ -34,9 +34,16 @@ def apply_verified(directory,p,fixed,proof,prefix,*,execute=False,expected_failu
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--case',choices=['hidden-brain','hidden-brain-b','hidden-brain-c','hidden-brain-audit','ai-governance-a','marketplace','changelog-audit-offsets','coding-tools-v3'],required=True);parser.add_argument('--execute',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--case',choices=['tsmc','hidden-brain','hidden-brain-b','hidden-brain-c','hidden-brain-audit','ai-governance-a','marketplace','changelog-audit-offsets','coding-tools-v3'],required=True);parser.add_argument('--execute',action='store_true');args=parser.parse_args()
     with (lane.previous.parent.OUT/'runner.lock').open('a') as a,(lane.previous.OUT/'runner.lock').open('a') as b:
         for lock in (a,b):fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        if args.case=='tsmc':
+            from scripts.pif_signal_desk_tsmc_repair_review import proposal
+            from research_factory.signal_desk_tsmc_recovery import recover as correction
+            _,_,p=proposal();directory=lane.OUT/'calls'/p['window_id']/'A'
+            raw=json.loads((directory/f"{p['packet_sha256']}.output.json").read_text());fixed,proof=correction(raw,p)
+            print(json.dumps(apply_verified(directory,p,fixed,proof,'full-event-lineage-qualification-v1',execute=args.execute,
+                expected_failure='inexact span',receipt_name='tsmc-repair.json')),flush=True);return
         if args.case in {'hidden-brain-audit','ai-governance-a'}:
             from research_factory.signal_desk_september8_offsets import recover as offsets,CASES
             spec=CASES[args.case];directory=lane.OUT/'calls'/spec['window']/spec['role']

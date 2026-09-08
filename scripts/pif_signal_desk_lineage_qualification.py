@@ -50,7 +50,10 @@ def verified_call(directory,p,*,imported=False):
         raw=json.loads((directory/f'{sha}.output.json').read_text())
         proof={'raw_sha256':digest(raw),'result_sha256':digest(value)}
         if raw!=value:
-            if (directory/'september8-offset-repair.json').exists():
+            if (directory/'tsmc-repair.json').exists():
+                from research_factory.signal_desk_tsmc_recovery import recover
+                expected,repair_proof=recover(raw,p);receipt_name='tsmc-repair.json';proof['reviewed_tsmc_repair']=True
+            elif (directory/'september8-offset-repair.json').exists():
                 from research_factory.signal_desk_september8_offsets import recover,CASES
                 case=next(k for k,s in CASES.items() if s['window']==p['window_id'] and s['role']==p['role'])
                 expected,repair_proof=recover(case,raw,p);receipt_name='september8-offset-repair.json';proof['inspected_offset_repair']=True
