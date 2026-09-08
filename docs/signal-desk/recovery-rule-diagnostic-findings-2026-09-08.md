@@ -1,5 +1,14 @@
 # Recovery-rule clarification comparison: development diagnostics
 
+## AI governance essay — A, held
+
+- Window `sdw_3e13b01692fa8508d0cd`; packet SHA `477e35a3d3ce15a566e5e72103a03bf309a87aec00cb19cc2fb642dd7edde246`; parsed raw SHA `b8cb6fa9555a5d31e45cc118a1ef624a4050fc7ae091c8d75f7e05ce1b7d33c9`.
+- Twenty records returned, held `span not exact source`. Full source, all claims, evidence roles and voice/owner bindings inspected; no offset repair or acceptance.
+- Opening clipped quotation is explicitly a wider-context limitation; the named Aschenbrenner quotation has a separate proposition owner, while the unnamed narrator stays null. Do not transfer the quoted nuclear analogy to the narrator who argues against it.
+- Anticipated weapons objections are not evidence that a named person actually expressed them. The hypothetical monopoly exception, the narrator's multipolar forecast, and the time-relative twelve-month diffusion prediction must remain distinct. The narrator's uncertainty and changing views qualify the essay's conclusions.
+- The historical nuclear-use norm is a source-provided analogy, not independently verified history in this audit. Normative recommendations and forecasts must not become observed industry changes. Compound final reflection records need independent atomicity review.
+- The Stoica peer remained active when this diagnosis was recorded. Seven A outputs held, no qualified window; preserve full16/64 denominator.
+
 ## TSMC history — A, held; targeted behavior improves
 
 - Window `sdw_4acaaec65ea71658126b`; packet SHA `316b2dae4ae74b9dd2530c8bf3c7b07f969970b838961fefd5ca53498a384525`; parsed raw SHA `08641cc75c38b53fc1ea5f46a7597bd62b26f0dd74de057276660b857bb32fe4`.
