@@ -1,5 +1,14 @@
 # Recovery-rule clarification comparison: development diagnostics
 
+## TSMC history — A, held; targeted behavior improves
+
+- Window `sdw_4acaaec65ea71658126b`; packet SHA `316b2dae4ae74b9dd2530c8bf3c7b07f969970b838961fefd5ca53498a384525`; parsed raw SHA `08641cc75c38b53fc1ea5f46a7597bd62b26f0dd74de057276660b857bb32fe4`.
+- Nineteen records, held `inexact span`. Full source and all claim texts, evidence roles and voice/owner bindings inspected. No repair or acceptance.
+- Opening solar/LED explanations keep null voice and owner with `needs:none`, unlike baseline recovery requests. This is the second targeted source showing the intended distinction between readable claims and unresolved identity; still not a qualified window.
+- Morris's monetary offer, 48-hour deadline and acceptance are historical reported events, not current offers. Ben's partnership-success interpretation is separate from Morris's narrative. The executive identity is not supplied by the source; the time-relative MediaTek role cannot become a current verified identity fact.
+- Two sponsor-message records remain promotion/housekeeping. Their supplied business statistics and product claims must not enter strategic evidence merely because they contain specific numbers. Compound settlement/causal summaries require independent atomicity review.
+- Hook6a777d44 exited2 at14:47:22Z, child57909 absent, separately acknowledged during active turn. Six fresh A outputs held, zero qualified. Continue previously unattempted sources only, retaining16/64 scope.
+
 ## Dynamic resource allocation — A, held; targeted behavior improves
 
 - Window `sdw_8bc85d983495f3780cb2`; packet SHA `a8261c75ff067e7223d3e78e1acd09528450c45576b05fd80b706747147b55b9`; parsed raw SHA `5f5fe3954ed741c33293a09e43dd6b3d393a3fe7d6f63a8830fdcb4be93d084e`.
