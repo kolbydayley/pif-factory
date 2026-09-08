@@ -50,7 +50,11 @@ def verified_call(directory,p,*,imported=False):
         raw=json.loads((directory/f'{sha}.output.json').read_text())
         proof={'raw_sha256':digest(raw),'result_sha256':digest(value)}
         if raw!=value:
-            if (directory/'hidden-brain-c-repair.json').exists():
+            if (directory/'september8-offset-repair.json').exists():
+                from research_factory.signal_desk_september8_offsets import recover,CASES
+                case=next(k for k,s in CASES.items() if s['window']==p['window_id'] and s['role']==p['role'])
+                expected,repair_proof=recover(case,raw,p);receipt_name='september8-offset-repair.json';proof['inspected_offset_repair']=True
+            elif (directory/'hidden-brain-c-repair.json').exists():
                 from research_factory.signal_desk_hidden_brain_c_recovery import recover
                 expected,repair_proof=recover(raw,p);receipt_name='hidden-brain-c-repair.json';proof['reviewed_hidden_brain_c_repair']=True
             elif (directory/'coding-tools-repair.json').exists():

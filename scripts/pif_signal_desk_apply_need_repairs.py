@@ -34,9 +34,17 @@ def apply_verified(directory,p,fixed,proof,prefix,*,execute=False,expected_failu
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--case',choices=['hidden-brain','hidden-brain-b','hidden-brain-c','marketplace','changelog-audit-offsets','coding-tools-v3'],required=True);parser.add_argument('--execute',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--case',choices=['hidden-brain','hidden-brain-b','hidden-brain-c','hidden-brain-audit','ai-governance-a','marketplace','changelog-audit-offsets','coding-tools-v3'],required=True);parser.add_argument('--execute',action='store_true');args=parser.parse_args()
     with (lane.previous.parent.OUT/'runner.lock').open('a') as a,(lane.previous.OUT/'runner.lock').open('a') as b:
         for lock in (a,b):fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        if args.case in {'hidden-brain-audit','ai-governance-a'}:
+            from research_factory.signal_desk_september8_offsets import recover as offsets,CASES
+            spec=CASES[args.case];directory=lane.OUT/'calls'/spec['window']/spec['role']
+            plan=json.loads((lane.OUT/'plan.json').read_text());source=json.loads((lane.previous.BASE/f"{plan['source_packets'][spec['window']]}.packet.json").read_text())
+            p=lane.packet(source,spec['role'],{});lane.verify_provider(directory,p)
+            raw=json.loads((directory/f"{p['packet_sha256']}.output.json").read_text());fixed,proof=offsets(args.case,raw,p)
+            print(json.dumps(apply_verified(directory,p,fixed,proof,'full-event-lineage-qualification-v1',execute=args.execute,
+                expected_failure='span not exact source',receipt_name='september8-offset-repair.json')),flush=True);return
         if args.case=='hidden-brain-c':
             from scripts.pif_signal_desk_hidden_brain_c_repair_review import WID
             from research_factory.signal_desk_hidden_brain_c_recovery import recover as correction
