@@ -35,6 +35,17 @@ merging, splitting, and source-discovered additions.
    final frozen representation before tournament comparisons. Existing acceptance
    thresholds and uncertainty bounds do not change because the enum changed.
 
-The modules currently have no paid dispatcher and their receipts explicitly say
-`qualified: false`. Unit tests demonstrate contract and lineage safeguards only.
-They are not evidence of extraction quality, speaker accuracy, or accepted gold.
+The isolated runner is now implemented in
+`scripts/pif_signal_desk_question_qualification.py`: it requires all sixteen
+windows and 64 fresh A/B/C/AUDIT outputs, verifies source and provider hashes,
+preserves held failures, and uses the existing metering and shared runner locks.
+It has not yet been frozen or launched. The independent full-population reviewer
+is `scripts/pif_signal_desk_question_final_review.py`; it requires every role
+output before preparing record and adjudication-ledger reviews. Actual review
+receipts are verified separately from dispatch success.
+
+All receipts still say `qualified: false`. Unit tests demonstrate contract,
+lineage, and provenance safeguards only. They are not evidence of extraction
+quality, speaker accuracy, or accepted gold. The original diagnostic's repaired
+outputs must not be used to disguise its first-pass failure rate or to claim that
+the new question-family prompt has been tested.
