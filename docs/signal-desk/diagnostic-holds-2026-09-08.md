@@ -74,6 +74,28 @@ record is not accepted and must not silently disappear from qualification.
 - The historical operator/successor contrast contains a damaged transition;
   extrapolating the full contrast from the surrounding story requires adjudication.
 
+## Gradient introduction A
+
+- Window: `sdw_d5787e92d315a0341fab`; 10 records.
+- Packet: `8d97cb516b758eb94fee20b8cb041d5d8f0edf226a9addcdb720ccade397a0be`.
+- Raw: `2b239b42bddddc625ffce4f9767b19c2c8df55cb34b8f898ca03b8fee16f1b74`.
+- Full supplied source inspected; structural failure: source-limitation contract.
+- Seven readable research/application records request audio/source recovery while
+  retaining substantive or supporting roles. Unidentified speakers and missing
+  proposition content must be scored separately; neither guessing names nor
+  globally clearing recovery needs is an acceptable repair.
+- The transition between research interests and application observations suggests
+  a conversational handoff, not a verified common speaker. Preserve null identities.
+  The later explicit address to Hugh is local attribution evidence for the following
+  response, not permission to name preceding voices or infer a surname. Review that
+  corridor if repairing the record set.
+- Prize, newsletter, and Patreon announcements are correctly separated as
+  quarantined housekeeping in the raw output. Their presence does not make the
+  preceding strategic records valid or establish general speaker accuracy.
+- Compound historical comparison/forecast and application/diffusion records need
+  atomicity review; facial-recognition concern should distinguish the technology
+  from its increasing deployment. Raw output remains a diagnostic hold, unaccepted.
+
 ## Next action and acceptance boundary
 
 Continue the remaining independent original-family windows using the existing
