@@ -14,8 +14,10 @@ from research_factory.signal_desk_full_event_v4 import schema, validate
 from research_factory.signal_desk_full_event_v4_prompts import packet, prompts, receipt
 from research_factory import signal_desk_full_event_v4_review as final
 from research_factory.signal_desk_rubric_reference_packets import digest
+from research_factory.signal_desk_provider_schema import lower
 
-OUT = BASE.parent / "full-event-semantic-qualification-v4"
+ORIGINAL_OUT = BASE.parent / "full-event-semantic-qualification-v4"
+OUT = ORIGINAL_OUT / "provider-schema-v1"
 
 
 def prepare():
@@ -36,7 +38,10 @@ def prepare():
         empty = {"schema_version": VERSION, "window_id": s["window_id"], "window_disposition": "no_records", "events": [], "voice_bindings": []}
         ps = final.packets(empty, source=s["transcript_window"], window_id=s["window_id"], token_count=lambda text: len(enc.encode(text)))
         empty_review_sizes[s["window_id"]] = len(enc.encode(final.SYSTEM + json.dumps(ps[0], ensure_ascii=False) + json.dumps(final.schema()))) + 1500
+    provider_schema, lowering = lower(schema())
     plan = {"contract": receipt(), "final_review": final.receipt(), "source_plan_sha256": digest(old),
+        "provider_schema": lowering,
+        "predecessor_plan_sha256": digest(json.loads((ORIGINAL_OUT / "plan.json").read_text())),
         "window_ids": [s["window_id"] for s in sources], "source_packets": {s["window_id"]: s["packet_sha256"] for s in sources},
         "independent_packets": [p["packet_sha256"] for p in independent], "input_token_counts": input_sizes,
         "empty_review_baseline_tokens": empty_review_sizes, "sol_calls": {"A": 16, "B": 16, "C": 16, "AUDIT": 16},
@@ -46,6 +51,7 @@ def prepare():
     OUT.mkdir(parents=True, exist_ok=True, mode=0o700)
     for p in independent: immutable_json(OUT / "packets" / f"{p['packet_sha256']}.json", p)
     immutable_json(OUT / "schema.json", schema()); immutable_json(OUT / "plan.json", plan)
+    immutable_json(OUT / "provider-schema.json", provider_schema)
     return plan
 
 
@@ -61,8 +67,8 @@ async def execute(plan):
                     p = packet(s, role, author_a=authored.get("A") if role == "C" else None, author_b=authored.get("B") if role == "C" else None)
                     target = OUT / "calls" / wid / role
                     immutable_json(target / "packet.json", p)
-                    code = await metered_execute([p], output_root=target, task_prefix="full-event-semantic-qualification-v4",
-                        system_for_packet=lambda q: prompts()[q["role"]], schema_for_packet=lambda q: schema(),
+                    code = await metered_execute([p], output_root=target, task_prefix="full-event-semantic-v4-provider-schema-v1",
+                        system_for_packet=lambda q: prompts()[q["role"]], schema_for_packet=lambda q: lower(schema())[0],
                         validator=lambda v, q: validate(v, source=q["transcript_window"], window_id=q["window_id"]), turn_for_packet=lambda q: q["role"])
                     if code != 0:
                         stop.set(); return {"window_id": wid, "status": "contract_failure", "role": role}
