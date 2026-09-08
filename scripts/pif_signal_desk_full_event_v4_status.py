@@ -10,7 +10,7 @@ from research_factory.signal_desk_full_event_v4 import validate, semantic_bundle
 from research_factory.signal_desk_rubric_reference_packets import digest
 
 
-def summarize(root=OUT, base=BASE):
+def summarize(root=OUT, base=BASE, *, output_validator=validate, bundle_builder=semantic_bundle):
     plan = json.loads((root / "plan.json").read_text())
     states = Counter(); by_role = {}; problems = []; rows = []; usage = 0; usage_missing = 0
     for wid in plan["window_ids"]:
@@ -41,7 +41,7 @@ def summarize(root=OUT, base=BASE):
                     raw_path = directory / f"{psha}.output.json"
                     if s["state"] == "completed" and raw_path.exists():
                         raw = json.loads(raw_path.read_text())
-                        try: validate(raw, source=source["transcript_window"], window_id=wid)
+                        try: output_validator(raw, source=source["transcript_window"], window_id=wid)
                         except (ValueError, TypeError, KeyError) as exc:
                             item["state"] = "held_contract_failure"
                             problems.append({"window_id": wid, "role": role, "validation_error": str(exc)})
@@ -49,13 +49,16 @@ def summarize(root=OUT, base=BASE):
                             if result_path.exists():
                                 if json.loads(result_path.read_text()) != raw: raise ValueError("saved result differs from raw; explicit recovery required")
                                 item["state"] = "authored_not_accepted"
-                                bundle, _ = semantic_bundle(raw, source["transcript_window"])
+                                bundle, _ = bundle_builder(raw, source["transcript_window"])
                                 voices = {r["candidate_id"]: r for r in bundle["voice"]["decisions"]}
                                 totals = by_role.setdefault(role, Counter())
                                 totals["windows"] += 1; totals["records"] += len(raw["events"])
                                 if not raw["events"]: totals["empty_windows"] += 1
                                 for event in raw["events"]:
                                     v = voices[event["event_id"]]; a = event["attribution"]
+                                    if event.get("context_evidence"):
+                                        totals["records_with_context"] += 1
+                                        totals["context_spans_not_claims"] += len(event["context_evidence"])
                                     totals["source_kind:" + v["source_kind"]] += 1
                                     totals["role:" + event["evidence_role"]["role"]] += 1
                                     totals["publishability:" + event["publishability_state"]] += 1
