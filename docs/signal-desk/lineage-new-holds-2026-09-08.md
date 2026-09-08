@@ -41,6 +41,30 @@ source windows. Diagnosis only; no output repaired, no gold accepted. The full
 - Repeated names and phrases require explicit source-bound location choices.
   Keep Shawn/Swyx as transcript-surface identities; do not externally merge them.
 
+### Independent diagnosis completed 06:57Z
+
+All 14 decisions verified through
+`signal_desk_coding_tools_b_diagnosis.verified_diagnosis()`: five supported, nine
+needs_correction. The original final call failed on provider model capacity with
+no output; a single unchanged-request retry after a five-minute cooldown completed.
+Original failure and accounting remain intact; the first three calls were reused
+through actual-provider proofs, not rerun.
+
+Additional findings: e06 misclassifies VS Code as an organization and overstates
+firsthand scope; e07 needs explicit context for its garbled forecast; e08 and e14
+are inquiries misclassified as forecasts; e10 treats neutral strategic actors as
+evaluative components requiring a split; e11 under-preserves a financing hedge;
+e14 lacks the article-provenance context. The schema has no question speech-act
+enum. An isolated question contract exists but is not qualified or deployed into
+the frozen run. Do not force these inquiries into a knowingly wrong old enum.
+
+Reviewer prose is not executable truth: e11's proposed wording repeats dollar
+denominations absent from the source, and e08's rationale refers to OpenAI while
+the actual source says garbled “opening.” Do not adopt either external inference.
+Preserve the source surface, unknown referents and all original records. The
+numeric-only repairs for the separate Hidden Brain AUDIT and AI-governance A are
+applied with provenance; this coding-tools B response is still held and unchanged.
+
 ## Next steps
 
 ### Opening-voice review findings (complete diagnosis, not acceptance)
