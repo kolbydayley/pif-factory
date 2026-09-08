@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import fcntl
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -64,8 +65,38 @@ def prepare(*,write=True):
     return ps
 
 
+def status():
+    ps=prepare(write=False);rows=[]
+    saved=json.loads((OUT/'plan.json').read_text())
+    if saved['packets']!=[p['packet_sha256'] for p in ps] or saved['original_output_sha256']!=RAW:
+        raise ValueError('diagnostic plan changed')
+    h=lambda s:hashlib.sha256(s.encode()).hexdigest()
+    for p in ps:
+        sha=p['packet_sha256'];row={'packet_sha256':sha,'assigned_records':len(p['candidates'])}
+        if not (OUT/f'{sha}.sidecar.json').exists():
+            row['state']='not_started';rows.append(row);continue
+        try:
+            side=json.loads((OUT/f'{sha}.sidecar.json').read_text())
+            if side.get('state')!='completed':
+                row.update(state=side.get('state'),error_class=side.get('error_class'));rows.append(row);continue
+            if side.get('error_class') or side.get('model')!='gpt-5.5' or side.get('effort')!='high':raise ValueError('review provider mismatch')
+            if side.get('base_instructions_sha256')!=h(SYSTEM) or side.get('prompt_sha256')!=h(json.dumps(p,ensure_ascii=False)):
+                raise ValueError('review request mismatch')
+            if json.loads((OUT/f'{sha}.packet.json').read_text())!=p:raise ValueError('saved review packet changed')
+            value=json.loads((OUT/f'{sha}.review.json').read_text())
+            if value!=json.loads((OUT/f'{sha}.output.json').read_text()):raise ValueError('review output changed')
+            run.previous.review.validate_review(value,p)
+            row.update(state='verified_diagnosis',decisions=value['decisions'],coverage_notes=value['coverage_notes'])
+        except (OSError,ValueError) as exc:row.update(state='unverified',reason=str(exc))
+        rows.append(row)
+    return {'packets':rows,'all_reviews_verified':all(r['state']=='verified_diagnosis' for r in rows),
+            'original_records':15,'diagnosis_only':True,'qualified':False,'gold_accepted':False}
+
+
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--execute',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--execute',action='store_true');parser.add_argument('--status',action='store_true');args=parser.parse_args()
+    if args.status:
+        print(json.dumps(status(),ensure_ascii=False),flush=True);return
     with (run.previous.OUT/'runner.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB);ps=prepare()
         print(json.dumps({'packets':len(ps),'original_records':15,'diagnosis_only':True}),flush=True)

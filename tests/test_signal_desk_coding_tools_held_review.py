@@ -35,3 +35,14 @@ def test_standard_acceptance_validator_still_rejects_original():
     ps,raw=fixture()
     with pytest.raises(ValueError,match='inexact span'):
         review.run.previous.contract.validate(raw,source=ps[0]['transcript_window'],window_id=review.WID)
+
+
+def test_status_rejects_completed_wrong_model_and_missing_calls(tmp_path,monkeypatch):
+    ps,raw=fixture();monkeypatch.setattr(review,'OUT',tmp_path)
+    (tmp_path/'plan.json').write_text(json.dumps({'packets':[p['packet_sha256'] for p in ps],'original_output_sha256':review.RAW}))
+    sha=ps[0]['packet_sha256']
+    (tmp_path/f'{sha}.sidecar.json').write_text(json.dumps({'state':'completed','model':'wrong','effort':'high'}))
+    result=review.status()
+    assert result['packets'][0]['state']=='unverified'
+    assert all(p['state']=='not_started' for p in result['packets'][1:])
+    assert not result['all_reviews_verified'] and not result['gold_accepted']
