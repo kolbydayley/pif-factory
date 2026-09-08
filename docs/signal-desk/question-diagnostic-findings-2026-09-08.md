@@ -257,3 +257,38 @@ the family or replace the required complete-population independent review.
   Active-turn receipt, not an idle-wake proof. Inventory16returns4valid12held,
   one complete negative-control window and48unfulfilled roles. Three original
   independent sources have not yet been attempted. No semantic approval claimed.
+
+### Stack Overflow accessibility ASR A
+
+- Window `sdw_a31be726ea4882906238`; 15 records; held by source-recovery invariant.
+  Packet `9f0f09a1b812498fd3b9b7effbcec6907347f92991c58c5daa9f84c1cc6eeed5`;
+  parsed raw digest `f89a87dc919df8b8d6336685b8ecd5134ce9ee284862b264abdebf201bf0726e`.
+- Full source and all claim texts inspected. The ASR distribution contains several
+  variants of accessibility-standard/algorithm names. Preserve the transcript surface
+  and adjudicated aliases; do not infer multiple distinct technologies, or silently
+  standardize them from expertise. A possible future specification change is not a
+  current adopted standard. The reported contrast shortcomings remain the speaker's
+  qualified account, not an independently verified technical conclusion.
+- The reactive-remediation-to-measured-plan transition is useful strategic content.
+  Interviewer questions are not affirmative evidence of the proposed architecture or
+  color premise. Mentions of Dan/Jamir do not establish every turn's speaker; the
+  selected text lacks explicit turn labels despite its asr_diarized tag. No acceptance.
+
+### Gradient introduction ASR A
+
+- Window `sdw_d5787e92d315a0341fab`; 11 records; held for span not exact source.
+  Packet `3ff8af0331afe3674d315995069a0d8d1152973182bca451a88f49326ab2bf35`;
+  parsed raw digest `81d065ea907b4ba468b94b824e2a0969f9587c7ecf958479c19684e0fc632de4`.
+- Full source and all claim texts inspected. Forecasts about strategic/adversarial
+  learning, interdisciplinary AI, and societal adoption must retain uncertainty and
+  personal-research-interest context. Past attempts to use AI for COVID applications
+  are not evidence those applications succeeded. Concern about facial recognition
+  is not opposition to every AI application.
+- Podcast/prize/newsletter/fundraising records are housekeeping, not independent
+  evidence of industry change or verified expertise. A named invitation to speak may
+  support a tightly scoped turn investigation but not retroactive attribution of the
+  opening research views. Output voices remain null. Independent review still needed.
+- Hook98c1ab69 exited2 at13:54:49Z; child49814 absent, ACK13:54:59Z,
+  received during active goal turn. Inventory18returns4valid14held, one complete
+  negative control,46unfulfilled roles. One original independent source remains
+  unattempted. All sixteen windows/64roles retained; qualified=false.
