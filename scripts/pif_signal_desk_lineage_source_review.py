@@ -111,7 +111,7 @@ def status(packets, root=OUT):
                     s.get('base_instructions_sha256')!=h(SYSTEM) or s.get('prompt_sha256')!=h(json.dumps(p,ensure_ascii=False)) or raw!=v):
                     raise ValueError('review provenance mismatch')
                 row.update(state='reviewed_not_gold',decisions=[{'case_id':r['case_id'],'verdict':r['verdict'],
-                    'contract_change_requested':bool(r['contract_change'].strip())} for r in v['decisions']])
+                    'contract_note_present':bool(r['contract_change'].strip())} for r in v['decisions']])
             except (ValueError,OSError) as exc:row.update(state='held',reason=str(exc))
         elif (root/f'{sha}.pending.json').exists():row['state']='held'
         elif side.exists() and s.get('state') in {'completed','failed'}:row['state']='terminal_without_valid_review'
