@@ -147,3 +147,24 @@ unattempted independent windows under the frozen family, preserving failures and
 all denominators. Held parents block their dependent execution; existing raw
 failures must never be silently redispatched. This diagnostic does not qualify
 the family or replace the required complete-population independent review.
+
+### First complete four-role window: EconTalk webpage chrome
+
+- Window `sdw_fe1a756b868166848a44`; frozen source packet
+  `12c8352aa9a677a548347a139c5d5cec47df3274201eaddf6dbf92e98c59ebf1`.
+  Full source and all A/B/C/AUDIT outputs inspected locally on 2026-09-08.
+  The source is a related-reading block, site navigation/footer and survey invitation,
+  not a spoken discussion. It remains in the original diagnostic population.
+- A returned two records: bibliographic source metadata and quarantined survey
+  housekeeping. B and independent AUDIT returned no records. C retained the
+  bibliographic metadata, corrected its attitude treatment, and rejected the survey
+  entry with an explicit input disposition. None classified a record as substantive
+  strategic evidence or assigned these page contents to a named speaking person.
+- This is a useful negative-control observation, not a positive test of speaker
+  attribution or consequential-claim recall. The A/C versus B/AUDIT metadata-retention
+  difference still needs independent adjudication under the shared rubric. The C
+  candidate metadata must not be promoted to a person's statement, a factual vote,
+  or a public issue signal. Local inspection is not GPT-5.5 approval.
+- Snapshot: 12 raw returns, four structurally/provider-verified role outputs, one
+  four-role-complete window, eight held responses and 52 unfulfilled role slots.
+  Full population remains 16 windows / 64 roles; qualified=false and gold_accepted=false.
