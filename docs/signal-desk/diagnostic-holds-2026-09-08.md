@@ -56,6 +56,24 @@ record is not accepted and must not silently disappear from qualification.
   knowledge. Review the claim and epistemic fields together, not as a verified
   external statement about the standard.
 
+## Venture-firm strategy discussion A
+
+- Window: `sdw_26cf20a6373ef1e6cde8`; 9 records.
+- Packet: `f7b52ace2080b5b429d108dc862ef3b1420de72514c929a53ee0e631b59b28fb`.
+- Raw: `2a7091dd3a314bcbba9ee52ff34ad92b437a8b9ab44165370ffc51a4a26b2e02`.
+- Full supplied source inspected; structural failure: source-limitation contract.
+- The opening investment fragment and multiple missing conversational passages
+  genuinely limit reconstruction. Preserve those limitations; do not fill missing
+  words or identify voices from biographical hints or episode familiarity.
+- Other strategy propositions are readable despite unidentified speakers. Their
+  unknown attribution is distinct from missing proposition content.
+- The unnamed VC's limited-partner advice and the narrator's strong rejection
+  must have separate proposition ownership and stance. Reported speech is not an
+  endorsement by the narrator, and unnamed third-party advice is not evidence of
+  a named participant's own policy.
+- The historical operator/successor contrast contains a damaged transition;
+  extrapolating the full contrast from the surrounding story requires adjudication.
+
 ## Next action and acceptance boundary
 
 Continue the remaining independent original-family windows using the existing
