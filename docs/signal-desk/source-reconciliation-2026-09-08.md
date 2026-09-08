@@ -2,6 +2,16 @@
 
 Status: development-only investigation; no gold acceptance or automatic label changes.
 
+## Independent contract review: provisional reconciliation
+
+The eight-packet run remains frozen while executing. Its results are diagnostic, not gold approval.
+
+- Evidence-role reviews both allege that five required schema fields sit outside `items.properties`. Direct inspection of both frozen packets disproves that claim: all seven required fields are inside properties. Do not implement the alleged nesting repair. The suggestion to explicitly include theme music/show-production material under housekeeping is separable from this erroneous schema diagnosis.
+- The All-In attitude review asks for ownership and position-actuality fields. Those are separate experimental dimensions already represented by the attribution and position-status contracts. Reconcile their interfaces when composing the next shared contract; do not silently broaden the isolated attitude experiment. Multiple-target candidates already have `split_required`; do not replace candidate IDs or increase counts automatically.
+- Position-status review `f7748ab9275d7d1bf0fead29e0b454e03d4531cc1bb1ad1f53dd960cb666dafa`, AI-governance window: the speaker's own future predictions and conditionals are actual expressed positions. The hypothetical objection introduced by “People will say” is an anticipated position, not observed opposition. Clarify this distinction explicitly in the next version: future tense and conditional content alone do not make a view anticipated. The exact source quotes in the saved review substantiate both forms. Character-offset semantics should also be stated explicitly, consistent with the existing validator.
+
+These are provisional rule decisions pending the remaining source reviews and failed-row recovery. Do not translate validated reviewer output into accepted labels, corpus prevalence, or A1/A2 eligibility.
+
 The complete diagnostic covers 1,027 overlapping candidate/correction cases across 16 development windows. These are not independent events or prevalence estimates. All 53 packets validate after explicit recovery; original failure receipts remain intact.
 
 ## First source checks
