@@ -50,7 +50,10 @@ def verified_call(directory,p,*,imported=False):
         raw=json.loads((directory/f'{sha}.output.json').read_text())
         proof={'raw_sha256':digest(raw),'result_sha256':digest(value)}
         if raw!=value:
-            if (directory/'inspected-offset-repair.json').exists():
+            if (directory/'coding-tools-repair.json').exists():
+                from research_factory.signal_desk_coding_tools_final_recovery import recover
+                expected,repair_proof=recover(raw,p);receipt_name='coding-tools-repair.json';proof['reviewed_coding_tools_repair']=True
+            elif (directory/'inspected-offset-repair.json').exists():
                 from research_factory.signal_desk_lineage_audit_offsets import recover
                 expected,repair_proof=recover(raw,p);receipt_name='inspected-offset-repair.json';proof['inspected_offset_repair']=True
             else:
