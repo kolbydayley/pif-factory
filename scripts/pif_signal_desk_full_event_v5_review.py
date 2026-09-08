@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import fcntl
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -18,6 +19,8 @@ OUT=run.OUT/"final-review"
 def prepare():
     import tiktoken
     plan=run.prepare();enc=tiktoken.get_encoding("o200k_base");packets=[];inventory={}
+    if len(plan['window_ids'])!=16 or len(set(plan['window_ids']))!=16:
+        raise ValueError('complete sixteen-source review population required')
     for wid in plan["window_ids"]:
         source=json.loads((run.BASE/f"{plan['source_packets'][wid]}.packet.json").read_text());outputs={};provenance={}
         for role in ("A","B","C","AUDIT"):
@@ -28,6 +31,9 @@ def prepare():
             sidecar=json.loads((d/f"{sha}.sidecar.json").read_text())
             if sidecar.get("state")!="completed" or sidecar.get("error_class"):
                 raise ValueError("author requires explicit source/provenance recovery")
+            h=lambda text:hashlib.sha256(text.encode()).hexdigest()
+            if sidecar.get('model')!='gpt-5.6-sol' or sidecar.get('effort')!='medium' or sidecar.get('base_instructions_sha256')!=h(run.author.prompts()[role]) or sidecar.get('prompt_sha256')!=h(json.dumps(p,ensure_ascii=False)):
+                raise ValueError('author sidecar model or request contract changed')
             outputs[role]=run.contract.validate(saved,source=source["transcript_window"],window_id=wid)
         inventory[wid]={"outputs":{r:digest(v) for r,v in outputs.items()},"provenance":provenance}
         packets.extend(run.review.packets(outputs["C"],source=source["transcript_window"],window_id=wid,token_count=lambda text:len(enc.encode(text))))
