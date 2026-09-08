@@ -188,3 +188,27 @@ the family or replace the required complete-population independent review.
   of consciousness must not become a claim that the system is conscious.
 - Nine responses now held. This local diagnostic inspection is not independent
   semantic approval. The other live call is allowed to finish before any resumption.
+
+### Luxury-business A: clipped question role conflict
+
+- Window `sdw_36c333137a506679078a`; 16 records. Full source and claim texts
+  inspected, plus the complete question record. Packet
+  `da03d87098a0b58344431e5e0e61c1573659a4df560d2efc3afb3cd7d95f37ce`;
+  parsed raw digest `599a1a5ba93082e7a109e22f37ba6c8a6e4cdb3c4ec922ee0f52c1c1b305f685`.
+- The displayed error says inquiry cannot be a substantive assertion, but the
+  offending evt_016 is actually a quarantined research limitation about the clipped
+  final question. This is the second non-substantive question-role boundary conflict
+  after JSParty housekeeping. Supporting-context-only eligibility is too restrictive
+  for representing these cases; any amendment requires a separately frozen version.
+- Other issues remain visible: readable claims request source recovery because
+  speaker identity is missing; the gross-margin statement has an ambiguous cost
+  denominator that must not be silently repaired into a precise financial ratio;
+  recent design adoption must retain its early-rollout caveat. The claim about a
+  possible publicity campaign retains uncertainty, rather than asserting a campaign
+  happened. Local inspection does not approve any of these records.
+- Hook b71a5db0-d600-4636-ba61-b95350b73da6 exited 2 at 13:34:37Z;
+  child 45544 absent, separate acknowledgement recorded at 13:34:43Z. It arrived
+  during an active goal turn, so it does not establish an autonomous idle wake.
+- Snapshot: 14 returns, four valid authored-not-accepted roles, ten held responses,
+  one complete negative-control window, and 50 unfulfilled roles. All 16 windows
+  and 64 roles remain required; continue only the unattempted independent sources.
