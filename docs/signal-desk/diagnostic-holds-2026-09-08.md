@@ -37,6 +37,25 @@ record is not accepted and must not silently disappear from qualification.
 - The final forecast is genuinely clipped. Its recovery requirement must remain;
   it cannot be turned into a complete claim by a broad needs-field rewrite.
 
+## Accessibility discussion A
+
+- Window: `sdw_a31be726ea4882906238`; 12 records.
+- Packet: `abd6465dc007e307ce701f7e473766c7a0146d7c576ae9c6dd036f31bc98976d`.
+- Raw: `4d4206671c89971c99420edb673e368fc38bcc2d6f236fce4e42f2c5f2cccbce`.
+- Full supplied source inspected; structural failure: source-limitation contract.
+- Several readable implementation claims combine substantive roles with source
+  recovery needs because transcription varies technical names. Preserve surface
+  variants and uncertainty; do not globally rewrite them into external canonical
+  names. The window itself explicitly names APCA and WCAG elsewhere, but matching
+  the later variants still requires source-grounded adjudication.
+- Distinguish the interviewer's technical-debt analogy and the short agreement
+  from a separately developed substantive claim. Preserve question/answer and
+  mixed-turn context. References to Dan or Jamir are not sufficient by themselves
+  to assign the unlabeled voices.
+- The final contrast-algorithm criticism is qualified by the speaker's limited
+  knowledge. Review the claim and epistemic fields together, not as a verified
+  external statement about the standard.
+
 ## Next action and acceptance boundary
 
 Continue the remaining independent original-family windows using the existing
