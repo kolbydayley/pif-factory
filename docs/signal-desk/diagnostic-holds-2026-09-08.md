@@ -96,6 +96,26 @@ record is not accepted and must not silently disappear from qualification.
   atomicity review; facial-recognition concern should distinguish the technology
   from its increasing deployment. Raw output remains a diagnostic hold, unaccepted.
 
+## Tech news roundup A
+
+- Window: `sdw_0ffa09f4e0354c6dd896`; 16 records.
+- Packet: `6af48dd82fad6511804edf4f7cef9155e1e6592a6926cb3f65c271f596baf730`.
+- Raw: `d81684d1cdf47bcd622959f7c415a5ed2cf79d7ff3a0ac8c027d53a36dad29aa`.
+- Full supplied source inspected; structural failure: source-limitation contract.
+- Opening quoted survey response is genuinely clipped, with unidentified source
+  and unspecified subject. Preserve the missing-context limitation.
+- The closing self-identification supplies Brian McCullough as narrator evidence,
+  not ownership of every reported position. TechCrunch, quoted journalists, survey
+  data, and embedded social-media reactions require distinct proposition ownership.
+- Roose/Russe/Rusch and Konstein are transcript-surface variants; external spelling
+  corrections must not substitute for recorded alias evidence.
+- Two distinct migration statistics are combined in one record; the public-relations
+  study's willingness to move is not observed migration. Headline metadata and
+  an ironic attributed quotation require contextual classification, not literal
+  substantive votes. Quotation within quotation is particularly important for Abrams.
+- Preserve the raw terminal hold and all dependent-role denominators. No repair or
+  independent semantic approval is claimed for these sixteen records.
+
 ## Next action and acceptance boundary
 
 Continue the remaining independent original-family windows using the existing
