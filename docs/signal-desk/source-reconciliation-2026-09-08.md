@@ -76,6 +76,14 @@ Read full `sdw_a31be726ea4882906238` source and its 10 current C claims from pac
 - `455e8da3235394c4cde0ab300609183d3b8e3b750d25ebef8079acfd5f7f0cfd`: the brand-color constraint is absent from e07's explanation of algorithm selection. This is useful decision context; propose retaining it as the team's stated constraint, not proof that accessibility standards may be bypassed or that the chosen alternative ensures compliance.
 - `991cd3aac4995bb2b701567802abd71f10fa8b9370da907171223efc781fba21`: e09 uses Axe Core but omits the speaker's characterization of it as the de facto testing engine. This is attributed ecosystem context, not an independently verified market-share fact. Prefer enriching the existing tool-choice context over adding a duplicate implementation event.
 
-Thirty-one of 39 omission cases now have source-level notes; eight remain. No repairs have been applied or independently approved.
+### Diversity funding and infrastructure: three additional checks
+
+Read both complete sources and current C indexes: `sdw_777d46db3fa4c592b71e` (11 claims, packet `25c296ef2499c3cdd236d15326c5e94bfd97f2e6b38034c460b90bb11ad6b875`) and `sdw_8bc85d983495f3780cb2` (11 claims, packet `a93ccb559f41e44cd8d2854c91ba25b049e002bdc3c23693151a83703995505e`).
+
+- `a71590efb7d1638a3169173bd0af7ac72f94b776af3138405aa76fa183b592e1`: the interviewer's investment-shift framing is already covered substantively by e02/e08. It is not an additional independent observation. Preserve its source role if used as interview context; do not turn it into a second source confirming the same reported trend.
+- `16b9659e91690fac6095645d75231518efad137e0d4a57a29dc19f71617f66e1`: e01 covers recruiting/diversity cuts but not the explicitly named HR category and concentration framing. This is a scope qualifier on the existing trend, not a separate layoff event. The statement occurs in the interviewer's question setup, not Brunson's answer; speaker identity must not move across that boundary. Current e08's short assent also needs its preceding question retained as supporting context, not only the two-word response.
+- `33425a602063d1d5f680d651bd84e7b7a5d9c7b6b1c84ff570348b1771820d87`: current e08/e09 preserve possible workload-level flexibility but omit the author's explanation that existing per-node behavior reflects SIG Node history rather than a technological requirement. Retain that attributed architectural rationale with its source; do not remove the distinct driver/scalability conditions governing future flexibility.
+
+Thirty-four of 39 omission cases now have source-level notes; five remain. No repairs have been applied or independently approved.
 
 Continue source reconciliation of all 186 actionable cases (categories overlap): 39 possible consequential omissions, 5 current-C promotional exclusions, 32 fidelity resolutions, 100 usefulness boundaries, and 20 final-correction reconciliations. Deduplicate semantic claims while retaining every original case ID. Then repair and independently qualify the shared rubric before expanding repairs or rerunning reliability. Full 804-window gold, per-split reliability, A1 and A2 remain unqualified.
