@@ -18,6 +18,32 @@ The same full Techmeme window contains a closing host self-identification. The f
 
 ## Remaining scope
 
+## Usefulness boundary review: all 100 cases
+
+Read all 100 boundary candidates and their reviewer rationales in diagnostic action order, against the complete source windows already inspected above. Do not interpret borderline as rejected or count every illustrative clause as an independent strategic claim.
+
+The binary choice between a headline claim and deletion is the wrong contract. Preserve distinct roles:
+
+1. **Substantive claim:** a specific view, mechanism, attributed development, comparison, forecast, constraint or decision criterion. A first-person workflow or willingness-to-pay account can qualify, with anecdotal scope and no invented prevalence.
+2. **Supporting context:** examples, explicit caveats, historical baselines, definitions, company/product identifiers and narrative episodes attached to a substantive claim. These remain searchable/citable but do not independently multiply claim counts or source breadth.
+3. **Voice/source metadata:** expertise, research focus, roles and bibliographic pointers. Retain with provenance for evaluating credibility, not as industry shifts. Examples include the Regret Lab and named venture operators.
+4. **Research limitation:** clipped unidentified admissions, garbled litigation/referents, unsupported timelines and unclear technical definitions. Seek context/audio or quarantine; a faithful transcription of unusable context is not decision-grade evidence.
+5. **Promotion/housekeeping:** show scheduling, invitations, generic show mission/feedback promises and celebratory filler. Exclude from strategic briefs without excluding substantive discussion in the same window.
+
+Specific decisions from the full boundary set:
+
+- Keep concrete adoption/workflow details (Composer daily use, repository portability, bidirectional translation, action-button integration) as bounded firsthand examples. Do not dismiss them because they are anecdotes, or inflate them into adoption-rate evidence.
+- Preserve the “never used it” caveat on the aviation connectivity praise. Hearsay does not become firsthand testimony or multiple independently identified sources. Keep the raw ASR name separate from any later verified identity resolution.
+- The admission that incumbent VC practices worked well is a counterbalancing qualifier on the speaker's criticism; discarding it as an aside distorts the argument. Scarcity spurring innovation similarly qualifies the access-to-resources recommendation. Keep both attached.
+- Participant names, tour names, acronym expansions, individual operator histories and reinvestment examples are context/metadata, not separate evidence of multiple shifts. Preserve source spelling and qualification.
+- A narrow personal narrative can illustrate a mechanism without being evidence of a population effect. Keep Tom's and Catherine's accounts under narrative-example roles, distinguish host interpretation, and do not replicate each biographical detail as a new consequential event.
+- Host opinions and recaps remain their own opinions; being a host does not make them unusable. Do not attribute Sonya's company-opportunity framing to Ion or Kaslin's infrastructure-demand inference to John. Question-framing unnamed camps belong in argument context, not credible-voice counts.
+- Self-promotion needs content-sensitive handling: a concrete product capability described by its founder can be a disclosed interested-party claim; a generic invitation to the show's community is housekeeping. Neither author identity alone nor absence of payment establishes usefulness.
+- Generic maxims, unspecific impact forecasts, media-appearance notability and isolated social reactions do not lead a strategic brief. They may remain context where they support an identifiable argument, but cannot manufacture strong signals.
+- Preserve uncertain positions when they are substantively useful, while distinguishing uncertainty from negative attitude. Do not punish honest hedging by deleting the claim and retaining an overconfident paraphrase instead.
+
+This is a proposed shared utility contract from source inspection, not frozen adjudicated gold. It requires a versioned experiment and independent validation, including counterexamples where retention and exclusion differ. All original case IDs and overlapping versions remain in the diagnostic artifact; no denominator was reduced.
+
 ## Fidelity reconciliation: all 32 flagged cases
 
 Read every flagged candidate's claim and reviewer rationale, and the complete source windows involved. These flags are not 32 verified critical errors. The diagnostic report retains the exhaustive case-ID inventory; the dispositions below are source-review proposals, not independent approval.
