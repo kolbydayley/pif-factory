@@ -56,7 +56,8 @@ def verified_call(directory,p,*,imported=False):
             else:
                 if not (directory/'source-need-repair.json').exists():raise ValueError('new output requires explicit repair provenance')
                 from research_factory.signal_desk_reviewed_need_recovery import recover
-                expected,repair_proof=recover('marketplace',raw,p);receipt_name='source-need-repair.json';proof['reviewed_source_need_repair']=True
+                case='hidden-brain-b' if p['role']=='B' else 'marketplace'
+                expected,repair_proof=recover(case,raw,p);receipt_name='source-need-repair.json';proof['reviewed_source_need_repair']=True
             if expected!=value or json.loads((directory/receipt_name).read_text())!=repair_proof:raise ValueError('explicit repair changed')
             proof['repair_proof_sha256']=digest(repair_proof)
     validate(value,p)

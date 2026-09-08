@@ -34,7 +34,7 @@ def apply_verified(directory,p,fixed,proof,prefix,*,execute=False,expected_failu
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--case',choices=['hidden-brain','marketplace','changelog-audit-offsets'],required=True);parser.add_argument('--execute',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--case',choices=['hidden-brain','hidden-brain-b','marketplace','changelog-audit-offsets'],required=True);parser.add_argument('--execute',action='store_true');args=parser.parse_args()
     with (lane.previous.parent.OUT/'runner.lock').open('a') as a,(lane.previous.OUT/'runner.lock').open('a') as b:
         for lock in (a,b):fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         if args.case=='changelog-audit-offsets':
@@ -44,7 +44,7 @@ def main():
             original=json.loads((directory/f"{p['packet_sha256']}.output.json").read_text());fixed,proof=offsets(original,p)
             print(json.dumps(apply_verified(directory,p,fixed,proof,'full-event-lineage-qualification-v1',execute=args.execute,
                 expected_failure='inexact evidence',receipt_name='inspected-offset-repair.json')),flush=True);return
-        module=case_module(args.case);role='A' if args.case=='hidden-brain' else 'C'
+        module=case_module(args.case);role={'hidden-brain':'A','hidden-brain-b':'B','marketplace':'C'}[args.case]
         directory=module.run.OUT/'calls'/module.WID/role;p=json.loads((directory/'packet.json').read_text())
         original=json.loads((directory/f"{p['packet_sha256']}.output.json").read_text());fixed,proof=recover(args.case,original,p)
         prefix='full-event-v5-context-qualification' if args.case=='hidden-brain' else 'full-event-lineage-qualification-v1'

@@ -9,20 +9,22 @@ def case_module(case):
         from scripts import pif_signal_desk_hidden_brain_repair_review as module
     elif case=='marketplace':
         from scripts import pif_signal_desk_marketplace_lineage_repair_review as module
+    elif case=='hidden-brain-b':
+        from scripts import pif_signal_desk_hidden_brain_b_repair_review as module
     else:raise ValueError('unknown reviewed repair case')
     return module
 
 
 def recover(case,original,packet,*,review_root=None):
     module=case_module(case);root=module.OUT if review_root is None else review_root
-    expected_role='A' if case=='hidden-brain' else 'C'
+    expected_role={'hidden-brain':'A','hidden-brain-b':'B','marketplace':'C'}[case]
     if packet['window_id']!=module.WID or packet['role']!=expected_role:raise ValueError('wrong source or role')
     ps,fixed,proposal_proof=module.prepare(write=False)
     if len(ps)!=1:raise ValueError('unexpected review population')
     request=ps[0];sha=request['packet_sha256'];plan=json.loads((root/'plan.json').read_text())
     if plan['packets']!=[sha] or plan['source_packet_sha256']!=packet['packet_sha256'] or request['transcript_window']!=packet['transcript_window']:
         raise ValueError('review source or plan changed')
-    original_key='original_sha256' if case=='hidden-brain' else 'original_envelope_sha256'
+    original_key='original_envelope_sha256' if case=='marketplace' else 'original_sha256'
     if digest(original)!=proposal_proof[original_key]:raise ValueError('original response changed')
     if json.loads((root/'proposal.json').read_text())!=fixed or json.loads((root/'provenance.json').read_text())!=proposal_proof:
         raise ValueError('saved proposal changed')
@@ -37,8 +39,8 @@ def recover(case,original,packet,*,review_root=None):
     decisions=value['decisions']
     if len(decisions)!=1 or decisions[0]['event_id']!=module.EID or decisions[0]['verdict']!='supported':
         raise ValueError('repair not independently supported')
-    records=fixed['events'] if case=='hidden-brain' else fixed['records']['events']
+    records=fixed['records']['events'] if case=='marketplace' else fixed['events']
     return fixed,{'repair':'reviewed-source-need-v1','case':case,'original_sha256':digest(original),'repaired_sha256':digest(fixed),
         'proposal_proof_sha256':digest(proposal_proof),'review_packet_sha256':sha,'review_sha256':digest(value),'review_sidecar_sha256':digest(side),
-        'records_before':11,'records_after':len(records),'input_dispositions':len(fixed.get('input_dispositions',[])),
+        'records_before':9 if case=='hidden-brain-b' else 11,'records_after':len(records),'input_dispositions':len(fixed.get('input_dispositions',[])),
         'original_failure_preserved':True,'qualified':False,'gold_accepted':False}
