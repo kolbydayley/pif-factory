@@ -15,7 +15,7 @@ def fixture():
     b = {"attribution": {"c1": {"transcript_voice": identity, "proposition_owner": None,
         "relation": "reported_statement", "mentioned_entities": []}},
         "evidence_role": {"decisions": [{"candidate_id": "c1", "role": "substantive_claim", "decision": "proposed",
-            "context_for": [], "scope": "attributed_view", "needs": "none", "rationale": "An imagined argument."}]},
+            "context_for": [], "context_parent_status": "not_applicable", "scope": "attributed_view", "needs": "none", "rationale": "An imagined argument."}]},
         "position": {"decisions": [{"candidate_id": "c1", "position_status": "anticipated_position",
             "source_evidence": [span("People will say")], "rationale": "Not an observed opponent."}]},
         "voice": {"source_sha256": hashlib.sha256(SOURCE.encode()).hexdigest(), "window_id": "dev",

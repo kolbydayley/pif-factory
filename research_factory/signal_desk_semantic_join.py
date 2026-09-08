@@ -1,6 +1,6 @@
 """Candidate-ID joins across unqualified semantic families, never publication."""
 from . import signal_desk_attribution_experiment as attribution
-from . import signal_desk_evidence_role_experiment as role
+from . import signal_desk_evidence_role_v2 as role
 from . import signal_desk_position_status_v2 as position
 from . import signal_desk_voice_continuity_v2 as voice
 from . import signal_desk_attitude_v2 as attitude
@@ -59,7 +59,7 @@ def research_routes(bundle, *, source, window_id, candidates):
         substantive = roles[cid]["role"] == "substantive_claim"
         # This is only eligibility if later accepted, never an observed count.
         person_path = None
-        if observed and owner and owner["kind"] == "person" and roles[cid]["role"] not in {"promotion_housekeeping", "research_limitation"}:
+        if observed and owner and owner["kind"] == "person" and roles[cid]["role"] not in {"promotion_housekeeping", "research_limitation"} and roles[cid]["context_parent_status"] != "missing":
             person_path = attribution.proposed_person_section(a, owner["surface_name"])
             if voices[cid]["source_kind"] != "spoken_transcript" and a["relation"] == "own_statement":
                 person_path = None
@@ -73,7 +73,7 @@ def research_routes(bundle, *, source, window_id, candidates):
 def receipt():
     families = {"attribution": attribution.receipt(), "evidence_role": role.receipt(),
         "position": position.receipt(), "voice": voice.receipt(), "attitude": attitude.receipt()}
-    return {"family_id": "signal-desk-semantic-join-v1", "families": families,
+    return {"family_id": "signal-desk-semantic-join-v2", "families": families,
         "sha256": digest({"rules": RULES, "families": families}),
         "qualified": False, "production_enabled": False,
         "source_review_and_fresh_shared_qualification_required": True}
