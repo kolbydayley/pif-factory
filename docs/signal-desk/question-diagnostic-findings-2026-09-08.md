@@ -82,6 +82,22 @@ Do not alter the frozen family based on a returned failure.
 
 ## Execution boundary
 
+### DRA discussion A: additional held return
+
+- Window `sdw_8bc85d983495f3780cb2`; 14 records.
+- Packet `1921f41e6fd52459336773eddaab0666f03e8b928fb457701c5f62a40f6f1965`;
+  parsed raw digest `f060558e3180ccfe02f5aedd2d287212da9891687d7d3fe844aa7b07d7e59ad2`.
+- Full source and claims inspected. First seven readable opening records combine
+  substantive roles with audio/source recovery needs; validation fails the existing
+  role/needs invariant. The opening is unlabeled: later John Belamaric labels do
+  not retroactively prove ownership of those opening claims.
+- The interviewer inquiry is now represented as a question. Later explicit labels
+  establish a different evidentiary basis for voice assignment. Neither observation
+  certifies all nested spans, question linkage, attribution, or coverage.
+- Preserve likely-alpha timing, hypothetical driver/scalability conditions, and
+  the recommendation to specify only actual workload needs; do not render these
+  as unconditional deployed capabilities. Raw output remains held, not repaired.
+
 The first two A outputs are held; 62 role slots remain unfulfilled. Continue only
 unattempted independent windows under the frozen family, preserving failures and
 all denominators. Held parents block their dependent execution; existing raw
