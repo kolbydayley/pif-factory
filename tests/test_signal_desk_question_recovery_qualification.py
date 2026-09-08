@@ -77,3 +77,38 @@ def test_old_provider_prompt_cannot_be_relabelled(tmp_path, monkeypatch):
     monkeypatch.setattr(run, 'system', run.baseline.system)
     with pytest.raises(ValueError, match='provider provenance'):
         run.verified_call(directory, p)
+
+
+def test_held_raw_is_not_retried_and_denominator_is_preserved(tmp_path, monkeypatch):
+    plan = setup(tmp_path, monkeypatch)
+    held = plan['window_ids'][0]
+    p = run.packet(run.source_for(plan, held), 'A', {})
+    directory = run.OUT / 'calls' / held / 'A'
+    raw_path = directory / f"{p['packet_sha256']}.output.json"
+    run.immutable_json(directory / 'packet.json', p)
+    run.immutable_json(raw_path, {'invalid_original': True})
+    original = raw_path.read_bytes()
+    seen = []
+
+    async def fake(ps, **kw):
+        q = ps[0]
+        seen.append((q['window_id'], q['role']))
+        assert q['window_id'] != held
+        save(kw['output_root'], q, response(q))
+        return 0
+
+    monkeypatch.setattr(run, 'metered_execute', fake)
+    assert asyncio.run(run.execute(plan)) == 2
+    assert len(set(seen)) == 60
+    assert raw_path.read_bytes() == original
+    assert not (directory / f"{p['packet_sha256']}.result.json").exists()
+    result = json.loads(next((run.OUT / 'runs').glob('*.json')).read_text())
+    assert result['expected_windows'] == 16
+    assert result['expected_role_outputs'] == 64
+    assert len(result['windows']) == 16
+    assert next(x for x in result['windows'] if x['window_id'] == held)['state'] == 'held_existing_response'
+    assert not result['all_roles_complete']
+    assert not result['qualified'] and not result['gold_accepted']
+    seen.clear()
+    assert asyncio.run(run.execute(plan)) == 2
+    assert not seen
