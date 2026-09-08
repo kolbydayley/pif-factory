@@ -98,7 +98,25 @@ Do not alter the frozen family based on a returned failure.
   the recommendation to specify only actual workload needs; do not render these
   as unconditional deployed capabilities. Raw output remains held, not repaired.
 
-The first two A outputs are held; 62 role slots remain unfulfilled. Continue only
+### TSMC discussion A: additional held return
+
+- Window `sdw_4acaaec65ea71658126b`; 15 records.
+- Packet `52b105bf3e0a9b737e0db7ffee7f6a2cddee204fb1d40961a2c0b5281be9e766`;
+  parsed raw digest `0192b3246455c8bb2bff2c17c557bfb4c43c7ee47c2790b070f4969e2359e6ac`.
+- Full source and claims inspected. Opening three readable explanations of solar,
+  LED, and management changes combine substantive roles with recovery needs. The
+  role/needs invariant fails; later Morris labels cannot silently identify the
+  unlabeled opening. Do not replace a missing voice with an inferred full name.
+- Settlement recollections are Morris's account; Ben's interpretation of the
+  relationship is a separate claim. The 48-hour historical offer is not a current
+  commitment. The attribution of reported and hypothetical dialogue needs review.
+- The two final sponsor records are classified as promotional housekeeping, not
+  independent evidence for financial services claims. This boundary observation
+  does not certify every field, nested span, or consequential coverage.
+- Output remains held without repair or independent approval. Six A outputs are
+  now held, zero are validated, and 58 role slots remain unfulfilled.
+
+Continue only
 unattempted independent windows under the frozen family, preserving failures and
 all denominators. Held parents block their dependent execution; existing raw
 failures must never be silently redispatched. This diagnostic does not qualify
