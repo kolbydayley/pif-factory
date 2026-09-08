@@ -68,3 +68,21 @@ def test_quality_hold_makes_zero_new_provider_calls(tmp_path,monkeypatch):
     assert asyncio.run(run.execute(plan))==2
     receipt=json.loads(next((out/'runs').glob('*.json')).read_text())
     assert len(receipt['windows'])==16 and all(r['state']=='checkpointed' for r in receipt['windows'])
+
+
+def test_completed_invalid_sample_is_held_without_retry_or_denominator_loss(tmp_path,monkeypatch):
+    plan,out,old=setup(tmp_path,monkeypatch);seen=[]
+    s=json.loads((run.previous.BASE/f"{plan['source_packets']['w0']}.packet.json").read_text())
+    p=run.packet(s,'A',{});bad=response(p);bad['events'][0]['evidence_start']=999999
+    d=out/'calls'/'w0'/'A';save(d,p,bad)
+    (d/f"{p['packet_sha256']}.result.json").unlink()
+    async def fake(ps,**kwargs):
+        q=ps[0];seen.append((q['window_id'],q['role']))
+        save(kwargs['output_root'],q,response(q));return 0
+    monkeypatch.setattr(run,'metered_execute',fake)
+    assert asyncio.run(run.execute(plan))==2
+    assert len(seen)==60 and not any(w=='w0' for w,r in seen)
+    receipt=json.loads(next((out/'runs').glob('*.json')).read_text())
+    assert len(receipt['windows'])==16 and receipt['windows'][0]['state']=='held_existing_call'
+    assert not receipt['all_roles_complete'] and not receipt['qualified']
+    assert json.loads((d/f"{p['packet_sha256']}.output.json").read_text())==bad

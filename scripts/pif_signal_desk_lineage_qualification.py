@@ -100,6 +100,17 @@ async def execute(plan):
                             return {'window_id':wid,'state':'held_predecessor','role':role,'reason':str(exc),'completed_roles':list(outputs)}
                         immutable_json(OUT/'imports'/wid/f'{role}.json',proofs[role]);continue
                     immutable_json(target/'packet.json',p)
+                    # A completed, invalid response is a held semantic sample,
+                    # not a transient retry. Preserve it and its dependent roles
+                    # while independent windows advance on an explicit resume.
+                    if not (target/f'{sha}.result.json').exists() and (target/f'{sha}.output.json').exists():
+                        verify_provider(target,p)
+                        raw=json.loads((target/f'{sha}.output.json').read_text())
+                        try:validate(raw,p)
+                        except ValueError as exc:
+                            return {'window_id':wid,'state':'held_existing_call','role':role,
+                                    'reason':str(exc),'completed_roles':list(outputs)}
+                        raise ValueError('valid raw output missing result; explicit recovery required')
                     if not (target/f'{sha}.result.json').exists():
                         code=await metered_execute([p],output_root=target,task_prefix='full-event-lineage-qualification-v1',
                             system_for_packet=lambda q:system(q['role']),schema_for_packet=lambda q:lower(schema(q['role']))[0],
