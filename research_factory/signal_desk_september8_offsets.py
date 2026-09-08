@@ -4,6 +4,22 @@ from .signal_desk_full_event_v4_repair import propose
 from .signal_desk_full_event_v5 import validate
 
 CASES = {
+ 'ai-governance-audit': {
+  'window':'sdw_3e13b01692fa8508d0cd','role':'AUDIT','records':15,'failure':'inexact record evidence',
+  'packet':'d33707a17d59b205a590ffccfd95f08c10d854774528a20d30010e18f3a5c794',
+  'raw':'daefd60bfc2c56d39682a4d167eeaab10b3a40d47c3f0e8e1b31610cd293c9f9',
+  'source':'ff1118462633db2182c44578f897008db840ddce2aa1f6fec51824fd5ab37374',
+  'main_spans':[(8,3354),(11,4266),(12,4464)],
+  'spans':[(0,['position','source_evidence',0],216),(0,['attitude','target'],301),
+           (1,['position','source_evidence',0],666),(1,['attitude','evaluation_evidence',0],666),
+           (3,['position','source_evidence',0],1442),(8,['position','source_evidence',0],3354),
+           (8,['attitude','target'],3354),(9,['position','source_evidence',0],3846),
+           (11,['position','source_evidence',0],4266),(11,['position','source_evidence',1],4373),
+           (11,['attitude','target'],4266),(11,['attitude','evaluation_evidence',0],4303),
+           (12,['position','source_evidence',0],4584),(12,['position','source_evidence',1],4701),
+           (12,['attitude','target'],4787),(12,['attitude','modality_evidence',0],4464),
+           (14,['position','source_evidence',0],5305),(14,['position','source_evidence',1],5373),
+           (14,['attitude','modality_evidence',1],5307)]},
  'ai-governance-c': {
   'window':'sdw_3e13b01692fa8508d0cd','role':'C','records':17,'failure':'inexact evidence',
   'packet':'aa90ed4187cdb1b78d8eabc60c78a1bd4695c69e78829ae4b1f15af3eff5dfb3',
@@ -52,6 +68,11 @@ CASES = {
             (14,['attitude','modality_evidence',0],5883)]}}
 
 
+# These exact positions are inspected, but other semantic validation defects
+# remain. Never expose this audit as an applicable offset-only repair case.
+PENDING_OFFSETS = {'ai-governance-audit': CASES.pop('ai-governance-audit')}
+
+
 def recover(case, original, packet):
     spec=CASES[case];source=packet['transcript_window']
     records=original['records'] if spec['role']=='C' else original
@@ -60,6 +81,13 @@ def recover(case, original, packet):
         digest(original)!=spec['raw'] or digest(source)!=spec['source'] or len(records['events'])!=spec['records']):
         raise ValueError('not the inspected original source response')
     changes=[]
+    for index,start in spec.get('main_spans',[]):
+        event=records['events'][index];end=start+len(event['evidence_text'])
+        if source[start:end]!=event['evidence_text']:raise ValueError('inspected main occurrence changed')
+        for field,after in [('evidence_start',start),('evidence_end',end)]:
+            if event[field]!=after:
+                changes.append({'path':(['records'] if spec['role']=='C' else [])+['events',index,field],
+                    'before':event[field],'after':after,'reason':'Exact individually inspected main quote; numeric offsets only.'})
     for index,parts,start in spec['spans']:
         path=(['records'] if spec['role']=='C' else [])+['events',index]+parts;span=original
         for key in path:span=span[key]
@@ -83,5 +111,6 @@ def recover(case, original, packet):
         fixed,proof=propose(original,source=source,window_id=spec['window'],expected_original_sha256=spec['raw'],
             replacements=changes,output_validator=validate)
     proof.update(repair='september8-inspected-offsets-v1',case=case,packet_sha256=spec['packet'],
-        semantic_fields_changed=False,original_failure_preserved=True,inspected_spans=len(spec['spans']))
+        semantic_fields_changed=False,original_failure_preserved=True,
+        inspected_spans=len(spec['spans'])+len(spec.get('main_spans',[])))
     return fixed,proof
