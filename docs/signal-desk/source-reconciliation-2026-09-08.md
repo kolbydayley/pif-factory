@@ -68,6 +68,14 @@ Read full `sdw_4acaaec65ea71658126b` source and all 12 current C claims from pac
 - `5d6669357ea6256bc714a8ebc5939bbf0c7257e363368b6554e6b1952e5f30d4` and `96b23ade529f81d025c38bda2e31f85dc7d2acddc419b0129125da5c96f0c906`: e10 preserves weeks of preparation and perceived fairness, but omits downstream customer demands as an input to the settlement decision. Preserve this missing negotiation-pressure/context cluster, attributed to Morris, without counting the two witnesses as independent events. It is not proof of specific customer losses or independent confirmation by NVIDIA's customers.
 - `132c98cbdfb5fae16cd767e2c62f0957a081de2fbfe73b17ac415aa4356171bc`: e09 preserves Morris's arbitration fallback but not that Jensen had proposed arbitration earlier to the previous CEO. This temporal/actor distinction is useful dispute context. Add it only as a reported prior proposal, not as completed arbitration or a new direct Jensen quotation.
 
-Twenty-eight of 39 omission cases now have source-level notes; 11 remain. No repairs have been applied or independently approved.
+### Accessibility program: three additional checks
+
+Read full `sdw_a31be726ea4882906238` source and its 10 current C claims from packet `4d08ef7406d348a3e5c655d920217ca36b8a2bb13e0bd67937d9b597f58e9e58`.
+
+- `1214f886005a8d6a6a6acd20d1a91d90c97a2ff3e63f3ae14524a2d97cc02312`: general progress is the speaker's self-assessment, without a measured improvement. Specific changes already appear in e06-e09. If retained as historical context, preserve “I think” and do not turn it into a verified outcome or a separate high-confidence shift. Usefulness remains a boundary question.
+- `455e8da3235394c4cde0ab300609183d3b8e3b750d25ebef8079acfd5f7f0cfd`: the brand-color constraint is absent from e07's explanation of algorithm selection. This is useful decision context; propose retaining it as the team's stated constraint, not proof that accessibility standards may be bypassed or that the chosen alternative ensures compliance.
+- `991cd3aac4995bb2b701567802abd71f10fa8b9370da907171223efc781fba21`: e09 uses Axe Core but omits the speaker's characterization of it as the de facto testing engine. This is attributed ecosystem context, not an independently verified market-share fact. Prefer enriching the existing tool-choice context over adding a duplicate implementation event.
+
+Thirty-one of 39 omission cases now have source-level notes; eight remain. No repairs have been applied or independently approved.
 
 Continue source reconciliation of all 186 actionable cases (categories overlap): 39 possible consequential omissions, 5 current-C promotional exclusions, 32 fidelity resolutions, 100 usefulness boundaries, and 20 final-correction reconciliations. Deduplicate semantic claims while retaining every original case ID. Then repair and independently qualify the shared rubric before expanding repairs or rerunning reliability. Full 804-window gold, per-split reliability, A1 and A2 remain unqualified.
