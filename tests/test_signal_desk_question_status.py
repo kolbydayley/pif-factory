@@ -44,3 +44,18 @@ def test_changed_plan_fails_closed(tmp_path, monkeypatch):
     monkeypatch.setattr(status.run, 'prepare', lambda **kwargs: {})
     with pytest.raises(ValueError, match='frozen question plan changed'):
         status.summarize()
+
+
+def test_recovery_family_separate_from_baseline(tmp_path, monkeypatch):
+    from test_signal_desk_question_recovery_qualification import setup as recovery_setup, save as recovery_save
+    from scripts import pif_signal_desk_question_recovery_qualification as recovery
+    plan = recovery_setup(tmp_path, monkeypatch)
+    p = recovery.packet(recovery.source_for(plan, 'w0'), 'A', {})
+    recovery_save(recovery.OUT / 'calls' / 'w0' / 'A', p, response(p))
+    current = status.summarize(recovery)
+    old = status.summarize()
+    assert current['experiment_family'] == recovery.FAMILY
+    assert current['states']['authored_not_accepted'] == 1
+    assert old['raw_returns'] == 0
+    assert current['planned_role_outputs'] == old['planned_role_outputs'] == 64
+    assert current['process_liveness'] == 'not_checked' and not current['qualified']

@@ -9,7 +9,7 @@ sys.path.insert(0, str(ROOT))
 from scripts import pif_signal_desk_question_qualification as run
 
 
-def summarize():
+def summarize(run=run):
     plan = json.loads((run.OUT / 'plan.json').read_text())
     if plan != run.prepare(write=False):
         raise ValueError('frozen question plan changed')
@@ -54,7 +54,8 @@ def summarize():
     states = Counter(r['state'] for r in rows)
     complete = sum(all(r['state'] == 'authored_not_accepted' for r in rows if r['window_id'] == wid)
                    for wid in plan['window_ids'])
-    return {'planned_windows': 16, 'planned_role_outputs': 64, 'complete_windows': complete,
+    return {'experiment_family': getattr(run, 'FAMILY', 'question-all-role-qualification-v1'),
+            'planned_windows': 16, 'planned_role_outputs': 64, 'complete_windows': complete,
             'states': dict(states), 'raw_returns': sum(r.get('raw_returned', False) for r in rows),
             'raw_structurally_valid': sum(r.get('raw_structurally_valid', False) for r in rows),
             'calls': rows, 'qualified': False, 'gold_accepted': False,
@@ -64,8 +65,11 @@ def summarize():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--calls', action='store_true')
+    parser.add_argument('--family', choices=('baseline', 'recovery'), default='baseline')
     args = parser.parse_args()
-    result = summarize()
+    if args.family == 'recovery':
+        from scripts import pif_signal_desk_question_recovery_qualification as run
+    result = summarize(run)
     if not args.calls:
         result.pop('calls')
     print(json.dumps(result, sort_keys=True))

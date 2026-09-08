@@ -108,3 +108,10 @@ The comparison tests a specific observed cause, not a claim that prompt wording
 alone fixes all defects. Report first-pass failures and missing roles even if the
 recovery error decreases. Exact-span failures and question-boundary conflicts are
 separate dimensions for later isolated changes. Full804audits/A1/A2 remain closed.
+
+Read-only comparison progress: `python3 -B scripts/pif_signal_desk_question_status.py
+--family recovery`. The default still reports the baseline; every response now names
+its experiment family. Five status tests verify separate family totals, held records,
+provider validation, frozen plans and the unchanged64-role denominator. Neither mode
+checks process liveness or establishes semantic acceptance; verify the exact child
+PID separately. No worker configuration is mutated by the status command.
