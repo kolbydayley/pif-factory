@@ -9,6 +9,46 @@ ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 from scripts import pif_signal_desk_lineage_qualification as run
 
 
+def original_quality(directory, packet):
+    """Count completed originals even when no valid result was ever produced."""
+    raw_path = directory/f"{packet['packet_sha256']}.output.json"
+    if not raw_path.exists():
+        return {}
+    result = {'original_raw_present': True}
+    try:
+        run.verify_provider(directory, packet)
+        result['original_provider_verified'] = True
+        raw = json.loads(raw_path.read_text())
+        value = raw.get('records', {}) if packet['role'] == 'C' and isinstance(raw, dict) else raw
+        if isinstance(value, dict) and isinstance(value.get('events'), list):
+            result['original_record_count'] = len(value['events'])
+        try:
+            run.validate(raw, packet)
+            result['original_first_pass_valid'] = True
+        except (ValueError, TypeError, KeyError) as exc:
+            result.update(original_first_pass_valid=False, original_validation_error=str(exc))
+    except (ValueError, OSError, TypeError, KeyError) as exc:
+        result['original_quality_unavailable_reason'] = str(exc)
+    return result
+
+
+def quality_summary(rows):
+    verified = [r for r in rows if r['state'] in ('verified_import', 'authored_not_accepted')]
+    raw = [r for r in rows if r.get('original_raw_present')]
+    def counts(population):
+        return dict(first_pass_valid=sum(r.get('original_first_pass_valid') is True for r in population),
+            first_pass_invalid=sum(r.get('original_first_pass_valid') is False for r in population),
+            explicitly_repaired=sum(r.get('repaired_output') is True for r in population))
+    return {
+        'verified_output_quality': dict(counts(verified),
+            scope='Verified outputs selected for this diagnostic only; excludes superseded C attempts and pending/held outputs.'),
+        'completed_raw_quality': dict(counts(raw), raw_outputs_present=len(raw),
+            held_raw_outputs=sum(r['state'] == 'held' for r in raw),
+            first_pass_unavailable=sum('original_first_pass_valid' not in r for r in raw),
+            raw_records_observed=sum(r.get('original_record_count', 0) for r in raw),
+            scope='All raw responses on the selected 64-role lineage, including held outputs. Structural validity only, not semantic approval. Superseded C attempts are separate history; unstarted roles are not successful samples.')}
+
+
 def inventory(plan, *, require_complete=False):
     if len(plan['window_ids'])!=16 or len(set(plan['window_ids']))!=16:raise ValueError('full sixteen sources required')
     rows=[];complete={}
@@ -29,16 +69,13 @@ def inventory(plan, *, require_complete=False):
                     row.update(state='verified_import' if imported else 'authored_not_accepted',records=len(value['events']))
                     raw=json.loads((directory/f'{sha}.output.json').read_text())
                     row['repaired_output']=raw!=outputs[role]
-                    try:
-                        run.validate(raw,p);row['original_first_pass_valid']=True
-                    except ValueError as exc:
-                        row.update(original_first_pass_valid=False,original_validation_error=str(exc))
                     if role=='C':row.update(input_dispositions=len(outputs[role]['input_dispositions']),additions=len(outputs[role]['additions']))
                 except (ValueError,OSError) as exc:row.update(state='held',reason=str(exc))
             elif side.exists():
                 s=json.loads(side.read_text());row.update(state='in_progress' if s.get('state')=='in_progress' else 'held',provider_state=s.get('state'))
                 if s.get('error_class'):row['error_class']=s['error_class']
             elif (directory/'packet.json').exists():row['state']='awaiting_result_or_recovery'
+            row.update(original_quality(directory, p))
             if imported:row['predecessor']=True
             rows.append(row)
         if len(outputs)==4:complete[wid]={'source':source,'outputs':outputs,'provenance':proofs}
@@ -51,10 +88,7 @@ def summarize():
     if plan['lineage_contract']!=run.lineage.receipt() or plan['independent_role_contract']!=run.previous.author.receipt():raise ValueError('frozen contract changed')
     rows,complete=inventory(plan)
     return {'planned_windows':16,'planned_role_outputs':64,'complete_windows':len(complete),
-            'verified_output_quality':{'first_pass_valid':sum(r.get('original_first_pass_valid') is True for r in rows),
-                'first_pass_invalid':sum(r.get('original_first_pass_valid') is False for r in rows),
-                'explicitly_repaired':sum(r.get('repaired_output') is True for r in rows),
-                'scope':'Verified outputs selected for this diagnostic only; excludes superseded C attempts and pending/held outputs.'},
+            **quality_summary(rows),
             'states':dict(Counter(r['state'] for r in rows)),'calls':rows,'qualified':False,'gold_accepted':False}
 
 
