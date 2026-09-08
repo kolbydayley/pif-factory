@@ -4,7 +4,7 @@ import json
 from .signal_desk_rubric_reference_packets import digest
 
 
-def recover(original,packet,*,review_root=None):
+def inspect_reviews(original,packet,*,review_root=None):
     from scripts import pif_signal_desk_coding_tools_repair_review as module
     if packet['window_id']!=module.diagnosis.WID or packet['role']!='A' or packet['packet_sha256']!=module.diagnosis.PACKET:
         raise ValueError('wrong source or role')
@@ -15,7 +15,7 @@ def recover(original,packet,*,review_root=None):
         raise ValueError('review plan changed')
     if json.loads((root/'proposal.json').read_text())!=fixed or json.loads((root/'provenance.json').read_text())!=proof:
         raise ValueError('saved proposal changed')
-    h=lambda s:hashlib.sha256(s.encode()).hexdigest();reviews=[];ids=[]
+    h=lambda s:hashlib.sha256(s.encode()).hexdigest();reviews=[];ids=[];decisions=[]
     for p in ps:
         sha=p['packet_sha256']
         if p['transcript_window']!=packet['transcript_window'] or json.loads((root/f'{sha}.packet.json').read_text())!=p:
@@ -28,11 +28,17 @@ def recover(original,packet,*,review_root=None):
         value=json.loads((root/f'{sha}.review.json').read_text())
         if value!=json.loads((root/f'{sha}.output.json').read_text()):raise ValueError('approval output changed')
         module.diagnosis.run.previous.review.validate_review(value,p)
-        if any(d['verdict']!='supported' for d in value['decisions']):raise ValueError('repair not independently supported')
+        decisions.extend(value['decisions'])
         ids.extend(d['event_id'] for d in value['decisions'])
         reviews.append({'packet_sha256':sha,'review_sha256':digest(value),'sidecar_sha256':digest(side)})
     expected=[e['event_id'] for e in fixed['events']]
     if len(ids)!=len(expected) or set(ids)!=set(expected):raise ValueError('incomplete approval population')
     return fixed,{'repair':'coding-tools-reviewed-explicit-v1','original_sha256':digest(original),'repaired_sha256':digest(fixed),
         'proposal_proof_sha256':digest(proof),'reviews':reviews,'records_before':15,'records_after':15,
-        'original_failure_preserved':True,'qualified':False,'gold_accepted':False}
+        'original_failure_preserved':True,'qualified':False,'gold_accepted':False},decisions
+
+
+def recover(original,packet,*,review_root=None):
+    fixed,proof,decisions=inspect_reviews(original,packet,review_root=review_root)
+    if any(d['verdict']!='supported' for d in decisions):raise ValueError('repair not independently supported')
+    return fixed,proof
