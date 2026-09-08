@@ -61,6 +61,13 @@ Read full `sdw_4117ea30ae4ec3f116ef` source and all 17 current C claims from pac
 - `6f5206d9de1e480ec2db8302bcd17ff46e41cf61449c8d57f7f3c0c204b13897`: e12/e13 establish Harvey's legal-AI specialization but omit the narrator's characterization of its ambition to dominate that domain. This is attributed strategic framing, not demonstrated dominance or a verified corporate commitment. Prefer enriching the existing company-positioning claim with that qualifier over a duplicate legal-AI event.
 - `37f4cee4eed4d2449ec5ad02ec91f983fc596b23a80e1bafae60eb6adf10cff4`: e03 preserves the copying assertion. The source expresses uncertainty about whether copying is the strategy; the diagnostic candidate adds “viable,” which is not stated. Do not add the candidate unchanged just because the reviewer marked it supported. Restore uncertainty about strategy, if useful, without converting it into a judgment of strategy viability.
 
-Twenty-five of 39 omission cases now have source-level notes; 14 remain. No repairs have been applied or independently approved.
+### TSMC dispute: three additional checks
+
+Read full `sdw_4acaaec65ea71658126b` source and all 12 current C claims from packet `36bb0094e046be9313feb4df630b3982a6af4d1fc2d776d91eaab1d2d040a699`. The sponsor-read transition is explicit; the subsequent payments promotion is not evidence for the preceding dispute.
+
+- `5d6669357ea6256bc714a8ebc5939bbf0c7257e363368b6554e6b1952e5f30d4` and `96b23ade529f81d025c38bda2e31f85dc7d2acddc419b0129125da5c96f0c906`: e10 preserves weeks of preparation and perceived fairness, but omits downstream customer demands as an input to the settlement decision. Preserve this missing negotiation-pressure/context cluster, attributed to Morris, without counting the two witnesses as independent events. It is not proof of specific customer losses or independent confirmation by NVIDIA's customers.
+- `132c98cbdfb5fae16cd767e2c62f0957a081de2fbfe73b17ac415aa4356171bc`: e09 preserves Morris's arbitration fallback but not that Jensen had proposed arbitration earlier to the previous CEO. This temporal/actor distinction is useful dispute context. Add it only as a reported prior proposal, not as completed arbitration or a new direct Jensen quotation.
+
+Twenty-eight of 39 omission cases now have source-level notes; 11 remain. No repairs have been applied or independently approved.
 
 Continue source reconciliation of all 186 actionable cases (categories overlap): 39 possible consequential omissions, 5 current-C promotional exclusions, 32 fidelity resolutions, 100 usefulness boundaries, and 20 final-correction reconciliations. Deduplicate semantic claims while retaining every original case ID. Then repair and independently qualify the shared rubric before expanding repairs or rerunning reliability. Full 804-window gold, per-split reliability, A1 and A2 remain unqualified.
