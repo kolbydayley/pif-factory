@@ -38,9 +38,11 @@ def validate(v,p):
     return v
 
 
-def packets(output, author_packet, *, token_count):
+def packets(output, author_packet, *, token_count, system=None, output_validator=None):
+    selected_system=SYSTEM if system is None else system
+    selected_validator=lineage.validate if output_validator is None else output_validator
     source=author_packet['transcript_window'];wid=author_packet['window_id']
-    lineage.validate(output,source=source,window_id=wid,author_a=author_packet['author_a'],author_b=author_packet['author_b'])
+    selected_validator(output,source=source,window_id=wid,author_a=author_packet['author_a'],author_b=author_packet['author_b'])
     inputs={(a,e['event_id']):e for a in ('A','B') for e in author_packet['author_'+a.lower()]['events']}
     events={e['event_id']:e for e in output['records']['events']};candidates=[]
     for i,row in enumerate(output['input_dispositions']):
@@ -53,11 +55,11 @@ def packets(output, author_packet, *, token_count):
     def build(items):
         p={'window_id':wid,'transcript_window':source,'author_packet_sha256':author_packet['packet_sha256'],
            'lineage_output_sha256':digest(output),'candidate_population':len(candidates),'candidates':items,
-           'system_sha256':digest(SYSTEM)}
+           'system_sha256':digest(selected_system)}
         p['schema_sha256']=digest(schema(p));p['packet_sha256']=digest(p);return p
     def fits(items):
         p=build(items)
-        return len(items)<=25 and token_count(SYSTEM+json.dumps(p,ensure_ascii=False)+json.dumps(schema(p)))+1500<=12000
+        return len(items)<=25 and token_count(selected_system+json.dumps(p,ensure_ascii=False)+json.dumps(schema(p)))+1500<=12000
     batches=[];current=[]
     for candidate in candidates:
         if not fits([candidate]):raise ValueError('one full-source lineage item exceeds review limit; do not truncate')
