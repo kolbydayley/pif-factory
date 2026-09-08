@@ -50,7 +50,10 @@ def verified_call(directory,p,*,imported=False):
         raw=json.loads((directory/f'{sha}.output.json').read_text())
         proof={'raw_sha256':digest(raw),'result_sha256':digest(value)}
         if raw!=value:
-            if (directory/'flattened-interview-repair.json').exists():
+            if (directory/'tsmc-audit-repair.json').exists():
+                from research_factory.signal_desk_tsmc_audit_recovery import recover
+                expected,repair_proof=recover(raw,p);receipt_name='tsmc-audit-repair.json';proof['reviewed_tsmc_audit_repair']=True
+            elif (directory/'flattened-interview-repair.json').exists():
                 from research_factory.signal_desk_flattened_recovery import recover
                 expected,repair_proof=recover(raw,p);receipt_name='flattened-interview-repair.json';proof['reviewed_flattened_repair']=True
             elif (directory/'stoica-b-repair.json').exists():
