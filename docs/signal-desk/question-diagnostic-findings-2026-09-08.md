@@ -234,3 +234,26 @@ the family or replace the required complete-population independent review.
   still required; this result remains unmodified and held.
 - Eleven held responses, four valid authored-not-accepted roles, one peer call
   still pending at inspection. All sixteen windows and 64 role slots remain.
+
+### All-In year-end flattened A
+
+- Window `sdw_480fb8f1b232f6c0e823`; 21 records; held for inexact record evidence.
+  Entire source and all claim texts inspected. Packet
+  `5e558e35d61d75d52b3a6185b415754e3802d8635c384a77503c0cb4c641c529`;
+  parsed raw digest `3923de55185b3278bcb9739a327f7df8d4bdea82434e7fc1304e56bd0a885d36`.
+- The source switches among participants without reliable explicit turn labels.
+  Names used in prompts to participants do not license broad retrospective voice
+  assignments. All output voices remain null rather than guessed from show lore.
+  Company wrongdoing and media-bias accusations are participants' allegations, not
+  corpus-verified facts. Refusing to defend an outlet and criticizing judgment sizes
+  are separate positions, neither a blanket endorsement of the outlet's conduct.
+- Preserve firsthand app usage versus estimated downloads versus hearsay about
+  in-flight internet. Keep ASR surface forms without silently replacing entities.
+  The participant's term “open-source” is not independent proof of open-code or
+  open-weight licensing. Local execution and regulatory implications are separately
+  stated claims. Garbled pension-fund material and the clipped final forecast remain
+  limitations; do not invent their missing mechanism or predicted outcome.
+- Hook b49518fb exited 2 at 13:44:32Z; child48175 absent, ACK13:44:39Z.
+  Active-turn receipt, not an idle-wake proof. Inventory16returns4valid12held,
+  one complete negative-control window and48unfulfilled roles. Three original
+  independent sources have not yet been attempted. No semantic approval claimed.
