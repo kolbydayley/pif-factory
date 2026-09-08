@@ -110,6 +110,13 @@ def prepare():
     return originals, selected, inventory
 
 
+def validate_packet_inventory(expected_packets, dispatch_packets):
+    # Immutable JSON sorts mapping keys; the dispatch list preserves preparation
+    # order. Mapping iteration order is not provenance.
+    if set(expected_packets) != set(dispatch_packets) or len(set(expected_packets)) != len(expected_packets) or len(set(dispatch_packets)) != len(dispatch_packets):
+        raise ValueError("changed recovery packet inventory")
+
+
 def collect(original_root=ORIGINAL, recovery_root=OUT):
     """Read and recompute recovery; saved reconciliations are not authority."""
     plan = json.loads((recovery_root / "plan.json").read_text())
@@ -119,8 +126,7 @@ def collect(original_root=ORIGINAL, recovery_root=OUT):
     if set(plan["inventory"]) - set(original_plan["packets"]):
         raise ValueError("unknown original in recovery inventory")
     expected_packets = [r for entry in plan["inventory"].values() for r in entry["packets"]]
-    if expected_packets != plan["packets"] or len(set(expected_packets)) != len(expected_packets):
-        raise ValueError("changed recovery packet inventory")
+    validate_packet_inventory(expected_packets, plan["packets"])
     outputs = {}; receipts = {}; pending = []
     for sha, entry in plan["inventory"].items():
         original = json.loads((original_root / f"{sha}.packet.json").read_text())

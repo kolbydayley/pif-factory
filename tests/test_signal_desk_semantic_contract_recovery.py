@@ -1,7 +1,7 @@
 from copy import deepcopy
 import json
 import pytest
-from scripts.pif_signal_desk_semantic_contract_recovery import partition, repair_packets, reconcile, collect, SYSTEM, schema
+from scripts.pif_signal_desk_semantic_contract_recovery import partition, repair_packets, reconcile, collect, validate_packet_inventory, SYSTEM, schema
 from research_factory.signal_desk_rubric_reference_packets import digest
 
 
@@ -12,6 +12,15 @@ def fixture():
     raw = {"decisions": [{"case_id": cid, "verdict": "supported", "rationale": "Diagnostic only.",
         "proposed_rule_change": "", "source_quotes": [quote]} for cid, quote in [("c1", "Actual source."), ("c2", "Invented.")]]}
     return p, raw
+
+
+def test_canonical_mapping_order_does_not_change_inventory():
+    validate_packet_inventory(["a", "b"], ["b", "a"])
+
+
+@pytest.mark.parametrize("left,right", [(["a", "a"], ["a"]), (["a"], ["a", "a"]), (["a"], ["b"])])
+def test_changed_inventory_still_rejected(left, right):
+    with pytest.raises(ValueError): validate_packet_inventory(left, right)
 
 
 def test_failed_only_full_source_and_unchanged_valid_row():
