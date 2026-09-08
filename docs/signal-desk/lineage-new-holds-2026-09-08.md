@@ -43,11 +43,14 @@ source windows. Diagnosis only; no output repaired, no gold accepted. The full
 
 ## Next steps
 
-### Partial opening-voice review findings (verified, not final)
+### Opening-voice review findings (complete diagnosis, not acceptance)
 
-Four completed packets were independently checked against the actual GPT-5.5
-high provider metadata, exact request hashes, saved packets, raw/review equality,
-review schema and exact source quotations. Remaining packets were still running.
+All seven packets were checked against the actual GPT-5.5 high provider metadata,
+exact request hashes, saved packets, raw/review equality, review schema and exact
+source quotations. Completed 2026-09-08T06:30:09Z; 26 decisions: 13 supported,
+13 needs_correction. Child 77942 was verified absent and hook acknowledged at
+06:30:20Z. Diagnosis is complete; no repaired output or gold acceptance follows
+automatically. Do not repeat the paid diagnostic.
 
 - DRA evt01–07: reviewers distinguish readable technical content from missing
   speaker identity. They recommend neutralizing the evidence-role recovery flag
@@ -66,14 +69,19 @@ review schema and exact source quotations. Remaining packets were still running.
 - Reviewer suggestions such as “none/omitted,” “question or inquiry,” or a scope
   “if available” are prose, not executable schema edits. Check actual allowed
   values and produce explicit proposals. No partial review applies corrections or
-  completes the 26-record diagnostic.
+  authorizes acceptance of a corrected response.
 
-The independently metered opening-voice diagnosis is live under hook
-`544b74e0-826c-49e0-9c54-7bd29cfd3c34`, child PID 77942. It covers the other two
-held A windows, all 26 original records. Do not duplicate that worker.
+The remaining TSMC evt06–14 all received supported verdicts, including the explicit
+Morris account, Ben's separate strategic assessment, Morris's limited endorsement,
+and both quarantined sponsor records. Exact source grounding and offset validity
+remain separate: favorable semantic review does not repair the held source spans.
+
+The prepared Hidden Brain C review was launched after the opening-voice child
+exited, under hook `56edd5d1-a0cf-400f-9b9e-5c89ba507416`, wrapper 79473.
+It reviews the three-field proposal independently; nothing has been applied.
 
 After its actual exit, acknowledge the hook and verify saved request, provider,
-schema, raw review, and source-grounded decisions. Use its contract diagnosis to
+schema, raw review, and source-grounded decisions. Use the opening-voice diagnosis to
 inform explicitly versioned corrections; do not loosen frozen gates. Prepare a
 bounded Hidden Brain C proposal and a full-source Coding-tools B diagnosis while
 preserving raw failures, all candidates, and first-pass error reporting.
