@@ -13,7 +13,7 @@ def inputs():
 
 def test_missing_approval_fails_closed():
     raw,p=inputs()
-    with patch.object(recovery,'verify',side_effect=ValueError('missing approval')):
+    with patch.object(recovery,'review_proof',side_effect=ValueError('missing approval')):
         with pytest.raises(ValueError,match='missing approval'):recovery.recover(raw,p)
 
 
@@ -21,5 +21,5 @@ def test_one_unsupported_record_blocks_application():
     raw,p=inputs()
     rows=[{'event_id':e['event_id'],'verdict':'supported'} for e in raw['events']]
     rows[0]['verdict']='needs_correction'
-    with patch.object(recovery,'verify',return_value=(rows,[])):
+    with patch.object(recovery,'review_proof',return_value=(rows,[])):
         with pytest.raises(ValueError,match='not independently supported'):recovery.recover(raw,p)
