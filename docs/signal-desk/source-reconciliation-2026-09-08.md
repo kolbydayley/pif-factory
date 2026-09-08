@@ -32,6 +32,35 @@ The same full Techmeme window contains a closing host self-identification. The f
 
 ## Remaining scope
 
+### Evidence/context contract qualification follow-up
+
+The full-event v4 diagnostic exposed a shared prompt/validator mismatch: the
+prompt invited a turn-boundary label as continuity evidence, while the validator
+correctly required every continuity span to remain inside the current voice's
+corridor. Both initial author outputs used next-speaker labels. Independent
+review repeated that recommendation, so agreement between author and reviewer
+was not evidence of correctness. Preserve these failed first-pass outputs.
+
+The short Brunson assent also exposed a representation conflict: putting the
+interviewer's question into the same attributed excerpt makes the excerpt
+multi-speaker; removing the question loses the meaning of the answer. The v5
+experimental contract separates `context_evidence` from `evidence_text`.
+Context is source-grounded but never inherits the excerpt's speaker/owner or
+adds claim/source counts. Every old corridor and attribution check still applies
+to the spoken evidence. Exact grounding alone does not prove that an answer
+affirms a leading question or that an omitted qualifier is harmless.
+
+The v5 run is a fresh 16-source, 64-call development contract qualification, not
+accepted gold or a replacement for the frozen 804. All author roles and final
+review share the clarified semantics. Review output is constrained to assigned
+packet IDs; the whole-window record index is context, not additional assigned
+decisions. Keep these prompt, representation, and review-envelope versions
+explicit in receipts. Do not carry v3/v4 scores forward as comparable v5 results.
+After source-reconciled qualification, the full benchmark still requires a
+version-bound gold migration/authoring strategy, independent per-split reliability
+with sealed-item isolation, and new prerequisite-valid A1/A2 measurements. No
+historical gold is accepted merely by adding an empty context array.
+
 ## Final-review corrections: all 20 checked
 
 Compared every before/after field delta and diagnostic rationale with the source context already read. The diagnostic's necessary/equivalent/harmful labels are not automatically adopted.
