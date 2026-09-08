@@ -18,6 +18,37 @@ The same full Techmeme window contains a closing host self-identification. The f
 
 ## Remaining scope
 
+## Fidelity reconciliation: all 32 flagged cases
+
+Read every flagged candidate's claim and reviewer rationale, and the complete source windows involved. These flags are not 32 verified critical errors. The diagnostic report retains the exhaustive case-ID inventory; the dispositions below are source-review proposals, not independent approval.
+
+### Seventeen stance/rubric cases
+
+Two Mims cases (current C/A), eleven All-In evaluative cases (current C/AUDIT/final correction), three accessibility criticism cases (current C/A), and the compound-AI final correction expose an inconsistent target definition. Current RULES says stance is toward the complete proposition, that negative assertions can be neutral, and criticism is not automatically doubt. The reviewer nevertheless recommends skeptical/critical for negative evaluations, sometimes treating agreement with an opposition proposition as support for its object.
+
+Repair requirements: an explicit stance target, separation of proposition endorsement from attitude toward the target, and a negative/critical value distinct from uncertainty. Factory-farming opposition and a worst-company award must never display as support for factory farming or the company. Criticism of judgment size must target the judgments, not necessarily the defendant. Mims's sarcastic comparison should retain its critical rhetorical force without inventing doubt about a factual assertion. An autonomy limitation following praise does not, by itself, establish two opposing attitudes. Do not mass-map neutral to skeptical or accept either final correction solely on the current diagnostic verdict.
+
+### Ten source/attribution ambiguities
+
+- Venture-capital e09: garbled ASR does not securely identify who supplies/uses the information or justify adding management as the target. Keep uncertain or narrow to the supported public-company pressure description; original raw text remains available.
+- Coding-tools cases: the strong-execution antecedent, ASR “worst,” the multiple-startups rumor, and two versions of the “opening” acquirer cannot be resolved by knowing likely real-world names. Preserve uncertainty or request wider/audio evidence; no silent name repair. Do not create an entity named “opening” for public use merely because the surface string is present.
+- All-In pension-fund litigation: unclear referent and garbled text remain unresolved. No company identity may be inferred from the nearby news discussion.
+- XRAI timing: do not infer a founding year from the garbled lead-in. The existing co-founding/function statement does not need that unsupported date. Whether it is useful product context or promotion is a separate decision.
+- Gucci reported commitment: “they've said to us” followed by first-person language can be an embedded quotation, even without punctuation in flattened text. The reviewer conflates whose commitment it is with whether it is direct/indirect speech. The narrator must not acquire the brands' commitment; quotation/report classification needs an explicit shared rule and potentially an indeterminate relation.
+- Gucci discount referent: source context does not make either a Gucci-only or a broader-portfolio referent certain. The proposed broader-business correction is not independently established. Preserve numerical Gucci facts; isolate/quarantine the ambiguous valuation referent rather than replace one guess with another.
+
+### Four modality/specificity cases
+
+- Legacy Lex first-interview claim: preserve Shawn's belief hedge; current C already does. No new event or corpus factual verification is needed.
+- Accessibility measurement final correction: retain both the subjective causal assessment and its limited strength. The proposed “felt”/“a bit” correction aligns with the source.
+- Two Nvidia threshold cases: preserve the tentative, illustrative threshold and the speaker's reasoning. Do not turn “whatever 70, 80 percent” into a precise numerical forecast band. The question's five-year horizon belongs in context if used; the answer remains an opinion, not measured market guidance.
+
+### One actor correction
+
+The Catherine narrative correction is source-supported: she instructed her husband to continue driving. Do not describe her as the driver. Retain her uncertainty that it was probably the last opportunity, and do not upgrade the interviewer's subsequent interpretation to her direct statement.
+
+This completes first source review of the 32 flagged fidelity cases, not approval or gold repairs. Their grouping (17 stance, 10 ambiguity, 4 modality, 1 actor) must not be used as corpus prevalence; versions and correction cases overlap semantically.
+
 ### Omission checks: first six cases
 
 Source context for these three windows was read in full. Case IDs, not reused event IDs, distinguish legacy and current records.
