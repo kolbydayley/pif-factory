@@ -55,12 +55,13 @@ def summarize(root=OUT, base=BASE, *, output_validator=validate, bundle_builder=
                             problems.append({"window_id": wid, "role": role, "validation_error": str(exc)})
                         else:
                             if result_path.exists():
-                                item["state"] = "offset_recovered_not_accepted" if recovered else "authored_not_accepted"
+                                semantic_repair = recovered and provenance.get('reviewed_limitation_repair',False)
+                                item["state"] = ("reviewed_quarantine_repair_not_accepted" if semantic_repair else "offset_recovered_not_accepted") if recovered else "authored_not_accepted"
                                 bundle, _ = bundle_builder(candidate, source["transcript_window"])
                                 voices = {r["candidate_id"]: r for r in bundle["voice"]["decisions"]}
                                 totals = by_role.setdefault(role, Counter())
                                 totals["windows"] += 1; totals["records"] += len(candidate["events"])
-                                if recovered: totals["offset_recovered_windows"] += 1
+                                if recovered: totals["reviewed_quarantine_repaired_windows" if semantic_repair else "offset_recovered_windows"] += 1
                                 if not candidate["events"]: totals["empty_windows"] += 1
                                 for event in candidate["events"]:
                                     v = voices[event["event_id"]]; a = event["attribution"]

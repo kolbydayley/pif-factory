@@ -36,9 +36,17 @@ def load_call(directory,packet):
     result=json.loads((directory/f"{sha}.result.json").read_text())
     provenance={"raw_sha256":digest(raw),"result_sha256":digest(result),"offset_recovery":False}
     if raw != result:
-        expected,receipt=recover(raw,source=packet["transcript_window"],window_id=packet["window_id"])
-        if expected != result or json.loads((directory/"offset-recovery.json").read_text()) != receipt:
+        if (directory/'reviewed-repair.json').exists():
+            from .signal_desk_full_event_v5_limitation_recovery import recover as recover_limitation
+            expected,receipt=recover_limitation(raw,packet,directory.parents[2]/'explicit-limitation-review-v1')
+            saved=json.loads((directory/'reviewed-repair.json').read_text())
+            provenance['reviewed_limitation_repair']=True
+        else:
+            expected,receipt=recover(raw,source=packet["transcript_window"],window_id=packet["window_id"])
+            saved=json.loads((directory/"offset-recovery.json").read_text())
+            provenance['offset_recovery']=True
+        if expected != result or saved != receipt:
             raise ValueError("unverified v5 offset projection")
-        provenance.update(offset_recovery=True,recovery_receipt_sha256=digest(receipt))
+        provenance.update(recovery_receipt_sha256=digest(receipt))
     validate(result,source=packet["transcript_window"],window_id=packet["window_id"])
     return result,provenance

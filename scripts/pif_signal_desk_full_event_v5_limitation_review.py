@@ -27,9 +27,11 @@ the candidates assigned in this packet, not every ID in the context record_index
 """
 
 
-def prepare():
+def prepare(*, write=True):
     import tiktoken
-    plan=run.prepare();source=json.loads((run.BASE/f"{plan['source_packets'][WID]}.packet.json").read_text())
+    plan=json.loads((run.OUT/'plan.json').read_text())
+    if plan['contract']!=run.author.receipt():raise ValueError('frozen author contract changed')
+    source=json.loads((run.BASE/f"{plan['source_packets'][WID]}.packet.json").read_text())
     p=run.author.packet(source,'B');d=run.OUT/'calls'/WID/'B';sha=p['packet_sha256']
     if json.loads((d/'packet.json').read_text())!=p:raise ValueError('B source/contract changed')
     sidecar=json.loads((d/f'{sha}.sidecar.json').read_text())
@@ -52,6 +54,7 @@ def prepare():
     r['repair_provenance']=provenance;r['system_sha256']=digest(SYSTEM);r['schema_sha256']=digest(run.review.schema(r));r['packet_sha256']=digest(r)
     tokens=len(enc.encode(SYSTEM+json.dumps(r,ensure_ascii=False)+json.dumps(run.review.schema(r))))+1500
     if tokens>12000:raise ValueError('full-source repair exceeds review limit')
+    if not write:return [r]
     OUT.mkdir(parents=True,exist_ok=True,mode=0o700)
     immutable_json(OUT/'proposal.json',proposed);immutable_json(OUT/'provenance.json',provenance)
     immutable_json(OUT/f"{r['packet_sha256']}.packet.json",r)
