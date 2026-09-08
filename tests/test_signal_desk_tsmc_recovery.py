@@ -23,3 +23,16 @@ def test_one_unsupported_record_blocks_application():
     rows[0]['verdict']='needs_correction'
     with patch.object(recovery,'review_proof',return_value=(rows,[])):
         with pytest.raises(ValueError,match='not independently supported'):recovery.recover(raw,p)
+
+
+def test_delta_needs_actual_approval():
+    raw,p=inputs()
+    with patch.object(recovery,'verify',side_effect=ValueError('missing delta approval')):
+        with pytest.raises(ValueError,match='missing delta approval'):recovery.recover(raw,p)
+
+
+def test_delta_rejection_blocks_application():
+    raw,p=inputs()
+    rows=[{'event_id':raw['events'][10]['event_id'],'verdict':'needs_correction'}]
+    with patch.object(recovery,'verify',return_value=(rows,[])):
+        with pytest.raises(ValueError,match='delta not independently supported'):recovery.recover(raw,p)
