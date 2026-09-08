@@ -68,6 +68,9 @@ def verified_call(directory,p,*,imported=False):
             elif (directory/'flattened-interview-repair.json').exists():
                 from research_factory.signal_desk_flattened_recovery import recover
                 expected,repair_proof=recover(raw,p);receipt_name='flattened-interview-repair.json';proof['reviewed_flattened_repair']=True
+            elif (directory/'flattened-audit-repair.json').exists():
+                from research_factory.signal_desk_flattened_audit_recovery import recover
+                expected,repair_proof=recover(raw,p);receipt_name='flattened-audit-repair.json';proof['reviewed_flattened_audit_repair']=True
             elif (directory/'stoica-audit-repair.json').exists():
                 from research_factory.signal_desk_stoica_audit_recovery import recover
                 expected,repair_proof=recover(raw,p);receipt_name='stoica-audit-repair.json';proof['reviewed_stoica_audit_repair']=True

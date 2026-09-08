@@ -5,6 +5,14 @@ from research_factory import signal_desk_flattened_audit_recovery as recovery
 from scripts import pif_signal_desk_flattened_audit_review as review
 
 
+def test_actual_complete_seventeen_record_chain():
+    _,_,p=review.proposal();d=review.run.OUT/'calls'/p['window_id']/'AUDIT'
+    raw=json.loads((d/f"{p['packet_sha256']}.output.json").read_text())
+    fixed,receipt=recovery.recover(raw,p)
+    assert len(fixed['events'])==receipt['approved_records']==17
+    assert not receipt['gold_accepted'] and not receipt['qualified']
+
+
 @pytest.mark.parametrize('missing',[True,False])
 def test_missing_or_rejected_final_target_blocks(monkeypatch,missing):
     from scripts import pif_signal_desk_flattened_audit_target_review as final
