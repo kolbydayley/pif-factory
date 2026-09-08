@@ -30,13 +30,18 @@ def validate(value,p):
     return previous.contract.validate(value,source=p['transcript_window'],window_id=p['window_id'])
 
 
-def verified_call(directory,p,*,imported=False):
+def verify_provider(directory,p):
     sha=p['packet_sha256'];side=json.loads((directory/f'{sha}.sidecar.json').read_text())
     if json.loads((directory/'packet.json').read_text())!=p:raise ValueError('saved packet changed')
     h=lambda s:hashlib.sha256(s.encode()).hexdigest()
     if (side.get('state')!='completed' or side.get('error_class') or side.get('model')!='gpt-5.6-sol' or
         side.get('effort')!='medium' or side.get('base_instructions_sha256')!=h(system(p['role'])) or
         side.get('prompt_sha256')!=h(json.dumps(p,ensure_ascii=False))):raise ValueError('provider provenance mismatch')
+    return side
+
+
+def verified_call(directory,p,*,imported=False):
+    side=verify_provider(directory,p);sha=p['packet_sha256']
     if imported:
         if p['role']=='C':raise ValueError('old C cannot be imported')
         value,proof=load_call(directory,p)
@@ -45,11 +50,15 @@ def verified_call(directory,p,*,imported=False):
         raw=json.loads((directory/f'{sha}.output.json').read_text())
         proof={'raw_sha256':digest(raw),'result_sha256':digest(value)}
         if raw!=value:
-            if not (directory/'source-need-repair.json').exists():raise ValueError('new output requires explicit repair provenance')
-            from research_factory.signal_desk_reviewed_need_recovery import recover
-            expected,repair_proof=recover('marketplace',raw,p)
-            if expected!=value or json.loads((directory/'source-need-repair.json').read_text())!=repair_proof:raise ValueError('reviewed repair changed')
-            proof.update(reviewed_source_need_repair=True,repair_proof_sha256=digest(repair_proof))
+            if (directory/'inspected-offset-repair.json').exists():
+                from research_factory.signal_desk_lineage_audit_offsets import recover
+                expected,repair_proof=recover(raw,p);receipt_name='inspected-offset-repair.json';proof['inspected_offset_repair']=True
+            else:
+                if not (directory/'source-need-repair.json').exists():raise ValueError('new output requires explicit repair provenance')
+                from research_factory.signal_desk_reviewed_need_recovery import recover
+                expected,repair_proof=recover('marketplace',raw,p);receipt_name='source-need-repair.json';proof['reviewed_source_need_repair']=True
+            if expected!=value or json.loads((directory/receipt_name).read_text())!=repair_proof:raise ValueError('explicit repair changed')
+            proof['repair_proof_sha256']=digest(repair_proof)
     validate(value,p)
     return value,{'directory':str(directory),'packet_sha256':sha,'sidecar_sha256':digest(side),'imported':imported,**proof}
 
