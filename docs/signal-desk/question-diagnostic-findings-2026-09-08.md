@@ -116,6 +116,32 @@ Do not alter the frozen family based on a returned failure.
 - Output remains held without repair or independent approval. Six A outputs are
   now held, zero are validated, and 58 role slots remain unfulfilled.
 
+### AI governance essay A
+
+- Window `sdw_3e13b01692fa8508d0cd`; 17 records; first error `span not exact source`.
+- Packet `fb0a82bcfd7e7d7ad90e0cc9d733b0ef7d8caf3359ba0a5af9383a37925040e1`;
+  parsed raw digest `d8f2e29e5f59eaf5854b0fd1538baca58338dccd82551a63b693350e5c0bd239`.
+- Full source and claims inspected. The clipped opening quotation has missing
+  context/ownership. Aschenbrenner's quoted analogy is not the narrator's endorsed
+  position. The anticipated weapons objection is not an observed person's actual
+  statement. Preserve hypothetical monopoly exceptions and the narrator's explicit
+  uncertainty, rather than flattening the argument into categorical support for
+  private control or opposition to regulation. Raw output remains held.
+
+### Stoica interview A
+
+- Window `sdw_ff2331e598d948e07cc9`; 17 records; source-recovery invariant failure.
+- Packet `e21bdfe24329fc5567f27777df27822901954bed243a5c709248f8b7188dac6e`;
+  parsed raw digest `63597c81f3c40736fd2f2261bbb585ab2b44ebee30a59f2b01d70416098ef88a`.
+- Full source and claims inspected. Four readable opening claims with an unlabeled
+  speaker request recovery despite substantive roles. Later named labels cannot
+  retroactively establish the opening voice. The host's “two next Databricks” recap
+  remains distinct from a guest forecast. Preserve the historical internet example,
+  application-versus-model innovation distinction, conditional national decline,
+  and vague Nvidia share threshold rather than overstating precision or certainty.
+- Eight A responses are now held; zero validated; 56 role slots remain unfulfilled.
+  No automatic corrections or independent semantic approval are claimed.
+
 Continue only
 unattempted independent windows under the frozen family, preserving failures and
 all denominators. Held parents block their dependent execution; existing raw
