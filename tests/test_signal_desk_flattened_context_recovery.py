@@ -5,6 +5,17 @@ from research_factory import signal_desk_flattened_context_recovery as recovery
 from scripts import pif_signal_desk_flattened_context_review as delta
 
 
+def test_actual_full_approval_chain_preserves_acceptance_gate():
+    _, _, p = delta.parent.parent.proposal()
+    d = delta.parent.parent.run.OUT/'calls'/p['window_id']/'A'
+    raw = json.loads((d/f"{p['packet_sha256']}.output.json").read_text())
+    fixed, receipt = recovery.recover(raw, p)
+    assert fixed == delta.proposal()[0]
+    assert receipt['approved_records'] == 27
+    assert receipt['gold_accepted'] is False
+    assert receipt['qualified'] is False
+
+
 def test_unreviewed_voice_or_other_record_cannot_change():
     baseline, _, _ = delta.parent.proposal()
     fixed, _, _ = delta.proposal()
