@@ -56,7 +56,8 @@ def prepare():
 
 
 async def execute(plan, *, output_root=None, packet_builder=packet, prompt_factory=prompts,
-                  review_contract=final, task_prefix="full-event-semantic-v4-provider-schema-v1"):
+                  review_contract=final, task_prefix="full-event-semantic-v4-provider-schema-v1",
+                  output_validator=validate, output_schema=schema):
     out = OUT if output_root is None else output_root
     slots = asyncio.Semaphore(2); stop = asyncio.Event()
     async def window(wid):
@@ -70,11 +71,11 @@ async def execute(plan, *, output_root=None, packet_builder=packet, prompt_facto
                     target = out / "calls" / wid / role
                     immutable_json(target / "packet.json", p)
                     code = await metered_execute([p], output_root=target, task_prefix=task_prefix,
-                        system_for_packet=lambda q: prompt_factory()[q["role"]], schema_for_packet=lambda q: lower(schema())[0],
-                        validator=lambda v, q: validate(v, source=q["transcript_window"], window_id=q["window_id"]), turn_for_packet=lambda q: q["role"])
+                        system_for_packet=lambda q: prompt_factory()[q["role"]], schema_for_packet=lambda q: lower(output_schema())[0],
+                        validator=lambda v, q: output_validator(v, source=q["transcript_window"], window_id=q["window_id"]), turn_for_packet=lambda q: q["role"])
                     if code != 0:
                         stop.set(); return {"window_id": wid, "status": "contract_failure", "role": role}
-                    authored[role] = validate(json.loads((target / f"{p['packet_sha256']}.result.json").read_text()), source=s["transcript_window"], window_id=wid)
+                    authored[role] = output_validator(json.loads((target / f"{p['packet_sha256']}.result.json").read_text()), source=s["transcript_window"], window_id=wid)
                     if role == "C":
                         import tiktoken
                         enc = tiktoken.get_encoding("o200k_base")

@@ -58,10 +58,10 @@ def validate_review(value, packet):
     return value
 
 
-def packets(output, *, source, window_id, token_count, system=None, schema_for_packet=None):
+def packets(output, *, source, window_id, token_count, system=None, schema_for_packet=None, output_validator=validate):
     selected_system = SYSTEM if system is None else system
     selected_schema = (lambda p: schema()) if schema_for_packet is None else schema_for_packet
-    validate(output, source=source, window_id=window_id)
+    output_validator(output, source=source, window_id=window_id)
     # Full source always retained; compact whole-population index exposes context
     # links without multiplying every detailed record in every review packet.
     index = [{"event_id": e["event_id"], "claim_text": e["claim_text"],
