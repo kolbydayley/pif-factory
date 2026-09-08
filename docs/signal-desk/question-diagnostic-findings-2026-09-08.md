@@ -292,3 +292,42 @@ the family or replace the required complete-population independent review.
   received during active goal turn. Inventory18returns4valid14held, one complete
   negative control,46unfulfilled roles. One original independent source remains
   unattempted. All sixteen windows/64roles retained; qualified=false.
+
+### Tech Brew news roundup A — final original source
+
+- Window `sdw_0ffa09f4e0354c6dd896`; 20 records; held for source-recovery invariant.
+  Packet `b2ba3ef77acb339a9bd42785a71dbecb49889e78572a0ddaa2342ed854a1dd74`;
+  parsed raw digest `1c4ae9972729d0fb7fb5e6003bea1c95e4a354fe65cb8a3d5c5589720e947f1d`.
+- Entire source and all claim texts inspected. Reported articles, study results,
+  and quoted tweets require distinct proposition owners; reading them aloud is not
+  endorsement. The host's closing identification does not by itself bind every
+  earlier quotation to the host as its owner. Anonymous opening survey context and
+  the closing aphorism's ambiguous target must not be filled by external assumptions.
+  Reported openness to moving is not actual migration, and dated rollout/reporting
+  language is not a present-day fact. Preserve source-surface ASR names and aliases.
+- Hook2b2894d4 exited2 at14:03:48Z; child51282 absent, ACK14:03:55Z;
+  active-turn receipt, not autonomous-idle-wake evidence.
+
+## Frozen question-v1 first-pass observation complete: FAILED qualification
+
+All sixteen original sources returned A. Fifteen A outputs are held; one is valid,
+the non-substantive webpage-chrome control. Its B/C/AUDIT also returned validly.
+There are 19 raw returns, four valid authored-not-accepted outputs, 15 held outputs,
+and 45 unfulfilled role slots (30 unstarted B/AUDIT;15 C blocked on parents).
+The required denominator remains sixteen windows /64roles. No current result
+passes complete-population independent semantic review or full804 acceptance.
+
+First encountered validation failures per A output: six recovery-need invariant,
+six exact-span failures (three inexact span, two span not exact source, one inexact
+record evidence), two question-role boundary conflicts, one indeterminate-status
+conflict. These are first-error categories, not exhaustive semantic diagnoses:
+later failures can be masked by the first validator exception. Do not translate
+these counts into speaker-error or claim-recall rates.
+
+Do not rerun held responses under the same identity or call this a successful
+experiment because the source inventory is complete. Preserve it as the failed
+baseline. The next prompt-only comparison should clarify the existing recovery
+rule under the same question-v1 schema, retaining all16sources and fresh-role
+requirements. The isolated question-boundary v2 remains a separate dimension;
+do not combine it or claim the unresolved span failures are fixed. No expensive
+per-record repair chain is authorized by an attractive partial validation result.
