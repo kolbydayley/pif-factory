@@ -28,6 +28,7 @@ def unchanged_outside_delta(baseline, fixed, numbers):
 def recover(original, packet):
     from scripts import pif_signal_desk_luxury_review as review
     from scripts import pif_signal_desk_luxury_delta_review as delta
+    from scripts import pif_signal_desk_luxury_target_review as target
     baseline, prior, p = review.proposal()
     if packet != p or digest(original) != prior['original_sha256']:
         raise ValueError('luxury original changed')
@@ -38,16 +39,25 @@ def recover(original, packet):
         raise ValueError('luxury prior review coverage changed')
     fixed, dp, q = delta.proposal()
     ds, delta_proofs = verified_delta()
-    if len(ds) != 4 or {d['event_id'] for d in ds} != changed or any(d['verdict'] != 'supported' for d in ds):
+    if len(ds) != 4 or {d['event_id'] for d in ds} != changed or {d['event_id'] for d in ds if d['verdict'] != 'supported'} != {'evt-10'}:
         raise ValueError('luxury corrections not independently supported')
+    final, tp, t = target.proposal()
+    ts, target_proofs = verify(target, target.prepare(write=False))
+    if len(ts) != 1 or ts[0]['event_id'] != 'evt-10' or ts[0]['verdict'] != 'supported':
+        raise ValueError('luxury target correction not independently supported')
+    restored = deepcopy(final)
+    restored['events'][9]['attitude']['target'] = fixed['events'][9]['attitude']['target']
+    if restored != fixed or final['events'][9]['attitude']['target'] is not None or t != packet:
+        raise ValueError('unreviewed luxury target content changed')
     if q != packet:
         raise ValueError('luxury delta source changed')
-    for module, value, proof in ((review, baseline, prior), (delta, fixed, dp)):
+    for module, value, proof in ((review, baseline, prior), (delta, fixed, dp), (target, final, tp)):
         if json.loads((module.OUT/'proposal.json').read_text()) != value or json.loads((module.OUT/'provenance.json').read_text()) != proof:
             raise ValueError('luxury saved proposal changed')
         plan = json.loads((module.OUT/'plan.json').read_text())
         if plan['proposal_sha256'] != digest(value) or plan['provenance_sha256'] != digest(proof):
             raise ValueError('luxury proposal plan changed')
     unchanged_outside_delta(baseline, fixed, delta.NUMBERS)
-    return fixed, dict(repair=prior, reviews=proofs, delta=dp, delta_reviews=delta_proofs,
+    return final, dict(repair=prior, reviews=proofs, delta=dp, delta_reviews=delta_proofs,
+        target_delta=tp, target_reviews=target_proofs,
         approved_records=15, qualified=False, gold_accepted=False)
