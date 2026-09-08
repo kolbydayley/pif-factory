@@ -49,3 +49,23 @@ def test_v5_pipeline_uses_v5_everywhere_and_independent_audit(tmp_path,monkeypat
     assert result==0 and roles==["A","B","C","AUDIT"]
     p=json.loads(next((out/"final-packets").glob('*.json')).read_text())
     assert p["system_sha256"]==digest(review.SYSTEM) and not p["gold_accepted"]
+
+
+@pytest.mark.parametrize("before_call", [True, False])
+def test_quality_hold_blocks_admission_without_discarding_completed_call(tmp_path, monkeypatch, before_call):
+    plan,out=setup(tmp_path,monkeypatch); roles=[]
+    out.mkdir(parents=True,exist_ok=True)
+    if before_call: runner.immutable_json(out/"ADMISSION-HOLD.json", {"reason":"quality_review"})
+    async def fake(packets, **kwargs):
+        p=packets[0]; roles.append(p["role"])
+        runner.immutable_json(out/"ADMISSION-HOLD.json", {"reason":"quality_review"})
+        runner.immutable_json(kwargs["output_root"]/f"{p['packet_sha256']}.result.json", value())
+        return 0
+    monkeypatch.setattr(runner,"metered_execute",fake)
+    result=asyncio.run(runner.execute(plan,output_root=out,packet_builder=author.packet,prompt_factory=author.prompts,
+        review_contract=review,output_validator=contract.validate,output_schema=contract.schema))
+    assert result==2
+    assert roles==([] if before_call else ["A"])
+    if not before_call: assert len(list((out/"calls").rglob("*.result.json")))==1
+    receipt=json.loads(next((out/"runs").glob("*.json")).read_text())
+    assert receipt["windows"][0]["status"]=="quality_admission_hold"

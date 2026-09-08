@@ -60,11 +60,17 @@ async def execute(plan, *, output_root=None, packet_builder=packet, prompt_facto
                   output_validator=validate, output_schema=schema):
     out = OUT if output_root is None else output_root
     slots = asyncio.Semaphore(2); stop = asyncio.Event()
+    # Operational admission control, separate from budget/usage kills. Never
+    # cancel a paid call already in flight; re-read before each subsequent role.
+    def admission_held():
+        return (out / "ADMISSION-HOLD.json").exists()
     async def window(wid):
         async with slots:
+            if admission_held(): return {"window_id": wid, "status": "quality_admission_hold"}
             if stop.is_set(): return {"window_id": wid, "status": "not_started_after_failure"}
             s = json.loads((BASE / f"{plan['source_packets'][wid]}.packet.json").read_text()); authored = {}
             for role in ("A", "B", "C", "AUDIT"):
+                if admission_held(): return {"window_id": wid, "status": "quality_admission_hold", "role": role}
                 if stop.is_set(): return {"window_id": wid, "status": "checkpointed_after_peer_failure"}
                 try:
                     p = packet_builder(s, role, author_a=authored.get("A") if role == "C" else None, author_b=authored.get("B") if role == "C" else None)
