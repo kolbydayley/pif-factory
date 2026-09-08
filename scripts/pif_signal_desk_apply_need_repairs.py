@@ -34,9 +34,16 @@ def apply_verified(directory,p,fixed,proof,prefix,*,execute=False,expected_failu
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--case',choices=['hidden-brain','hidden-brain-b','marketplace','changelog-audit-offsets','coding-tools-v3'],required=True);parser.add_argument('--execute',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--case',choices=['hidden-brain','hidden-brain-b','hidden-brain-c','marketplace','changelog-audit-offsets','coding-tools-v3'],required=True);parser.add_argument('--execute',action='store_true');args=parser.parse_args()
     with (lane.previous.parent.OUT/'runner.lock').open('a') as a,(lane.previous.OUT/'runner.lock').open('a') as b:
         for lock in (a,b):fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        if args.case=='hidden-brain-c':
+            from scripts.pif_signal_desk_hidden_brain_c_repair_review import WID
+            from research_factory.signal_desk_hidden_brain_c_recovery import recover as correction
+            directory=lane.OUT/'calls'/WID/'C';p=json.loads((directory/'packet.json').read_text())
+            raw=json.loads((directory/f"{p['packet_sha256']}.output.json").read_text());fixed,proof=correction(raw,p)
+            print(json.dumps(apply_verified(directory,p,fixed,proof,'full-event-lineage-qualification-v1',execute=args.execute,
+                expected_failure='inexact record evidence',receipt_name='hidden-brain-c-repair.json')),flush=True);return
         if args.case=='coding-tools-v3':
             from scripts.pif_signal_desk_coding_tools_held_review import WID
             from research_factory.signal_desk_coding_tools_final_recovery import recover as coding
