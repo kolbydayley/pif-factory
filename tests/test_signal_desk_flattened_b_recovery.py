@@ -6,6 +6,16 @@ from scripts import pif_signal_desk_flattened_b_delta_review as delta
 from scripts import pif_signal_desk_flattened_b_review as parent
 
 
+def test_actual_three_stage_full_approval_cover():
+    from scripts import pif_signal_desk_flattened_b_surface_review as surface
+    _,_,p=parent.proposal();d=parent.run.OUT/'calls'/p['window_id']/'B'
+    raw=json.loads((d/f"{p['packet_sha256']}.output.json").read_text())
+    fixed,proof=recovery.recover(raw,p)
+    assert fixed==surface.proposal()[0]
+    assert proof['approved_records']==19
+    assert proof['gold_accepted'] is False
+
+
 @pytest.mark.parametrize('missing',[True,False])
 def test_final_surface_missing_or_rejected_blocks(monkeypatch,missing):
     from scripts import pif_signal_desk_flattened_b_surface_review as surface
