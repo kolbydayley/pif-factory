@@ -1,5 +1,14 @@
 # Recovery-rule clarification comparison: development diagnostics
 
+## Stoica infrastructure and academia — A, held
+
+- Window `sdw_ff2331e598d948e07cc9`; packet SHA `970e659630ed20c1ae8df9b71405609a0e0ce44f1ec53879975566c684e0ac10`; parsed raw SHA `95a508aad5732751d4117c799d132703c4374d164eb6a79d8561a1f8259343ec`.
+- Twelve records, held `inexact evidence`; full source and all claims, role/need fields, and voice/owner bindings inspected. No automatic repair.
+- The first two readable opening records keep null voice/owner and `needs:none`, improving the baseline's recovery-need confusion on this third targeted source. Their breadth also exposes compound-claim risk: infrastructure description, requirement and forecast are combined; the autonomy record includes a current-state assertion, mechanism, constraint and proposed engineering response. Fewer records is not automatically better atomicity.
+- Sonya's next-Databricks recap stays her interpretation rather than Stoica's direct prediction. Subsequent labelled statements distinguish research-partnership concerns, conditional national competitiveness, reported spending plans, and scarcity's acknowledged innovation benefit.
+- Nvidia's vaguely stated 70/80-percent threshold remains tentative, not a measured or legally mandated target. Open-source wording alone is not proof of open weights, code, data or licensing. Background metadata must not be treated as evidence of every domain claim's authority.
+- Hook7a8d34ab exited2 at14:58:56Z; child60129 absent and separately acknowledged in active turn. Eight A outputs now held; zero qualified windows. Continue only remaining independent unattempted sources, preserving16/64.
+
 ## AI governance essay — A, held
 
 - Window `sdw_3e13b01692fa8508d0cd`; packet SHA `477e35a3d3ce15a566e5e72103a03bf309a87aec00cb19cc2fb642dd7edde246`; parsed raw SHA `b8cb6fa9555a5d31e45cc118a1ef624a4050fc7ae091c8d75f7e05ce1b7d33c9`.
