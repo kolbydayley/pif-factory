@@ -94,8 +94,38 @@ def prepare():
     return packets
 
 
+def status(packets, root=OUT):
+    rows=[]
+    for p in packets:
+        sha=p['packet_sha256']; result=root/f'{sha}.review.json'; side=root/f'{sha}.sidecar.json'
+        row={'packet_sha256':sha,'assigned_cases':len(p['cases']),'state':'not_started'}
+        if side.exists():
+            s=json.loads(side.read_text());row['provider_state']=s.get('state');row['state']='in_progress'
+        if result.exists():
+            try:
+                v=validate(json.loads(result.read_text()),p)
+                raw=json.loads((root/f'{sha}.output.json').read_text())
+                h=lambda text:hashlib.sha256(text.encode()).hexdigest()
+                if (not side.exists() or s.get('state')!='completed' or s.get('error_class') or
+                    s.get('model')!='gpt-5.5' or s.get('effort')!='high' or
+                    s.get('base_instructions_sha256')!=h(SYSTEM) or s.get('prompt_sha256')!=h(json.dumps(p,ensure_ascii=False)) or raw!=v):
+                    raise ValueError('review provenance mismatch')
+                row.update(state='reviewed_not_gold',decisions=[{'case_id':r['case_id'],'verdict':r['verdict'],
+                    'contract_change_requested':bool(r['contract_change'].strip())} for r in v['decisions']])
+            except (ValueError,OSError) as exc:row.update(state='held',reason=str(exc))
+        elif (root/f'{sha}.pending.json').exists():row['state']='held'
+        elif side.exists() and s.get('state') in {'completed','failed'}:row['state']='terminal_without_valid_review'
+        rows.append(row)
+    return {'packets':rows,'total_cases':sum(r['assigned_cases'] for r in rows),
+            'all_reviews_verified':all(r['state']=='reviewed_not_gold' for r in rows),
+            'qualified':False,'gold_accepted':False}
+
+
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--execute',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--execute',action='store_true');parser.add_argument('--status',action='store_true');args=parser.parse_args()
+    if args.status:
+        if args.execute:parser.error('status is read-only')
+        print(json.dumps(status(prepare()),sort_keys=True));return
     with (run.OUT/'runner.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         ps=prepare();print(json.dumps({'packets':len(ps),'cases':sum(len(p['cases']) for p in ps),'gold_accepted':False}),flush=True)

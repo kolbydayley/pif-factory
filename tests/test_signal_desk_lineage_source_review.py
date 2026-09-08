@@ -1,4 +1,6 @@
 from copy import deepcopy
+import json
+import hashlib
 import pytest
 from scripts import pif_signal_desk_lineage_source_review as review
 
@@ -29,3 +31,20 @@ def test_invalid_review_fails_closed(mutation):
     elif mutation=='fields':r['extra']=True
     else:r['rationale']=' '
     with pytest.raises(ValueError):review.validate(v,p)
+
+
+@pytest.mark.parametrize('tamper',[None,'model','prompt','raw'])
+def test_status_checks_actual_provider_request_not_just_valid_json(tmp_path,tamper):
+    p,v=fixture();p['packet_sha256']='packet'
+    h=lambda s:hashlib.sha256(s.encode()).hexdigest()
+    side={'state':'completed','error_class':None,'model':'gpt-5.5','effort':'high',
+          'base_instructions_sha256':h(review.SYSTEM),'prompt_sha256':h(json.dumps(p,ensure_ascii=False))}
+    if tamper=='model':side['model']='other'
+    if tamper=='prompt':side['prompt_sha256']='other'
+    raw=deepcopy(v)
+    if tamper=='raw':raw['decisions'][0]['verdict']='unresolved'
+    for suffix,obj in [('review',v),('output',raw),('sidecar',side)]:
+        (tmp_path/f'packet.{suffix}.json').write_text(json.dumps(obj))
+    r=review.status([p],tmp_path)
+    assert r['all_reviews_verified']==(tamper is None)
+    assert not r['gold_accepted'] and r['total_cases']==2
