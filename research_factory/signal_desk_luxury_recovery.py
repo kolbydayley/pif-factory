@@ -6,7 +6,7 @@ from .signal_desk_repair_review_proof import verify
 
 
 def verified_delta():
-    from scripts import pif_signal_desk_luxury_capacity_continuation as continuation
+    from scripts import pif_signal_desk_luxury_capacity_continuation_2 as continuation
     from .signal_desk_review_capacity_continuation import combined
     return combined(continuation)
 
