@@ -50,6 +50,7 @@ from .subscription_budget import (
     subscription_budget_window,
 )
 from .util import now_iso, stable_id
+from research_factory.gold_exclusions import default_exclusion_path, load_exclusions, load_gold_windows
 
 
 LANE = "gpt_5_6_sol_scorer_qualification"
@@ -156,7 +157,10 @@ def build_selection(
         manifest, project_root=project_root, gold_pass="A", splits=("development",)
     )
     by_window = {str(packet["input"]["window_id"]): packet for packet in packets}
-    gold = {path.stem: json.loads(path.read_text()) for path in gold_root.glob("*.json")}
+    # audited-illegitimate claims are dropped in memory; sealed files are untouched
+    gold = load_gold_windows(
+        gold_root, exclusions=load_exclusions(default_exclusion_path(gold_root))
+    )
     predictions = {
         path.stem: json.loads(path.read_text()) for path in prediction_root.glob("*.json")
     }

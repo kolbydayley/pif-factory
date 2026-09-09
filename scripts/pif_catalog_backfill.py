@@ -87,7 +87,8 @@ def plan_podcastindex_inserts(source_id: str, existing_guids: set,
     for e in episodes:
         guid = (e.get("guid") or "").strip()
         title = (e.get("title") or "").strip()
-        if not guid or not title:
+        # undated episodes cannot be placed in discourse time — skip
+        if not guid or not title or not (e.get("published_at") or "").strip():
             continue
         if guid in existing_guids or norm_title(title) in existing_titles:
             continue

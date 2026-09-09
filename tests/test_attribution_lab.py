@@ -50,5 +50,37 @@ class NameMatchTest(unittest.TestCase):
         self.assertFalse(lab.name_match("", "Nathan Labenz"))
 
 
+class UnknownActorTest(unittest.TestCase):
+    def test_actor_type_marks_named_placeholder_as_abstention(self):
+        self.assertTrue(lab.is_unknown_actor(
+            "Unknown Lovable demo speaker", "unknown"
+        ))
+
+    def test_named_speaker_is_not_an_abstention(self):
+        self.assertFalse(lab.is_unknown_actor("Nathan Labenz", "speaker"))
+
+
+class ConfidenceGateTest(unittest.TestCase):
+    def test_selects_least_discarding_gate_that_meets_precision(self):
+        scored = [
+            (True, 0.60),
+            (False, 0.70),
+            (True, 0.80),
+            (True, 0.90),
+        ]
+        gate = lab.derive_confidence_gate(scored, target_precision=1.0)
+        self.assertEqual(gate["threshold"], 0.8)
+        self.assertEqual(gate["kept"], 2)
+        self.assertEqual(gate["discarded"], 2)
+        self.assertEqual(gate["discard_fraction"], 0.5)
+
+    def test_reports_no_gate_when_target_is_unreachable(self):
+        gate = lab.derive_confidence_gate(
+            [(False, 0.9), (True, None)], target_precision=0.995
+        )
+        self.assertIsNone(gate["threshold"])
+        self.assertEqual(gate["discard_fraction"], 1.0)
+
+
 if __name__ == "__main__":
     unittest.main()

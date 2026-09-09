@@ -8,6 +8,7 @@ before dispatch, with a KILL file at 120%.
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 from research_factory import subscription_budget as sb
@@ -22,6 +23,37 @@ def _conn() -> sqlite3.Connection:
 
 def test_default_cap_is_the_ruled_five_million() -> None:
     assert sb.DEFAULT_DAILY_CAP_TOKENS == 5_000_000
+
+
+def test_budget_window_rolls_at_0035_eastern() -> None:
+    before = datetime(2026, 8, 31, 4, 34, tzinfo=timezone.utc)
+    after = datetime(2026, 8, 31, 4, 35, tzinfo=timezone.utc)
+    before_day, before_start = sb.subscription_budget_window(before)
+    after_day, after_start = sb.subscription_budget_window(after)
+    assert before_day == "2026-08-30"
+    assert before_start == "2026-08-30T04:35:00+00:00"
+    assert after_day == "2026-08-31"
+    assert after_start == "2026-08-31T04:35:00+00:00"
+
+
+def test_window_start_excludes_pre_reset_rows_mislabeled_with_new_day() -> None:
+    conn = _conn()
+    conn.execute(
+        """
+        INSERT INTO pif_subscription_budget_ledger
+          (id, day, provider_lane, lane, run_id, tokens, provider_calls, created_at)
+        VALUES ('old', '2026-08-31', 'codex_subscription', 'labels',
+                'old-run', 4000000, 1, '2026-08-31T04:20:00+00:00'),
+               ('new', '2026-08-31', 'codex_subscription', 'labels',
+                'new-run', 100000, 1, '2026-08-31T04:40:00+00:00')
+        """
+    )
+    assert sb.tokens_used(conn, day="2026-08-31") == 4_100_000
+    assert sb.tokens_used(
+        conn,
+        day="2026-08-31",
+        window_start_iso="2026-08-31T04:35:00+00:00",
+    ) == 100_000
 
 
 def test_record_and_sum_by_day() -> None:

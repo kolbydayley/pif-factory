@@ -284,3 +284,39 @@ Unchanged: transcripts and prompt files are private local artifacts; do not
 move `corpus/` into public hosting; publish only sanitized snapshots/reports
 citing segment IDs and short evidence spans. `python3 -m research_factory
 privacy-scan` before any export.
+
+## Gold claim exclusions (audited-illegitimate claims) — 2026-09-05
+
+Audited-illegitimate claims are excluded from the gold data set **at load time**.
+The sealed / receipted C-phase files are never edited; the shared loader
+`research_factory.gold_exclusions.load_gold_windows` drops excluded events in
+memory and records `excluded_event_ids` / `authored_event_count` on each window.
+Both gold consumers (`signal_desk_scorer_runner.build_selection` for A2 and
+`signal_desk_frontier.measure_frontier` for A1) load through it.
+
+- Ledger: `work/signal-desk-rebuild/gold-authoring-v2/artifacts/gold-claim-exclusions.json`
+  (schema `pif_gold_claim_exclusions_v1`, keyed by `(window_id, event_id)` because
+  event_ids repeat across windows; hash-checked on load; a missing ledger means
+  "no exclusions", a tampered one raises).
+- Sources: `gold_claim_machine_flags.verdict='not_legit'` ∪ `gold_claim_flags.verdict='illegitimate'`
+  from `work/pif-ops/audit/gold_audit.sqlite`. `unsure` never excludes.
+- Regenerate after any audit pass (refuses to export an entry not present in gold):
+
+```bash
+python3 -B scripts/pif_gold_fable_audit.py export-exclusions
+```
+
+- Machine audit loop (metered: waves of ~5 agents, Opus for bulk, Fable for review):
+
+```bash
+python3 -B scripts/pif_gold_fable_audit.py prep --n 5000 --batches 25 --seed 11   # skips already-judged
+# dispatch agents on work/pif-ops/audit/machine/batches/*.json -> verdicts/*.jsonl
+# record which model judged each batch in work/pif-ops/audit/machine/models.json
+python3 -B scripts/pif_gold_fable_audit.py ingest
+python3 -B scripts/pif_gold_fable_audit.py report --dump-not-legit
+python3 -B scripts/pif_gold_fable_audit.py export-exclusions
+```
+
+Regenerate the ledger **before** the A2 selection is frozen; the frozen
+`scorer-selection-*.private.json` hash covers the filtered gold, so changing the
+ledger afterwards trips "frozen A2 selection drifted" by design.

@@ -968,6 +968,10 @@ def test_concurrent_claimed_execution_matches_serial_with_fake_codex(tmp_path: P
     assert connections[0].submitted_labels == connections[1].submitted_labels
     assert len(invocations) == 8
     assert all(call_args[0][-1] == "-" for call_args, _ in invocations)
+    assert all(
+        'model_reasoning_effort="xhigh"' in call_args[0]
+        for call_args, _ in invocations
+    )
     for _, call_kwargs in invocations:
         assert "Write the final JSON object" in call_kwargs["input"]
         assert any(
@@ -977,6 +981,54 @@ def test_concurrent_claimed_execution_matches_serial_with_fake_codex(tmp_path: P
         )
     main_thread = threading.get_ident()
     assert all(set(connection.execute_thread_ids) == {main_thread} for connection in connections)
+
+
+def test_claimed_execution_reserves_capacity_before_provider_dispatch(
+    tmp_path: Path,
+) -> None:
+    rows = _fake_claimed_rows(tmp_path)[:2]
+    connection = _FakeClaimedConnection(rows)
+    gate = {
+        "allowed": True,
+        "reason": None,
+        "remaining_tokens": 999_999,
+        "tokens_used": 4_000_001,
+        "cap_tokens": 5_000_000,
+    }
+    with patch(
+        "research_factory.headless_codex.runs_dir", return_value=tmp_path
+    ), patch(
+        "research_factory.headless_codex.root", return_value=tmp_path
+    ), patch(
+        "research_factory.subscription_budget.budget_gate", return_value=gate
+    ), patch(
+        "research_factory.headless_codex.subprocess.run"
+    ) as provider_call, patch(
+        "research_factory.headless_codex._finalize_submission_failure",
+        return_value={
+            "finalized": True,
+            "job_status": "pending",
+            "label_run_status": "failed",
+            "attempt_consumed": False,
+        },
+    ):
+        result = execute_claimed_label_runs(
+            connection,
+            lease_owner="daily-owner",
+            limit=2,
+            model="gpt-5.5",
+            timeout_seconds=30,
+            audit=False,
+            concurrency=2,
+        )
+
+    provider_call.assert_not_called()
+    assert result["budget_cap_hit"] == 2
+    assert result["budget"]["metered_calls"] == 0
+    assert all(
+        item["budget_refusal_reason"] == "insufficient_call_reserve"
+        for item in result["results"]
+    )
 
 
 def test_claimed_execution_finalizes_submission_failure(tmp_path: Path) -> None:

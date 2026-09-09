@@ -65,9 +65,10 @@ class PlanPodcastindexInsertsTest(unittest.TestCase):
         self.assertTrue(plan[0]["id"].startswith("ep_"))
         self.assertEqual(plan[0]["published_at"], "2020-03-01")
 
-    def test_missing_guid_or_title_skipped(self):
+    def test_missing_guid_title_or_date_skipped(self):
         plan = cb.plan_podcastindex_inserts("s", set(), set(), [
             {"guid": "", "title": "No Guid", "published_at": "2020-01-01"},
             {"guid": "g", "title": "", "published_at": "2020-01-01"},
+            {"guid": "g2", "title": "No Date", "published_at": None},
         ])
         self.assertEqual(plan, [])

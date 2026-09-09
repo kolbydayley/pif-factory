@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from research_factory.headless_codex import (
     _finalize_submission_failure,
     _provider_pressure_signals,
@@ -18,8 +20,11 @@ from research_factory.labels import (
     render_prompt,
 )
 from research_factory.worker import (
+    EPISODE_CONTEXT_SCHEMA_VERSION,
     LABEL_EPISODE_CONTEXT_FIELDS,
+    render_episode_context_prompt,
     slim_episode_context_for_label,
+    validate_episode_context_output,
 )
 
 
@@ -120,6 +125,181 @@ def test_label_context_slimming_keeps_only_consumed_fields() -> None:
     assert tuple(slim) == LABEL_EPISODE_CONTEXT_FIELDS
     assert "context_summary" not in slim
     assert "episode_context" not in slim
+
+
+def test_label_context_slimming_filters_distant_and_weak_named_turns() -> None:
+    artifact = {
+        "speaker_map": [
+            {
+                "speaker_id": "guest",
+                "name": "Guest",
+                "turn_assignments": [
+                    {"segment_index": 4, "confidence": 0.91},
+                    {"segment_index": 5, "confidence": 0.84},
+                    {"segment_index": 9, "confidence": 0.99},
+                ],
+                "turn_anchors": [
+                    {"segment_index": 4},
+                    {"segment_index": 9},
+                ],
+            },
+            {
+                "speaker_id": "unknown",
+                "name": "Unknown",
+                "turn_assignments": [
+                    {"segment_index": 5, "confidence": 0.55},
+                    {"segment_index": 9, "confidence": 0.40},
+                ],
+                "turn_anchors": [],
+            },
+        ]
+    }
+    slim = slim_episode_context_for_label(
+        artifact, relevant_segment_indices={4, 5}
+    )
+    assert slim["speaker_map"][0]["turn_assignments"] == [
+        {"segment_index": 4, "confidence": 0.91}
+    ]
+    assert slim["speaker_map"][0]["turn_anchors"] == [
+        {"segment_index": 4}
+    ]
+    assert slim["speaker_map"][1]["turn_assignments"] == [
+        {"segment_index": 5, "confidence": 0.55}
+    ]
+
+
+def test_episode_context_prompt_requires_mixed_turn_speaker_anchors() -> None:
+    prompt = render_episode_context_prompt(
+        "ai_discourse_v3_1",
+        {
+            "episode": {"id": "episode-panel", "title": "Panel"},
+            "full_segmented_episode_text": "[segment 0]\nA question. An answer.",
+        },
+    )
+    assert EPISODE_CONTEXT_SCHEMA_VERSION.endswith("_v5")
+    assert "turn_assignments" in prompt
+    assert "assign every logical dialogue turn exactly once" in prompt
+    assert "one object per logical dialogue turn" in prompt
+    assert "confidence >=0.85" in prompt
+    assert "company knowledge shared by two guests" in prompt
+    assert "attribution_basis" in prompt
+    assert "Do not infer speaker identity from alternating turns alone" in prompt
+    assert "at least two independent attribution clues" in prompt
+    assert "speaker_id='unknown'" in prompt
+
+
+def test_episode_context_v5_rejects_duplicate_turn_assignments() -> None:
+    output = {
+        "schema_version": EPISODE_CONTEXT_SCHEMA_VERSION,
+        "episode_id": "episode-panel",
+        "context_summary": "A three speaker panel episode.",
+        "speaker_map": [
+            {
+                "name": "Host",
+                "direct_speaker": True,
+                "turn_assignments": [
+                    {
+                        "segment_index": 0,
+                        "turn_orders": [1],
+                        "opening_words": "Welcome to the panel",
+                        "attribution_basis": ["explicit self-identification"],
+                        "confidence": 0.9,
+                    }
+                ],
+                "turn_anchors": [],
+            },
+            {
+                "name": "Guest",
+                "direct_speaker": True,
+                "turn_assignments": [
+                    {
+                        "segment_index": 0,
+                        "turn_orders": [1],
+                        "opening_words": "Welcome to the panel",
+                        "attribution_basis": ["direct address"],
+                        "confidence": 0.8,
+                    }
+                ],
+                "turn_anchors": [],
+            },
+        ],
+        "section_map": [],
+        "entity_seed": {},
+        "concept_seed": [],
+        "extraction_guidance": "Use the complete panel context for careful speaker attribution.",
+        "quality_flags": [],
+        "overall_confidence": 0.8,
+        "needs_review": False,
+        "review_reason": None,
+    }
+    with pytest.raises(ValueError, match="duplicate a segment/turn pair"):
+        validate_episode_context_output(
+            output, expected_episode_id="episode-panel"
+        )
+
+
+def test_episode_context_v5_resolves_named_unknown_overlap_to_unknown() -> None:
+    output = {
+        "schema_version": EPISODE_CONTEXT_SCHEMA_VERSION,
+        "episode_id": "episode-panel",
+        "context_summary": "A three speaker panel episode.",
+        "speaker_map": [
+            {
+                "speaker_id": "guest",
+                "name": "Guest",
+                "direct_speaker": True,
+                "turn_assignments": [
+                    {
+                        "segment_index": 0,
+                        "turn_orders": [1],
+                        "opening_words": "The first answer",
+                        "attribution_basis": ["direct address"],
+                        "confidence": 0.91,
+                    },
+                    {
+                        "segment_index": 0,
+                        "turn_orders": [2],
+                        "opening_words": "The second answer",
+                        "attribution_basis": ["topic continuity"],
+                        "confidence": 0.71,
+                    },
+                ],
+                "turn_anchors": [],
+            },
+            {
+                "speaker_id": "unknown",
+                "name": "Unknown or unresolved speaker",
+                "direct_speaker": True,
+                "turn_assignments": [
+                    {
+                        "segment_index": 0,
+                        "turn_orders": [2],
+                        "opening_words": "The second answer",
+                        "attribution_basis": ["identity unresolved"],
+                        "confidence": 0.58,
+                    }
+                ],
+                "turn_anchors": [],
+            },
+        ],
+        "section_map": [],
+        "entity_seed": {},
+        "concept_seed": [],
+        "extraction_guidance": "Use the complete panel context for careful speaker attribution.",
+        "quality_flags": [],
+        "overall_confidence": 0.8,
+        "needs_review": False,
+        "review_reason": None,
+    }
+    artifact = validate_episode_context_output(
+        output, expected_episode_id="episode-panel"
+    )
+    assert artifact["speaker_map"][0]["turn_assignments"][0][
+        "turn_orders"
+    ] == [1]
+    assert artifact["speaker_map"][1]["turn_assignments"][0][
+        "turn_orders"
+    ] == [2]
 
 
 def test_embedded_json_sections_are_compact() -> None:

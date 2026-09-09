@@ -15,6 +15,7 @@ from .signal_desk_rebuild_gates import (
 )
 from .signal_desk_rebuild_scorer import scorer_sha256
 from .util import now_iso
+from .gold_exclusions import default_exclusion_path, load_exclusions, load_gold_windows
 
 
 SCHEMA_VERSION = "pif_signal_desk_frontier_ceiling_v2"
@@ -48,7 +49,10 @@ def measure_frontier(
         for row in manifest["windows"]
         if row["split"] == "development"
     }
-    gold = _load_outputs(gold_c_root)
+    # audited-illegitimate claims are dropped in memory; sealed files are untouched
+    gold = load_gold_windows(
+        gold_c_root, exclusions=load_exclusions(default_exclusion_path(gold_c_root))
+    )
     predictions = _load_outputs(prediction_root)
     missing_gold = sorted(set(development) - set(gold))
     missing_predictions = sorted(set(development) - set(predictions))

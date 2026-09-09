@@ -25,9 +25,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import date
+from datetime import date, datetime, time as datetime_time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
+from zoneinfo import ZoneInfo
 
 from .paths import root
 from .util import dumps_json, now_iso, sha256_text, stable_id
@@ -42,6 +43,7 @@ __all__ = [
     "write_daily_budget_receipt",
     "usage_tokens_from_item",
     "default_budget_dir",
+    "subscription_budget_window",
 ]
 
 
@@ -51,6 +53,38 @@ MAX_AUTHORIZED_DAILY_CAP_TOKENS = 50_000_000
 # At 120% of the cap the KILL file engages: something is bypassing the
 # before-dispatch gate (a crash loop, a parallel driver) and everything stops.
 KILL_MULTIPLIER = 1.2
+SUBSCRIPTION_BUDGET_TIMEZONE = ZoneInfo("America/New_York")
+SUBSCRIPTION_BUDGET_RESET_TIME = datetime_time(hour=0, minute=35)
+
+
+def subscription_budget_window(
+    current: datetime | str | None = None,
+) -> tuple[str, str]:
+    """Return the provider-aligned budget day and its UTC window start.
+
+    The Codex subscription allowance rolls at approximately 00:35 Eastern,
+    not at UTC midnight. Keeping this boundary explicit prevents late-evening
+    usage from consuming the newly reset provider window.
+    """
+
+    if current is None:
+        instant = datetime.fromisoformat(now_iso().replace("Z", "+00:00"))
+    elif isinstance(current, str):
+        instant = datetime.fromisoformat(current.replace("Z", "+00:00"))
+    else:
+        instant = current
+    if instant.tzinfo is None:
+        instant = instant.replace(tzinfo=timezone.utc)
+    local = instant.astimezone(SUBSCRIPTION_BUDGET_TIMEZONE)
+    reset = datetime.combine(
+        local.date(),
+        SUBSCRIPTION_BUDGET_RESET_TIME,
+        tzinfo=SUBSCRIPTION_BUDGET_TIMEZONE,
+    )
+    if local < reset:
+        reset -= timedelta(days=1)
+    day = reset.date().isoformat()
+    return day, reset.astimezone(timezone.utc).isoformat()
 
 
 def _authorized_cap_override(directory: Path, *, day: str) -> tuple[int, str] | None:
@@ -170,13 +204,22 @@ def record_usage(
     return row_id
 
 
-def tokens_used(conn: sqlite3.Connection, *, day: str) -> int:
+def tokens_used(
+    conn: sqlite3.Connection,
+    *,
+    day: str,
+    window_start_iso: str | None = None,
+) -> int:
     ensure_budget_schema(conn)
-    row = conn.execute(
+    sql = (
         "SELECT COALESCE(SUM(tokens), 0) AS total "
-        "FROM pif_subscription_budget_ledger WHERE day = ?",
-        (day,),
-    ).fetchone()
+        "FROM pif_subscription_budget_ledger WHERE day = ?"
+    )
+    params: tuple[Any, ...] = (day,)
+    if window_start_iso is not None:
+        sql += " AND created_at >= ?"
+        params += (window_start_iso,)
+    row = conn.execute(sql, params).fetchone()
     if row is None:
         return 0
     try:
@@ -186,6 +229,11 @@ def tokens_used(conn: sqlite3.Connection, *, day: str) -> int:
 
 
 def _connection_database_path(conn: sqlite3.Connection) -> Path | None:
+    # Unit/integration callers may supply a connection-compatible adapter that
+    # implements the ledger queries but not SQLite PRAGMAs. In that case there
+    # is no resolvable on-disk database to deduplicate against.
+    if not isinstance(conn, sqlite3.Connection):
+        return None
     for row in conn.execute("PRAGMA database_list"):
         name = row[1]
         filename = row[2]
@@ -194,7 +242,12 @@ def _connection_database_path(conn: sqlite3.Connection) -> Path | None:
     return None
 
 
-def _tokens_used_from_readonly_database(path: Path, *, day: str) -> int:
+def _tokens_used_from_readonly_database(
+    path: Path,
+    *,
+    day: str,
+    window_start_iso: str | None = None,
+) -> int:
     if not path.exists():
         return 0
     other = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
@@ -205,11 +258,15 @@ def _tokens_used_from_readonly_database(path: Path, *, day: str) -> int:
         ).fetchone()
         if table is None:
             return 0
-        row = other.execute(
+        sql = (
             "SELECT COALESCE(SUM(tokens), 0) "
-            "FROM pif_subscription_budget_ledger WHERE day = ?",
-            (day,),
-        ).fetchone()
+            "FROM pif_subscription_budget_ledger WHERE day = ?"
+        )
+        params: tuple[Any, ...] = (day,)
+        if window_start_iso is not None:
+            sql += " AND created_at >= ?"
+            params += (window_start_iso,)
+        row = other.execute(sql, params).fetchone()
         return int(row[0] if row is not None else 0)
     finally:
         other.close()
@@ -222,6 +279,7 @@ def budget_gate(
     cap_tokens: int | None = None,
     budget_dir: Path | None = None,
     additional_budget_db_paths: Iterable[Path] | None = None,
+    window_start_iso: str | None = None,
 ) -> dict[str, Any]:
     """Decide whether dispatch is allowed right now. Fail closed.
 
@@ -243,7 +301,9 @@ def budget_gate(
             cap_source = "owner_authorized_day_override"
     kill_path = directory / "KILL"
     retired_kill_path = _retire_prior_day_kill(kill_path, day=day)
-    current_used = tokens_used(conn, day=day)
+    current_used = tokens_used(
+        conn, day=day, window_start_iso=window_start_iso
+    )
     current_path = _connection_database_path(conn)
     additional_used = 0
     counted_paths: list[str] = []
@@ -251,7 +311,11 @@ def budget_gate(
         resolved = Path(candidate).resolve()
         if resolved == current_path or str(resolved) in counted_paths:
             continue
-        additional_used += _tokens_used_from_readonly_database(resolved, day=day)
+        additional_used += _tokens_used_from_readonly_database(
+            resolved,
+            day=day,
+            window_start_iso=window_start_iso,
+        )
         counted_paths.append(str(resolved))
     used = current_used + additional_used
     kill_engaged = used >= int(resolved_cap * KILL_MULTIPLIER)
@@ -280,6 +344,7 @@ def budget_gate(
         reason = None
     return {
         "day": day,
+        "window_start": window_start_iso,
         "cap_tokens": resolved_cap,
         "cap_source": cap_source,
         "authorized_cap_path": authorized_cap_path,

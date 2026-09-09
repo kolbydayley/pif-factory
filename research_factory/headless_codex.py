@@ -366,6 +366,11 @@ def execute_claimed_label_runs(
     budget_lane: str = "labels",
     provider: str = "codex",
 ) -> dict[str, Any]:
+    # Reserve the model's full supported accounting envelope before starting a
+    # subscription call. Actual usage is unknowable until the stream closes;
+    # without a reservation, a serial or concurrent wave can legally start
+    # several calls just below the cap and overshoot it when actuals land.
+    subscription_call_reserve_tokens = 1_000_000
     concurrency = max(1, int(concurrency or 1))
     bounded_limit = max(0, int(limit))
     log_dir = runs_dir() / "headless_logs"
@@ -375,13 +380,15 @@ def execute_claimed_label_runs(
     from .subscription_budget import (
         budget_gate,
         record_usage,
+        subscription_budget_window,
         usage_tokens_from_item,
     )
 
-    budget_day = now_iso()[:10]
+    budget_day, budget_window_start = subscription_budget_window()
     budget = budget_gate(
         conn,
         day=budget_day,
+        window_start_iso=budget_window_start,
         additional_budget_db_paths=(
             root() / "data" / "factory.sqlite",
             root() / "work" / "attribution-lab" / "lab.sqlite",
@@ -432,6 +439,8 @@ def execute_claimed_label_runs(
 
     quota_exhausted = threading.Event()
     quota_retry_at: list[str | None] = [None]
+    budget_runtime_lock = threading.Lock()
+    budget_runtime = {"reserved": 0, "spent": 0}
 
     def _execute_one(row: dict[str, Any]) -> dict[str, Any]:
         job_id = int(row["job_id"])
@@ -470,6 +479,35 @@ def execute_claimed_label_runs(
                 "completed_at": now_iso(),
                 "provider_pressure_signals": ["usage limit"],
             }
+        reservation = 0
+        if provider == "codex":
+            with budget_runtime_lock:
+                available = max(
+                    0,
+                    int(budget["remaining_tokens"])
+                    - int(budget_runtime["reserved"])
+                    - int(budget_runtime["spent"]),
+                )
+                if available < subscription_call_reserve_tokens:
+                    return {
+                        "job_id": str(job_id),
+                        "label_run_id": row["label_run_id"],
+                        "prompt_artifact": "local_prompt_file",
+                        "output_artifact": "local_output_file",
+                        "status": "budget_cap_hit",
+                        "provider_call_started": False,
+                        "timed_out": False,
+                        "returncode": None,
+                        "budget_refusal_reason": "insufficient_call_reserve",
+                        "budget_call_reserve_tokens": (
+                            subscription_call_reserve_tokens
+                        ),
+                        "_provider_completed_monotonic": time.monotonic(),
+                        "completed_at": now_iso(),
+                        "provider_pressure_signals": [],
+                    }
+                budget_runtime["reserved"] += subscription_call_reserve_tokens
+                reservation = subscription_call_reserve_tokens
         prompt_path = resolve_recorded_path(row["prompt_path"])
         output_path = resolve_recorded_path(row["output_path"])
         log_path = log_dir / f"{row['label_run_id']}.log"
@@ -526,6 +564,13 @@ def execute_claimed_label_runs(
                     "--ephemeral",
                     "-m",
                     model,
+                    # The operator's interactive Codex config may select a
+                    # frontier-only effort (currently `ultra`, serialized as
+                    # `max`) that gpt-5.5 rejects. Headless production jobs
+                    # pin the highest effort gpt-5.5 accepts so a user-level
+                    # preference cannot make the queue fail at dispatch.
+                    "-c",
+                    'model_reasoning_effort="xhigh"',
                     "-C",
                     str(root()),
                     "--sandbox",
@@ -586,6 +631,10 @@ def execute_claimed_label_runs(
         from .efficient_backtest import _codex_usage_from_jsonl
 
         item["usage"] = _codex_usage_from_jsonl(log_path)
+        if reservation:
+            with budget_runtime_lock:
+                budget_runtime["reserved"] -= reservation
+                budget_runtime["spent"] += usage_tokens_from_item(item)
         if capture_usage:
             item["usage_profile"] = _usage_profile_from_jsonl(log_path)
         return item
@@ -1081,7 +1130,7 @@ def execute_pending_reviewer_audits(
     # Meter reviewer audits into the daily subscription ledger like every
     # other lane (Kolby ruling 2026-08-10).
     from .efficient_backtest import _codex_usage_from_jsonl
-    from .subscription_budget import record_usage
+    from .subscription_budget import record_usage, subscription_budget_window
 
     audit_tokens = 0
     audit_calls = 0
@@ -1094,9 +1143,10 @@ def execute_pending_reviewer_audits(
         if usage:
             audit_tokens += int(usage.get("total_tokens") or 0)
     if audit_calls or audit_tokens:
+        budget_day, _ = subscription_budget_window()
         record_usage(
             conn,
-            day=now_iso()[:10],
+            day=budget_day,
             provider_lane="codex_subscription",
             lane="reviewer_audits",
             run_id=patch_tag or "reviewer_audits",

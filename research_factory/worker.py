@@ -607,7 +607,8 @@ def fail_or_retry_job(conn, job, reason: str) -> None:
         )
 
 
-EPISODE_CONTEXT_SCHEMA_VERSION = "ai_discourse_v3_1_episode_context"
+EPISODE_CONTEXT_SCHEMA_VERSION = "ai_discourse_v3_1_episode_context_v5"
+MIN_NAMED_TURN_ASSIGNMENT_CONFIDENCE = 0.85
 LABEL_EPISODE_CONTEXT_FIELDS = (
     "speaker_map",
     "section_map",
@@ -631,6 +632,7 @@ def slim_episode_context_for_label(
     artifact: dict[str, Any],
     *,
     relevant_segment_ids: set[str] | None = None,
+    relevant_segment_indices: set[int] | None = None,
 ) -> dict[str, Any]:
     slim = {
         key: artifact[key]
@@ -647,6 +649,44 @@ def slim_episode_context_for_label(
                 for segment_id in section.get("segments", [])
             )
         ]
+    if relevant_segment_indices and isinstance(slim.get("speaker_map"), list):
+        speakers = []
+        for raw_speaker in slim["speaker_map"]:
+            if not isinstance(raw_speaker, dict):
+                continue
+            speaker = dict(raw_speaker)
+            is_unknown = (
+                str(speaker.get("speaker_id") or "").strip().lower()
+                == "unknown"
+                or str(speaker.get("name") or "").strip().lower().startswith(
+                    "unknown"
+                )
+            )
+            assignments = speaker.get("turn_assignments")
+            if isinstance(assignments, list):
+                speaker["turn_assignments"] = [
+                    assignment
+                    for assignment in assignments
+                    if isinstance(assignment, dict)
+                    and assignment.get("segment_index")
+                    in relevant_segment_indices
+                    and (
+                        is_unknown
+                        or float(assignment.get("confidence") or 0)
+                        >= MIN_NAMED_TURN_ASSIGNMENT_CONFIDENCE
+                    )
+                ]
+            anchors = speaker.get("turn_anchors")
+            if isinstance(anchors, list):
+                speaker["turn_anchors"] = [
+                    anchor
+                    for anchor in anchors
+                    if isinstance(anchor, dict)
+                    and anchor.get("segment_index")
+                    in relevant_segment_indices
+                ]
+            speakers.append(speaker)
+        slim["speaker_map"] = speakers
     return slim
 
 
@@ -979,6 +1019,12 @@ def completed_episode_context_for_episode(conn, episode_id: str, *, label_pack: 
     artifact_path = resolve_recorded_path(row["context_artifact_path"])
     if not artifact_path.exists():
         return None
+    try:
+        artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if artifact.get("schema_version") != EPISODE_CONTEXT_SCHEMA_VERSION:
+        return None
     return row
 
 
@@ -1104,6 +1150,9 @@ def render_episode_context_prompt(label_pack: str, episode_context: dict[str, An
             "Do not extract final discourse events here. Do not include the full transcript or long transcript passages in the JSON output.",
             "The artifact should help later extractors map speakers, aliases, orgs, products, models, sections, recurring concepts, and likely high-value discourse shifts.",
             "Build the speaker_map as an explicit roster: hosts, guests, quoted/reported actors, affiliations, titles, aliases, handles, misspellings, and confidence. Preserve uncertainty instead of merging names.",
+            "Speaker attribution is the highest-priority accuracy task. For every direct speaker entry, include these keys: direct_speaker (true), dominant_segment_ranges (compact ranges where that person is the only or dominant voice), turn_assignments, and turn_anchors. turn_assignments is the exhaustive diarization map: use one object per logical dialogue turn, with segment_index, turn_orders containing exactly one one-based turn number, opening_words containing an exact short substring from that turn's beginning, attribution_basis as an array of concrete clues, and confidence. Across the direct-speaker entries plus one speaker_id='unknown' entry, assign every logical dialogue turn exactly once. A named assignment requires confidence >=0.85 and at least two independent attribution clues that are hard identity evidence. If that standard is not met, assign the turn to unknown below 0.70. Each turn_anchor is a sparse identity check and must contain segment_index, turn_order, opening_words, closing_words when useful, attribution_basis, and confidence. Keep snippets short; never copy a long passage. For mentioned or quoted actors set direct_speaker=false and do not give them turn assignments or anchors.",
+            "Do not infer speaker identity from alternating turns alone. Use self-identification, direct address, question/answer continuity, topic ownership, first-person affiliations, host/co-host patterns, and section transitions. In panels and compilation episodes, explicitly distinguish host narration, co-host commentary, interview questions, guest answers, AI/synthetic voices, and quoted clips. If a turn cannot be resolved, record speaker_id='unknown' with low confidence instead of silently assigning a plausible host.",
+            "Before returning, perform a contradiction audit over every named turn_assignment and turn_anchor. Hard identity clues include explicit self-identification, direct address tied to the immediate response, uniquely established biography, or first-person ownership that distinguishes this person from every other direct speaker. Conversational alternation, generic question/answer continuity, first-person pronouns, topic fit, job role, company knowledge shared by two guests, or a familiar voice role are not independent evidence. In particular, do not distinguish two guests from the same company merely because one seems more technical. A narrator saying that another person argued or asked something does not make the narration that person's speech. Sparse anchors are acceptable, but turn_assignments must cover every logical dialogue turn, routing unresolved turns to unknown below 0.70. Verify that no (segment_index, turn_order) pair is duplicated or omitted.",
             "In extraction_guidance, infer the episode's actual domain and label scope from the complete transcript, describe how later extractors should distinguish substantive dialogue, quoted sources, ads, setup, page chrome, and mixed passages, and call out who-mentioned-whom patterns, authority clues, aliases, and transcript residue. Make these decisions semantically; do not propose keyword, regex, or phrase gates.",
             "# v3.1 Codebook Reference",
             pack.codebook.strip() or pack.prompt.strip(),
@@ -1217,6 +1266,99 @@ def validate_episode_context_output(output: dict[str, Any], *, expected_episode_
         raise ValueError("Episode context episode_id does not match job target")
     if not isinstance(output["speaker_map"], list):
         raise ValueError("Episode context speaker_map must be a list")
+    assignment_owners: dict[
+        tuple[int, int], list[tuple[dict[str, Any], dict[str, Any]]]
+    ] = {}
+    for speaker_index, speaker in enumerate(output["speaker_map"]):
+        if not isinstance(speaker, dict):
+            raise ValueError("Episode context speaker_map entries must be objects")
+        if speaker.get("direct_speaker") is not True:
+            continue
+        assignments = speaker.get("turn_assignments")
+        if not isinstance(assignments, list):
+            raise ValueError(
+                "Direct speaker entries must include turn_assignments"
+            )
+        if not isinstance(speaker.get("turn_anchors"), list):
+            raise ValueError("Direct speaker entries must include turn_anchors")
+        for assignment_index, assignment in enumerate(assignments):
+            if not isinstance(assignment, dict):
+                raise ValueError("turn_assignments entries must be objects")
+            segment_index = assignment.get("segment_index")
+            turn_orders = assignment.get("turn_orders")
+            opening_words = assignment.get("opening_words")
+            attribution_basis = assignment.get("attribution_basis")
+            confidence = assignment.get("confidence")
+            if isinstance(segment_index, bool) or not isinstance(
+                segment_index, int
+            ) or segment_index < 0:
+                raise ValueError("turn_assignments segment_index must be a non-negative integer")
+            if (
+                not isinstance(turn_orders, list)
+                or len(turn_orders) != 1
+                or any(
+                    isinstance(turn_order, bool)
+                    or not isinstance(turn_order, int)
+                    or turn_order < 1
+                    for turn_order in turn_orders
+                )
+            ):
+                raise ValueError(
+                    "turn_assignments turn_orders must contain exactly one positive integer"
+                )
+            if not isinstance(opening_words, str) or not opening_words.strip():
+                raise ValueError(
+                    "turn_assignments opening_words must be a non-empty string"
+                )
+            if not isinstance(attribution_basis, list) or any(
+                not isinstance(item, str) or not item.strip()
+                for item in attribution_basis
+            ):
+                raise ValueError(
+                    "turn_assignments attribution_basis must be a string array"
+                )
+            if (
+                isinstance(confidence, bool)
+                or not isinstance(confidence, (int, float))
+                or not 0 <= confidence <= 1
+            ):
+                raise ValueError("turn_assignments confidence must be between 0 and 1")
+            for turn_order in turn_orders:
+                key = (segment_index, turn_order)
+                assignment_owners.setdefault(key, []).append(
+                    (speaker, assignment)
+                )
+    for key, owners in assignment_owners.items():
+        if len(owners) == 1:
+            continue
+        unknown_owners = [
+            owner
+            for owner in owners
+            if str(owner[0].get("speaker_id") or "").strip().lower()
+            == "unknown"
+            or str(owner[0].get("name") or "").strip().lower().startswith(
+                "unknown"
+            )
+        ]
+        named_owners = [owner for owner in owners if owner not in unknown_owners]
+        if len(unknown_owners) == 1 and named_owners:
+            # A model that assigns the same turn both to a name and to its
+            # explicit uncertainty bucket has contradicted itself. Resolve
+            # fail-closed to unknown rather than preserving a silent swap.
+            for _, assignment in named_owners:
+                assignment["turn_orders"].remove(key[1])
+            continue
+        raise ValueError(
+            "turn_assignments cannot duplicate a segment/turn pair"
+        )
+    for speaker in output["speaker_map"]:
+        assignments = speaker.get("turn_assignments")
+        if isinstance(assignments, list):
+            speaker["turn_assignments"] = [
+                assignment
+                for assignment in assignments
+                if assignment.get("turn_orders")
+            ]
     if not isinstance(output["section_map"], list):
         raise ValueError("Episode context section_map must be a list")
     if not isinstance(output["entity_seed"], dict):
@@ -1336,6 +1478,13 @@ def create_label_prompt(conn, job, *, label_pack: str, model: str, worker_id: st
         slim_artifact = slim_episode_context_for_label(
             artifact,
             relevant_segment_ids=relevant_segment_ids,
+            relevant_segment_indices={
+                int(compact_context["segment_index"]),
+                *(
+                    int(item["segment_index"])
+                    for item in adjacent_context["segments"]
+                ),
+            },
         )
         compact_context["episode_context_artifact"] = slim_artifact
         compact_context["episode_context_run_id"] = context_run["id"]
@@ -1343,7 +1492,13 @@ def create_label_prompt(conn, job, *, label_pack: str, model: str, worker_id: st
         compact_context["episode_context_contract"] = (
             "This compact artifact came from a GPT-5.5 full-episode read. Use it for speaker/entity/concept context. "
             "Use adjacent_segment_context to resolve speaker continuity across segment boundaries, "
-            "but emit evidence only from the current Segment Text section."
+            "but emit evidence only from the current Segment Text section. Speaker attribution is fail-closed: "
+            "use the speaker_map turn_assignments for the current segment as the primary diarization map, matching "
+            "both turn_order and opening_words, and use turn_anchors as identity checks before assigning a named direct speaker. "
+            "A named assignment is eligible only at confidence >=0.85; an unknown, lower-confidence, absent, or unmatched "
+            "assignment requires unknown/mixed_or_uncertain speaker attribution below 0.70; "
+            "do not assign by simple alternation or by which host is more likely. If the anchors and local dialogue "
+            "do not support one person, use unknown/mixed_or_uncertain and a speaker confidence below 0.70."
         )
         segment_context["context"] = compact_context
     prompt = render_prompt(label_pack, {"text": segment_context["segment_text"]}, segment_context["context"])
